@@ -1,0 +1,13 @@
+[package]
+name = "unarc-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Library for handling & extracting arc archives."
+authors = ["Mike Krüger <mkrueger@posteo.de>"]
+homepage = "https://github.com/mkrueger/unarc-rs"
+repository = "https://github.com/mkrueger/unarc-rs"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
