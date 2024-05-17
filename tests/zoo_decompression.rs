@@ -13,7 +13,6 @@ fn extract_stored() {
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
 
-/* TODO: Implement default compression
 #[test]
 fn extract_default() {
     let file = Cursor::new(include_bytes!("zoo/default.zoo"));
@@ -23,7 +22,7 @@ fn extract_default() {
     assert_eq!(CompressionMethod::Compressed, entry.compression_method);
     let result = archieve.read(&entry).unwrap();
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
-}*/
+}
 
 #[test]
 fn extract_high_per() {

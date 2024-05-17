@@ -2,6 +2,7 @@ use std::io::{self, Read, Seek};
 
 use crc16::{State, ARC};
 use delharc::decode::{Decoder, DecoderAny};
+use salzweg::CodeSizeStrategy;
 
 use super::{
     dirent::{CompressionMethod, DirectoryEntry, DIRENT_HEADER_SIZE},
@@ -52,13 +53,17 @@ impl<T: Read + Seek> ZooArchieve<T> {
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
             CompressionMethod::Compressed => {
-                let mut decoder = DecoderAny::new_from_compression(
-                    delharc::CompressionMethod::Lh5,
+                let mut decompressed = vec![];
+                if let Err(err) = salzweg::decoder::VariableDecoder::decode(
                     compressed_buffer.as_slice(),
-                );
-                let mut decompressed_buffer = vec![0; header.org_size as usize];
-                decoder.fill_buffer(&mut decompressed_buffer)?;
-                decompressed_buffer
+                    &mut decompressed,
+                    8,
+                    salzweg::Endianness::LittleEndian,
+                    CodeSizeStrategy::Default,
+                ) {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, err));
+                }
+                decompressed
             }
 
             CompressionMethod::CompressedLh5 => {
@@ -82,6 +87,7 @@ impl<T: Read + Seek> ZooArchieve<T> {
             }
         };
         let mut state = State::<ARC>::new();
+        println!("{}", String::from_utf8_lossy(&uncompressed));
         state.update(&uncompressed);
         if state.get() != header.file_crc16 {
             Err(io::Error::new(io::ErrorKind::InvalidData, "CRC mismatch"))

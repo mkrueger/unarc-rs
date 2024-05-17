@@ -21,7 +21,7 @@ Unfortunately the ARC implementations I found were GPL/LGPL and I want a MIT/Apa
 (In case I overlook  the issues/PRs here contact me on https://github.com/mkrueger/icy_board or per mail)
 
 # Zoo
-Compression method 0 & 2 are supported - 1 is currently missing.
+Compression method 0, 1 & 2 are supported - should cover all methods.
 
 # SQZ - Squeeze It
 Only method 0 (Store) supported
