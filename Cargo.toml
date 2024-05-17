@@ -1,8 +1,8 @@
 [package]
 name = "unarc-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Library for handling & extracting arc archives."
+description = "Library for handling & extracting ARC, ZOO, SQZ and HYP archives."
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 homepage = "https://github.com/mkrueger/unarc-rs"
 repository = "https://github.com/mkrueger/unarc-rs"

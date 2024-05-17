@@ -2,7 +2,8 @@
 A library for rust which supports reading of ARC, ZOO, SQZ and HYP files.
 This library was written for my bbs project as part of the file analyzation.
 This library contains outdated and/or incomplete compression algorithm implementations. 
-My 
+
+(In case I overlook  the issues/PRs here contact me on https://github.com/mkrueger/icy_board or per mail)
 
 # arc
 Supported compression methods:
@@ -17,8 +18,6 @@ ARC was #1 in the BBS scene before "the patent thing" and ZIP overtook.
 
 Currently it's enough for me - I tried to find a LZW implementation that works but they need some tweaks to work with ARC.
 Unfortunately the ARC implementations I found were GPL/LGPL and I want a MIT/Apache library so I can't just port these over.
-
-(In case I overlook  the issues/PRs here contact me on https://github.com/mkrueger/icy_board or per mail)
 
 # Zoo
 Compression method 0, 1 & 2 are supported - should cover all methods.
