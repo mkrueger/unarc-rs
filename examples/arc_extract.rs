@@ -1,6 +1,6 @@
 use std::fs;
 
-use unarc_rs::arc_archive::ArcArchieve;
+use unarc_rs::arc::arc_archive::ArcArchieve;
 
 fn main() {
     let path = std::env::args().nth(1).expect("no path given");

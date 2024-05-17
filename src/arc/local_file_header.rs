@@ -1,5 +1,7 @@
+use crate::date_time::DosDateTime;
+
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {
     Binary = 0,
     Text7Bit = 1,
@@ -25,7 +27,7 @@ impl From<u8> for FileType {
 }
 
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompressionMethod {
     Unpacked(u8),
     /// Run Length Encoding
@@ -55,12 +57,11 @@ impl From<u8> for CompressionMethod {
     }
 }
 
-#[derive(Debug)]
 pub struct LocalFileHeader {
     pub compression_method: CompressionMethod,
     pub name: String,
     pub compressed_size: u32,
-    pub date_time: u32,
+    pub date_time: DosDateTime,
     pub crc16: u16,
     pub original_size: u32,
 }
@@ -83,7 +84,7 @@ impl LocalFileHeader {
             compression_method: compression_method.into(),
             name,
             compressed_size,
-            date_time,
+            date_time: DosDateTime::new(date_time),
             crc16,
             original_size,
         })

@@ -1,0 +1,79 @@
+Original Documentation
+
+The SQZ files are yet another archive format. The SQZ archives consist of one
+archive header and several file headers. The archive header has the
+following format :
+OFFSET              Count TYPE   Description
+0000h                   5 char   ID='HLSQZ'
+0005h                   1 char   Version in ASCII
+								 ID='1'
+0006h                   1 byte   OS byte,
+								  0 - PC-DOS / MS-DOS
+								  1 - OS/2
+								  2 - MVS
+								  3 - HPFS (OS/2)
+								  4 - Amiga
+								  5 - Macintosh
+								  6 - Unix
+0007h                   1 byte   Misc. flags, bitmapped :
+								  0 - Intel byte order / Motorola byte order
+								  1 - Filetime in ?? / File time in DOS format
+								  2 - No security envelope / security envelope
+								3-7 - reserved
+
+After the header and each block, there is one byte denoting the type/size of the
+next block :
+OFFSET              Count TYPE   Description
+0000h                   1 byte   Block/size specifier :
+								 0 - End of archive
+								 1 - Comment
+								 2 - Password
+								 3 - Security envelope
+							  4-18 - reserved
+							   >18 - normal file header,
+									 byte value is size of header
+
+The normal file header then has the following format :
+OFFSET              Count TYPE   Description
+0000h                   1 byte   Checksum of header
+0001h                   1 byte   Flags, bitmapped :
+								 0-3 : Compression method :
+										 0 -
+										 1 -
+										 2 -
+										 3 -
+										 4 -
+								   4 - Security envelope should follow
+								 5-7 - reserved
+0002h                   1 dword  Compressed size of file
+0006h                   1 dword  Original file size
+000Ah                   1 dword  Date and time of file (see table 0009)
+000Eh                   1 byte   File attributes
+000Fh                   1 dword  CRC-32 of file
+0013h                   ? char   Filename (see above for length)
+
+The comment block :
+OFFSET              Count TYPE   Description
+0000h                   1 word   Size of uncompressed comment
+0002h                   1 word   Size of compressed comment data
+								 ="LEN"
+0004h                   1 byte   Flags, bitmapped, see above
+0005h                   1 dword  CRC-32
+0009h               "LEN" byte   Compressed comment data
+
+The password block :
+OFFSET              Count TYPE   Description
+0000h                   1 word   Size of password block (=4)
+0004h                   1 dword  CRC-32 of password
+
+Other blocks :
+OFFSET              Count TYPE   Description
+0000h                   1 word   Size of this block
+								 ="LEN"
+0002h               "LEN" byte   Block data
+
+EXTENSION:SQZ
+OCCURENCES:PC
+PROGRAMS:??
+REFERENCE:
+SEE ALSO:

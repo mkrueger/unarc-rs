@@ -1,6 +1,7 @@
 # unarc-rs
-A library for rust which supports reading of ARC files.
+A library for rust which supports reading of ARC, ZOO and SQZ files.
 
+# arc
 Supported compression methods:
 
 * Unpacked
@@ -17,6 +18,13 @@ Currently it's enough for me - I tried to find a LZW implementation that works b
 Unfortunately the ARC implementations I found were GPL/LGPL and I want a MIT/Apache library so I can't just port these over.
 
 (In case I overlook  the issues/PRs here contact me on https://github.com/mkrueger/icy_board or per mail)
+
+# Zoo
+Compression method 0 & 2 are supported - 1 is currently missing.
+
+# SQZ -  Squeeze It
+Only method 0 (Store) supported
+It's hard do find infos for that but I suppose they use Squeeze compression as ARC does in method 1
 
 # LICENSE
 
