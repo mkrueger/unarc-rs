@@ -30,7 +30,6 @@ impl From<u8> for OS {
     }
 }
 
-
 pub struct SqzHeader {
     pub os: OS,
     pub flags: u8,
@@ -46,7 +45,7 @@ impl SqzHeader {
             ));
         }
         header_bytes = &header_bytes[TEXT.len()..];
-        
+
         convert_u8!(_version, header_bytes);
         convert_u8!(os, header_bytes);
         convert_u8!(flags, header_bytes);

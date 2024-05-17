@@ -3,8 +3,10 @@ use std::io::{self, Read, Seek};
 use crc16::{State, ARC};
 use delharc::decode::{Decoder, DecoderAny};
 
-use super::{dirent::{CompressionMethod, DirectoryEntry, DIRENT_HEADER_SIZE}, zoo_header::{ZooHeader, ZOO_HEADER_SIZE}};
-
+use super::{
+    dirent::{CompressionMethod, DirectoryEntry, DIRENT_HEADER_SIZE},
+    zoo_header::{ZooHeader, ZOO_HEADER_SIZE},
+};
 
 pub struct ZooArchieve<T: Read + Seek> {
     pub header: ZooHeader,
@@ -17,8 +19,7 @@ impl<T: Read + Seek> ZooArchieve<T> {
         let mut header_bytes = [0; ZOO_HEADER_SIZE];
         reader.read_exact(&mut header_bytes)?;
         let header = ZooHeader::load_from(&header_bytes)?;
-        reader
-        .seek(io::SeekFrom::Start(header.zoo_start as u64))?;
+        reader.seek(io::SeekFrom::Start(header.zoo_start as u64))?;
 
         Ok(Self {
             header,
@@ -32,22 +33,20 @@ impl<T: Read + Seek> ZooArchieve<T> {
             self.has_next = false;
             return Ok(());
         }
-        self.reader
-            .seek(io::SeekFrom::Start(header.next as u64))?;
+        self.reader.seek(io::SeekFrom::Start(header.next as u64))?;
         Ok(())
     }
 
     pub fn read(&mut self, header: &DirectoryEntry) -> io::Result<Vec<u8>> {
         self.reader
-        .seek(io::SeekFrom::Start(header.offset as u64))?;
+            .seek(io::SeekFrom::Start(header.offset as u64))?;
         let mut compressed_buffer = vec![0; header.size_now as usize];
         self.reader.read_exact(&mut compressed_buffer)?;
-        
+
         if header.next == 0 {
             self.has_next = false;
         } else {
-            self.reader
-            .seek(io::SeekFrom::Start(header.next as u64))?;
+            self.reader.seek(io::SeekFrom::Start(header.next as u64))?;
         }
 
         let uncompressed = match header.compression_method {
@@ -101,4 +100,3 @@ impl<T: Read + Seek> ZooArchieve<T> {
         Ok(Some(current_local_file_header))
     }
 }
-

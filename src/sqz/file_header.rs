@@ -1,5 +1,5 @@
-use std::io;
 use crate::date_time::DosDateTime;
+use std::io;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,17 +21,17 @@ impl From<u8> for CompressionMethod {
 pub struct FileHeader {
     pub checksum: u8,
     pub compression_method: CompressionMethod,
-    
+
     pub compressed_size: u32,
     pub original_size: u32,
     /// DOS format date
-    pub date_time: DosDateTime,         
+    pub date_time: DosDateTime,
 
     pub attribute: u8,
     pub crc32: u32,
 
-    pub name: String
- }
+    pub name: String,
+}
 
 impl FileHeader {
     pub fn load_from(mut header_bytes: &[u8]) -> io::Result<Self> {
@@ -58,7 +58,7 @@ impl FileHeader {
             date_time: DosDateTime::new(date_time2),
             attribute,
             crc32,
-            name
+            name,
         })
     }
 }

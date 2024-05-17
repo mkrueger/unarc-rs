@@ -52,43 +52,42 @@ pub struct DirectoryEntry {
     pub offset: u32,
 
     /// DOS format date
-    pub date_time: DosDateTime,         
+    pub date_time: DosDateTime,
 
     pub file_crc16: u16,
     pub org_size: u32,
     pub size_now: u32,
-    
-    pub  major_ver: u8,
-    pub  minor_ver: u8,            /* minimum version needed to extract */
-    pub deleted: bool,              /* will be 1 if deleted, 0 if not */
-    pub struc: u8,                /* file structure if any */
-    pub comment: u32,              /* points to comment;  zero if none */
-    pub cmt_size: u16, 		/* length of comment, 0 if none */
-    pub name: String, 		/* filename */
- 
-    pub var_dir_len: u8,           /* length of variable part of dir entry */
-    pub tz: u8,                   /* timezone where file was archived */
-    pub dir_crc: u32,      /* CRC of directory entry */
- 
-    /* fields for variable part of directory entry follow */
-    pub namlen: u8,               /* length of long filename */
-    pub dirlen: u8,               /* length of directory name */
-    pub lfname: String,   /* long filename */
-    pub dirname: String,    /* directory name */
-    pub system_id: SystemId,
-    pub fattr: u32,			/* File attributes -- 24 bits */
-    pub vflag: u32,			/* version flag bits -- one byte in archive */
-    pub version_no: u32,	/* file version number if any */
- }
 
- /// Size of DOS filename
+    pub major_ver: u8,
+    pub minor_ver: u8, /* minimum version needed to extract */
+    pub deleted: bool, /* will be 1 if deleted, 0 if not */
+    pub struc: u8,     /* file structure if any */
+    pub comment: u32,  /* points to comment;  zero if none */
+    pub cmt_size: u16, /* length of comment, 0 if none */
+    pub name: String,  /* filename */
+
+    pub var_dir_len: u8, /* length of variable part of dir entry */
+    pub tz: u8,          /* timezone where file was archived */
+    pub dir_crc: u32,    /* CRC of directory entry */
+
+    /* fields for variable part of directory entry follow */
+    pub namlen: u8,      /* length of long filename */
+    pub dirlen: u8,      /* length of directory name */
+    pub lfname: String,  /* long filename */
+    pub dirname: String, /* directory name */
+    pub system_id: SystemId,
+    pub fattr: u32,      /* File attributes -- 24 bits */
+    pub vflag: u32,      /* version flag bits -- one byte in archive */
+    pub version_no: u32, /* file version number if any */
+}
+
+/// Size of DOS filename
 const FNAMESIZE: usize = 13;
-pub const DIRENT_HEADER_SIZE: usize = 
-    5 +  // tag + dir_type
+pub const DIRENT_HEADER_SIZE: usize = 5 +  // tag + dir_type
     1 +  // comp method
     8 +  // offsets
     24 +  // up to incl. cmt_size
-    FNAMESIZE + 
+    FNAMESIZE +
     8;
 /// archive header type
 const _H_TYPE: u8 = 1;
@@ -103,9 +102,9 @@ impl DirectoryEntry {
             ));
         }
         convert_u8!(_dir_type, header_bytes); // type of directory entry.  always 1 for now
-     
+
         convert_u8!(compression_method, header_bytes);
-        
+
         convert_u32!(next, header_bytes);
         convert_u32!(offset, header_bytes);
 
@@ -120,7 +119,10 @@ impl DirectoryEntry {
         convert_u32!(comment, header_bytes);
         convert_u16!(cmt_size, header_bytes);
 
-        let idx = header_bytes.iter().position(|&x| x == 0).unwrap_or(FNAMESIZE);
+        let idx = header_bytes
+            .iter()
+            .position(|&x| x == 0)
+            .unwrap_or(FNAMESIZE);
         let fname = String::from_utf8_lossy(&header_bytes[0..idx]).to_string();
         header_bytes = &header_bytes[FNAMESIZE..];
 

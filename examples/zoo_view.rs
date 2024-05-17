@@ -11,7 +11,9 @@ fn main() {
     while let Ok(Some(header)) = archieve.get_next_entry() {
         println!(
             "{:<15}\t{:<7}\t\t{:?} {}-{}-{} {}:{}:{}",
-            header.name, header.org_size, header.compression_method,
+            header.name,
+            header.org_size,
+            header.compression_method,
             header.date_time.year(),
             header.date_time.month(),
             header.date_time.day(),

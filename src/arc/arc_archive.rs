@@ -2,8 +2,10 @@ use std::io::{self, Read, Seek};
 
 use crc16::{State, ARC};
 
-use super::{local_file_header::{CompressionMethod, LocalFileHeader}, rle::unpack_rle};
-
+use super::{
+    local_file_header::{CompressionMethod, LocalFileHeader},
+    rle::unpack_rle,
+};
 
 pub struct ArcArchieve<T: Read + Seek> {
     reader: T,

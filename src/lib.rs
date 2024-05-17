@@ -1,6 +1,7 @@
 #[macro_use]
 pub(crate) mod macros;
-pub mod date_time;
 pub mod arc;
-pub mod zoo;
+pub mod date_time;
+pub mod hyp;
 pub mod sqz;
+pub mod zoo;
