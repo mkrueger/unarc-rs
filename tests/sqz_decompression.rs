@@ -29,9 +29,10 @@ fn extract_high_per() {
     let file = Cursor::new(include_bytes!("zoo/high_per.zoo"));
     let mut archieve = ZooArchieve::new(file).unwrap();
     let entry = archieve.get_next_entry().unwrap().unwrap();
-    assert_eq!("license", entry.name);
-    assert_eq!(CompressionMethod::CompressedLh5, entry.compression_method);
+    println!("{:?}", entry.name);
     let result = archieve.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+
+    println!("{}", String::from_utf8_lossy(result.as_slice()));
 }
+
 */

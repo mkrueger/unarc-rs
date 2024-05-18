@@ -28,13 +28,8 @@ impl<T: Read + Seek> ArcArchieve<T> {
 
         let uncompressed = match header.compression_method {
             CompressionMethod::Unpacked(_) => compressed_buffer,
-            CompressionMethod::RLE => unpack_rle(&compressed_buffer, header.original_size as usize),
-            CompressionMethod::Squeezed => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Squeeze not implemented",
-                ))
-            }
+            CompressionMethod::RLE => unpack_rle(&compressed_buffer),
+            CompressionMethod::Squeezed => super::unsqueeze::unsqueeze(&compressed_buffer)?,
             CompressionMethod::Crunched(_) => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,

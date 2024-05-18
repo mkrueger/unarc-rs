@@ -19,6 +19,17 @@ macro_rules! convert_u16 {
         }
     };
 }
+macro_rules! get_i16 {
+    ( $x:expr ) => {{
+        let res = $x[0] as i16 | ($x[1] as i16) << 8;
+
+        #[allow(unused_assignments)]
+        {
+            $x = &$x[2..];
+        }
+        res
+    }};
+}
 
 macro_rules! convert_u8 {
     ( $t:ident, $x:expr ) => {
