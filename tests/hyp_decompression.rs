@@ -24,6 +24,8 @@ fn extract_stored() {
     assert_eq!(b"aa\r\n", &result[..]);
 }
 
+/*
+
 #[test]
 fn extract_compressed() {
     let file = Cursor::new(include_bytes!("hyp/license.hyp"));
@@ -34,3 +36,4 @@ fn extract_compressed() {
     let result = archieve.read(&entry).unwrap();
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
+*/

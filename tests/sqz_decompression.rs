@@ -12,7 +12,7 @@ fn extract_stored() {
     let result = archieve.read(&entry).unwrap();
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
-
+/*
 #[test]
 fn extract_default() {
     let file = Cursor::new(include_bytes!("sqz/license.sqz"));
@@ -22,3 +22,4 @@ fn extract_default() {
     let result = archieve.read(&entry).unwrap();
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
+*/

@@ -1,5 +1,5 @@
 # unarc-rs
-A library for rust which supports reading of ARC, ZOO, SQ/SQ2/QQQ, SQZ and HYP files.
+A library for rust which supports reading of ARC, ARJ, ZOO, SQ/SQ2/QQQ, SQZ and HYP files.
 This library was written for my bbs project as part of the file analyzation.
 This library contains outdated and/or incomplete compression algorithm implementations. 
 
@@ -11,14 +11,32 @@ Supported compression methods:
 * Unpacked
 * Packed
 * Squeezed
+* Crunched
+* Squashed
 
-Not supported: Currently the rest
+Not supported: Crushed & Distilled
 
-I want to support at least Crunched and Squashed - these are the classic ones.
 ARC was #1 in the BBS scene before "the patent thing" and ZIP overtook.
 
 Currently it's enough for me - I tried to find a LZW implementation that works but they need some tweaks to work with ARC.
 Unfortunately the ARC implementations I found were GPL/LGPL and I want a MIT/Apache library so I can't just port these over.
+
+# ARJ
+
+Supported compression methods:
+
+* STORE
+* Method 1-3
+* Method 4 (fastest)
+
+Notes: That should cover all compressiom methods
+
+This library was written for my bbs project as part of the file analyzation.
+ARJ was popular in the BBS scene in the 90' before RAR showed up.
+
+All advanced ARJ features are not supported like multiple archives, password protection etc.
+The scope is limited to what I need. Feel free to add features you need.
+(In case I overlook  the issues/PRs here contact me on https://github.com/mkrueger/icy_board or per mail)
 
 # Zoo
 Compression method 0, 1 & 2 are supported - should cover all methods.

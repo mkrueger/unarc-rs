@@ -41,3 +41,26 @@ macro_rules! convert_u8 {
         }
     };
 }
+
+macro_rules! convert_string {
+    ( $t:ident, $x:expr ) => {
+        let mut $t = String::new();
+        while $x[0] != 0 {
+            $t.push($x[0] as char);
+            $x = &$x[1..];
+        }
+        #[allow(unused_assignments)]
+        {
+            $x = &$x[1..];
+        }
+    };
+}
+
+macro_rules! skip {
+    ( $x:expr, $t:expr  ) => {
+        #[allow(unused_assignments)]
+        {
+            $x = &$x[$t..];
+        }
+    };
+}
