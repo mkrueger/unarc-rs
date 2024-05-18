@@ -1,0 +1,40 @@
+ Format details
+
+Note:
+
+    Multi-byte integers are little-endian.
+    Some Squeeze software limits the length of a Huffman code to at most 16 bits. 
+
+File structure
+Field 	Size in bytes 	Description
+signature 	2 	0x76 0xff
+checksum 	2 	Low 16 bits of the sum of the decompressed byte values.
+filename 	variable 	Original filename, terminated by a NUL byte. (TODO: Find a specification for this field. Some software interprets it in the same way as Crunch, but that might be overkill.)
+compressed data 	variable 	See below.
+timestamp extension 	8 	Optional timestamp. See below.
+Compressed data section
+
+The "compressed data" section. This part is equivalent to ARC compression method 4.
+Field 	Size in bytes 	Description
+node_count 	2 	Number of nodes in the table. Valid values are 0 through 256, inclusive.
+node table 	4 × node_count 	The encoded Huffman tree. See below.
+data 	variable 	Huffman-encoded data. Least-significant bit first. After Huffman decoding, the data is RLE90-compressed. The data should end with a special "stop" code. However, this compression format could be used in situations where it could also be terminated by other means.
+
+A table node contains two encoded values. Each is a signed 16-bit integer interpreted as follows:
+Encoded value 	Meaning
+−257 	Stop
+−256 ... −1 	Byte value 255 ... 0
+0 ... 255 	Pointer to a child node
+Timestamp extension
+
+Format of timestamp extension, taken from SQDATE.DOC (see below). It starts at the first byte boundary after the Stop code. It is present if the signature and checksum are correct.
+Field 	Size in bytes 	Description
+signature 	2 	0xff77 (0x77 0xff)
+date 	2 	MS-DOS date/time format
+time 	2
+checksum 	2 	Low 16 bits of the sum of the first three fields, interpreted as little-endian integers.
+Identification
+
+Files begin with bytes 76 ff.
+
+Note that this does not distinguish them from CODEC (Telvox). 

@@ -1,5 +1,5 @@
 # unarc-rs
-A library for rust which supports reading of ARC, ZOO, SQZ and HYP files.
+A library for rust which supports reading of ARC, ZOO, SQ/SQ2/QQQ, SQZ and HYP files.
 This library was written for my bbs project as part of the file analyzation.
 This library contains outdated and/or incomplete compression algorithm implementations. 
 
@@ -25,6 +25,10 @@ Compression method 0, 1 & 2 are supported - should cover all methods.
 # SQZ - Squeeze It
 Only method 0 (Store) supported
 It's hard do find infos for that but I suppose they use Squeeze compression as ARC does in method 1
+
+# SQ/SQ2
+I wrongly assumed that SQZ == SQ - after implementing squeeze for arc I recognized my error so I threw in the old SQ format even if it's 1 file only.
+I added support for the SQ2 format as well. These both don't have a real extension it's either Q as 2nd char or .SQ/.SQ2/.QQQ
 
 # HYP - Hyper
 Only method 0 (Store) supported
