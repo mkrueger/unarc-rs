@@ -1,6 +1,7 @@
+use crc16::{State, ARC};
 use std::io::{self, Read, Seek};
 
-use crc16::{State, ARC};
+use crate::arc::lzw;
 
 use super::{
     local_file_header::{CompressionMethod, LocalFileHeader},
@@ -28,19 +29,15 @@ impl<T: Read + Seek> ArcArchieve<T> {
 
         let uncompressed = match header.compression_method {
             CompressionMethod::Unpacked(_) => compressed_buffer,
-            CompressionMethod::RLE => unpack_rle(&compressed_buffer),
+            CompressionMethod::RLE90 => unpack_rle(&compressed_buffer),
             CompressionMethod::Squeezed => super::unsqueeze::unsqueeze(&compressed_buffer)?,
-            CompressionMethod::Crunched(_) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Crunch not implemented",
-                ))
+            CompressionMethod::Crunched(_level) => {
+                let decompressed = lzw::Lzw::new().decomp(&compressed_buffer, true)?;
+                unpack_rle(&decompressed)
             }
             CompressionMethod::Squashed => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Squash not implemented",
-                ))
+                let decompressed = lzw::Lzw::new().decomp(&compressed_buffer, false)?;
+                decompressed
             }
             CompressionMethod::Crushed => {
                 return Err(io::Error::new(

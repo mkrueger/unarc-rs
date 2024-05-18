@@ -10,10 +10,11 @@ Supported compression methods:
 
 * Unpacked
 * Packed
+* Squeezed
 
 Not supported: Currently the rest
 
-I want to support at least Squeezed, Crunched and Squashed - these are the classic ones.
+I want to support at least Crunched and Squashed - these are the classic ones.
 ARC was #1 in the BBS scene before "the patent thing" and ZIP overtook.
 
 Currently it's enough for me - I tried to find a LZW implementation that works but they need some tweaks to work with ARC.

@@ -40,11 +40,6 @@ impl FileHeader {
         convert_u32!(compressed_size, header_bytes);
         convert_u32!(original_size, header_bytes);
         convert_u32!(date_time2, header_bytes);
-        println!("checksum: {:02X}", checksum);
-        println!("compression_method: {:?}", compression_method);
-        println!("compressed_size: {:?}", compressed_size);
-        println!("original_size: {:?}", original_size);
-
         convert_u8!(attribute, header_bytes);
         convert_u32!(crc32, header_bytes);
 

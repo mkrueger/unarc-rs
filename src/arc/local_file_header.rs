@@ -31,7 +31,7 @@ impl From<u8> for FileType {
 pub enum CompressionMethod {
     Unpacked(u8),
     /// Run Length Encoding
-    RLE,
+    RLE90,
     /// RLE + Huffman
     Squeezed,
     /// Lempel-Zev compression
@@ -45,10 +45,14 @@ pub enum CompressionMethod {
 impl From<u8> for CompressionMethod {
     fn from(value: u8) -> Self {
         match value {
-            1..=2 => CompressionMethod::Unpacked(0),
-            3 => CompressionMethod::RLE,
+            1 => CompressionMethod::Unpacked(1),
+            2 => CompressionMethod::Unpacked(2),
+            3 => CompressionMethod::RLE90,
             4 => CompressionMethod::Squeezed,
-            5..=8 => CompressionMethod::Crunched(0),
+            5 => CompressionMethod::Crunched(5),
+            6 => CompressionMethod::Crunched(6),
+            7 => CompressionMethod::Crunched(7),
+            8 => CompressionMethod::Crunched(8),
             9 => CompressionMethod::Squashed,
             10 => CompressionMethod::Crushed,
             11 => CompressionMethod::Distilled,

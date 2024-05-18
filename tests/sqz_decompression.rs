@@ -15,24 +15,10 @@ fn extract_stored() {
 
 #[test]
 fn extract_default() {
-    let file = Cursor::new(include_bytes!("sqz/setdate.sqz"));
+    let file = Cursor::new(include_bytes!("sqz/license.sqz"));
     let mut archieve = SqzArchieve::new(file).unwrap();
     let entry = archieve.get_next_entry().unwrap().unwrap();
 
     let result = archieve.read(&entry).unwrap();
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
-/* TODO: Implement default compression
-
-#[test]
-fn extract_high_per() {
-    let file = Cursor::new(include_bytes!("zoo/high_per.zoo"));
-    let mut archieve = ZooArchieve::new(file).unwrap();
-    let entry = archieve.get_next_entry().unwrap().unwrap();
-    println!("{:?}", entry.name);
-    let result = archieve.read(&entry).unwrap();
-
-    println!("{}", String::from_utf8_lossy(result.as_slice()));
-}
-
-*/

@@ -20,7 +20,7 @@ fn extract_packed() {
     let entry = archieve.get_next_entry().unwrap().unwrap();
     archieve.skip(&entry).unwrap();
     let entry = archieve.get_next_entry().unwrap().unwrap();
-    assert_eq!(CompressionMethod::RLE, entry.compression_method);
+    assert_eq!(CompressionMethod::RLE90, entry.compression_method);
     let result = archieve.read(&entry).unwrap();
     assert_eq!(include_bytes!("arc/READ.COM"), result.as_slice());
 }
@@ -34,4 +34,24 @@ fn extract_sqeezed() {
     assert_eq!(CompressionMethod::Squeezed, entry.compression_method);
     let result = archieve.read(&entry).unwrap();
     assert_eq!(include_bytes!("arc/DDTZ.COM"), result.as_slice());
+}
+
+#[test]
+fn extract_squashed() {
+    let file = Cursor::new(include_bytes!("arc/squashed.arc"));
+    let mut archieve = ArcArchieve::new(file).unwrap();
+    let entry = archieve.get_next_entry().unwrap().unwrap();
+    assert_eq!(CompressionMethod::Squashed, entry.compression_method);
+    let result = archieve.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+}
+
+#[test]
+fn extract_crunch() {
+    let file = Cursor::new(include_bytes!("arc/crunch.arc"));
+    let mut archieve = ArcArchieve::new(file).unwrap();
+    let entry = archieve.get_next_entry().unwrap().unwrap();
+    assert_eq!(CompressionMethod::Crunched(8), entry.compression_method);
+    let result = archieve.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }

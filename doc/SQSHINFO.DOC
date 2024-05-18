@@ -1,0 +1,106 @@
+The purpose of this document is to detail the format of "squashed"
+files created by PKARC version 2.0 or later.  This document assumes
+some basic knowledge of existing ARC formats and various compression
+techniques.  For more information consult the references listed at the
+end of this document.
+
+The general format for an ARC file is:
+
+[[archive-mark + header_version + file header + file data]...] + 
+archive-mark + end-of-arc-mark
+
+The archive-mark is 1 byte and is the value 1A hex.  The file header
+can be defined by the following 'C' structure, and is 27 bytes in size.
+
+typedef struct archive_file_header
+  { char name[13];		/* file name */
+    unsigned long size;		/* size of compressed file */
+    unsigned short date;	/* file date */
+    unsigned short time;	/* file time */
+    unsigned short crc;		/* cyclic redundancy check */
+    unsigned long length;	/* true file length */
+  };
+
+The name field is the null terminated file name.
+
+The size is the number of bytes in the file data area following the
+header.
+
+The date and time are stored in the same packed format as a DOS
+directory entry.
+
+The CRC is a 16-bit CRC on the file data area based on a CRC polynomial
+from the article by David Schwaderer in the April 1985 issue of PC
+Technical Journal.
+
+The length is the actual uncompressed size of the file.
+
+
+
+The header versions are defined as follows:
+
+Value	Method		Notes
+-----	--------	-----------------------------------------------------
+  0	  -		This is used to indicate the end of the archive.
+  1	Stored		(obsolete) (note 1)
+  2	Stored		The file is stored (no compression)
+  3	Packed		The file is packed with non-repeat packing.
+  4	Squeezed	The file is squeezed with standard Huffman squeezing.
+  5	crunched	The file was compressed with 12-bit static Ziv-Lempel-
+			Welch compression without non-repeat packing.
+  6	crunched	The file was compressed with 12-bit static Ziv-Lempel-
+			Welch compression with non-repeat packing.
+  7	crunched	(internal to SEA) same as above but with different
+			hashing formula.
+  8	Crunched	The file was compressed with Dynamic Ziv-Lempel-Welch
+			compression with non-repeat packing.  The initial
+			ZLW code size is 9-bits with a maximum code size
+			of 12-bits (note 2).  An adaptive reset is used
+			on the ZLW table when it becomes full.
+  9	Squashed	The file was compressed with Dynamic Ziv-Lempel-Welch
+			compression without non-repeat packing.  The initial
+			ZLW code size is 9-bits with a maximum code size
+			of 13-bits (note 3).  An adaptive reset is used
+			on the ZLW table when it becomes full.
+
+Note 1:
+  For type 1 stored files, the file header is only 23 bytes in size,
+  with the length field not present.  In this case, the file length
+  is the same as the size field since the file is stored without
+  compression.
+
+Note 2:
+  The first byte of the data area following the header is used to
+  indicate the maximum code size, however only a value of 12 (decimal)
+  is currently used or accepted by existing ARC programs.
+
+Note 3:
+  The algorithm used is identical to type 8 crunched files with the
+  exception that the maximum code size is 13 bits - i.e. an 8K entry
+  ZLW table.  However, unlike type 8 files, the first byte following
+  the file header is actual data, no maximum code size is stored.
+
+
+
+References
+----------
+
+Source code for ARC 5.0 by Tom Henderson of Software Enhancement Associates,
+usually found in a file called ARC50SRC.ARC.
+
+Source code for general Ziv-Lempel-Welch routines by Kent Williams, found
+in a file LZX.ARC.  Kent Williams work is also referenced in the SEA
+documentation.
+
+Source code and documentation from the Unix COMPRESS utilities, where most
+of the ZLW algorithms used by SEA originated, found in a file called
+COMPRESS.ARC.
+
+Ziv, J. and Lempel, A. Compression of individual sequences via
+variable-rate coding. IEEE Trans. Inform. Theory IT-24, 5 (Sept. 1978),
+530-536.
+
+The IBM DOS Technical Reference Manual, number 6024125.
+
+
+	- Phil Katz, 12/27/86
