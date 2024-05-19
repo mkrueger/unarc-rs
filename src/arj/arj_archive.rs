@@ -21,7 +21,7 @@ impl<T: Read + Seek> ArjArchieve<T> {
         if header_bytes.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                "Archive ends without any headers",
+                "archive ends without any headers",
             ));
         }
         let header = MainHeader::load_from(&header_bytes);
@@ -62,7 +62,7 @@ impl<T: Read + Seek> ArjArchieve<T> {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
-                        "Unsupported compression method {:?}",
+                        "unsupported compression method {:?}",
                         header.compression_method
                     ),
                 ))
@@ -72,7 +72,7 @@ impl<T: Read + Seek> ArjArchieve<T> {
         if uncompressed.len() != header.original_size as usize {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Decompressed size does not match the original size",
+                "decompressed size does not match the original size",
             ));
         }
 
@@ -149,7 +149,7 @@ fn read_header<R: Read>(reader: &mut R) -> io::Result<Vec<u8>> {
     if header_size > MAX_HEADER_SIZE as u16 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "Header size is too big",
+            "header size is too big",
         ));
     }
     let mut header_bytes = vec![0; header_size as usize];
@@ -160,7 +160,7 @@ fn read_header<R: Read>(reader: &mut R) -> io::Result<Vec<u8>> {
     if checksum != u32::from_le_bytes(crc) {
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "Header checksum is invalid",
+            "header checksum is invalid",
         ))
     } else {
         Ok(header_bytes)
@@ -184,7 +184,7 @@ fn read_extended_headers<R: Read>(reader: &mut R) -> io::Result<Vec<Vec<u8>>> {
         if checksum != u32::from_le_bytes(crc) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Extended header checksum is invalid",
+                "extended header checksum is invalid",
             ));
         }
         extended_header.push(header);

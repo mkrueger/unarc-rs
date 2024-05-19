@@ -71,7 +71,7 @@ impl Lzw {
             if b as usize != BITS {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("File packed with {}, I can only handle {}", b, BITS),
+                    format!("file packed with {}, I can only handle {}", b, BITS),
                 ));
             }
             CRUNCH_BITS

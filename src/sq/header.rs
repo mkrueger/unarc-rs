@@ -27,7 +27,7 @@ impl Header {
         } else {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Invalid header signature",
+                "invalid header signature",
             ))
         }
     }

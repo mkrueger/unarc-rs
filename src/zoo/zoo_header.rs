@@ -31,7 +31,7 @@ impl ZooHeader {
         if !header_bytes.starts_with(TEXT) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Invalid archive header",
+                "invalid archive header",
             ));
         }
         header_bytes = &header_bytes[SIZ_TEXT..];
@@ -39,7 +39,7 @@ impl ZooHeader {
         if zoo_tag != ZOO_TAG {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Invalid archive tag",
+                "invalid archive tag",
             ));
         }
         convert_u32!(zoo_start, header_bytes);

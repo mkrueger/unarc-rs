@@ -80,7 +80,7 @@ impl<T: Read + Seek> ZooArchieve<T> {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
-                        "Unsupported compression method {:?}",
+                        "unsupported compression method {:?}",
                         header.compression_method
                     ),
                 ))

@@ -28,7 +28,7 @@ impl<T: Read + Seek> HypArchieve<T> {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
-                        "Unsupported compression method {:?}",
+                        "unsupported compression method {:?}",
                         header.compression_method
                     ),
                 ))
@@ -52,7 +52,7 @@ impl<T: Read + Seek> HypArchieve<T> {
         };
 
         if next_header[0] != HYP_ID {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid HYP ID"));
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid HYP ID"));
         }
         let mut header_bytes = [0; HEADER_SIZE];
         self.reader.read_exact(&mut header_bytes)?;

@@ -41,7 +41,7 @@ impl SqzHeader {
         if !header_bytes.starts_with(TEXT) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Invalid archive header",
+                "invalid archive header",
             ));
         }
         header_bytes = &header_bytes[TEXT.len()..];

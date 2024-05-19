@@ -98,7 +98,7 @@ impl DirectoryEntry {
         if zoo_tag != ZOO_TAG {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Invalid archive tag",
+                "invalid archive tag",
             ));
         }
         convert_u8!(_dir_type, header_bytes); // type of directory entry.  always 1 for now

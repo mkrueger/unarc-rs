@@ -43,7 +43,7 @@ impl Header {
                 _ => {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        "Invalid compression method",
+                        "invalid compression method",
                     ))
                 }
             },

@@ -38,7 +38,7 @@ pub fn decode_fastest(data: &[u8], original_size: usize) -> io::Result<Vec<u8>> 
             if back_ptr > res.len() - 1 {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "Invalid back_ptr",
+                    "invalid back_ptr",
                 ));
             }
             let mut i = res.len() - 1 - back_ptr;

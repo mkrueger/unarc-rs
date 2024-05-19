@@ -1,0 +1,41 @@
+From UC2 source code (SUPERMAN.H)
+
+Total (multivolume) archive format:
+   XHEAD [BAREBLOCKS...] CDIR [SEAL] [CRYPT] [BANNER]
+
+File format (single volume):
+   FHEAD 'part of archive' [DAMAGE_RECOVERY_INFO]
+
+BAREBLOCK ::=
+   none     // directory
+   'data'   // file
+   'data'   // master
+
+CDIR ::=
+   COMPRESS '[BASINF...]'
+
+BASINF ::=
+   OHEAD - OSMETA DIRMETA
+         - OSMETA FILEMETA COMPRESS LOCATION
+         - MASMETA COMPRESS
+         - end of list
+
+SEAL ::=
+   ... // documented in USAFE/USEAL software
+
+CRYPT ::=
+   ... // documented in UCRYPT software
+
+The order of the BASINF objects is NOT random. There are many possible orders
+but some things have to be correct:
+
+ - first the directory then its contents
+ - revisions in reverse order (first n then n-1 until 0) only !!
+ - no missing revisions (always 5,4,3,2,1 etc never 5,2,1)
+   (notice we are talking EXTERNAL revision numbers here)
+
+But notice:
+
+ - masters, directories and files can bee freely intermixed
+ - neuro models can be put both before and after usage
+ - the order in the archive does not have to resemble the order in the CDIR

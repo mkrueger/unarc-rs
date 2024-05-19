@@ -42,20 +42,20 @@ impl<T: Read + Seek> ArcArchieve<T> {
             CompressionMethod::Crushed => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "Crushed not implemented",
+                    "crushed not implemented",
                 ))
             }
             CompressionMethod::Distilled => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    "Distilled not implemented",
+                    "distilled not implemented",
                 ))
             }
             CompressionMethod::Unknown(_) => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
-                        "Unsupported compression method {:?}",
+                        "unsupported compression method {:?}",
                         header.compression_method
                     ),
                 ))

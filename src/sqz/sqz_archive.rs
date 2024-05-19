@@ -42,7 +42,7 @@ impl<T: Read + Seek> SqzArchieve<T> {
                 /*return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
-                        "Unsupported compression method {:?}",
+                        "unsupported compression method {:?}",
                         header.compression_method
                     ),
                 ))*/
@@ -52,7 +52,7 @@ impl<T: Read + Seek> SqzArchieve<T> {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!(
-                        "Unsupported compression method {:?}",
+                        "unsupported compression method {:?}",
                         header.compression_method
                     ),
                 ))
