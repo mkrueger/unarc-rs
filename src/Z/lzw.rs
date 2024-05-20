@@ -1,31 +1,32 @@
-// Based on dearc.pas
 use std::io;
 
 use bitstream_io::{BitRead, BitReader, LittleEndian};
 
 const BITS: usize = 12;
-const CRUNCH_BITS: usize = 12;
-const SQUASH_BITS: usize = 13;
 const INIT_BITS: usize = 9;
-const FIRST: u16 = 257;
+const FIRST: u32 = 257;
 const CLEAR: u16 = 256;
 
 pub struct Lzw {
     oldcode: u16,
     finchar: u8,
     n_bits: usize,
-    maxcode: u16,
+    maxcode: u32,
     prefix: [u16; 8191],
     suffix: [u8; 8191],
     clear_flg: bool,
     stack: Vec<u8>,
-    free_ent: u16,
-    maxcodemax: u16,
+    free_ent: u32,
+    maxcodemax: u32,
+    max_bits: u8,
+    block_mode: bool,
 }
 
 impl Lzw {
-    pub fn new() -> Self {
+    pub fn new(max_bits: u8, block_mode: bool) -> Self {
         Lzw {
+            max_bits,
+            block_mode,
             oldcode: 0,
             finchar: 0,
             n_bits: 0,
@@ -63,22 +64,9 @@ impl Lzw {
         }
     }
 
-    pub fn decomp(&mut self, mut input: &[u8], use_crunched: bool) -> io::Result<Vec<u8>> {
+    pub fn decomp(&mut self, input: &[u8]) -> io::Result<Vec<u8>> {
         let mut result = Vec::new();
-        let bits = if use_crunched {
-            let b = input[0];
-            input = &input[1..];
-            if b as usize != BITS {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("file packed with {}, I can only handle {}", b, BITS),
-                ));
-            }
-            CRUNCH_BITS
-        } else {
-            SQUASH_BITS
-        };
-        self.maxcodemax = 1 << bits;
+        self.maxcodemax = 1 << self.max_bits;
 
         self.clear_flg = false;
         self.n_bits = INIT_BITS;
@@ -88,7 +76,7 @@ impl Lzw {
         }
 
         let mut reader = BitReader::endian(input, LittleEndian);
-        self.free_ent = FIRST;
+        self.free_ent = if self.block_mode { FIRST } else { 256 };
         self.oldcode = if let Some(old) = self.getcode(&mut reader) {
             old as u16
         } else {
@@ -98,7 +86,7 @@ impl Lzw {
         result.push(self.finchar);
 
         while let Some(mut code) = self.getcode(&mut reader) {
-            if code == CLEAR {
+            if code == CLEAR && self.block_mode {
                 self.prefix.fill(0);
                 self.clear_flg = true;
                 self.free_ent = FIRST - 1;
@@ -120,11 +108,12 @@ impl Lzw {
             self.finchar = self.suffix[code as usize];
             self.stack.push(self.finchar);
             result.extend(self.stack.drain(..).rev());
+
             code = self.free_ent as u16;
-            if code < self.maxcodemax {
+            if (code as u32) < self.maxcodemax {
                 self.prefix[code as usize] = self.oldcode;
                 self.suffix[code as usize] = self.finchar;
-                self.free_ent = code + 1;
+                self.free_ent = code as u32 + 1;
             }
             self.oldcode = incode;
         }

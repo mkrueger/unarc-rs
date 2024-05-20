@@ -1,5 +1,5 @@
 # unarc-rs
-A library for rust which supports reading of ARC, ARJ, ZOO, SQ/SQ2/QQQ, SQZ and HYP files.
+A library for rust which supports reading of ARC, ARJ, ZOO, SQ/SQ2/QQQ, SQZ, .Z (unix compress) and HYP files.
 This library was written for my bbs project as part of the file analyzation.
 
 This library contains outdated decompression algorithms. I didn't bother to write the compression for those. I don't need them for my project.
@@ -79,6 +79,9 @@ It's hard do find infos for that but I suppose they use Squeeze compression as A
 ### HYP - Hyper
 Only method 0 (Store) supported
 It's hard do find infos for that - does anyone know which compression Hyper uses?
+
+### Z - Compress
+Only contains 1 file. It's a simple LZW compression. Need that as part of a mail exchange standard.
 
 # LICENSE
 

@@ -87,7 +87,6 @@ impl<T: Read + Seek> ZooArchieve<T> {
             }
         };
         let mut state = State::<ARC>::new();
-        println!("{}", String::from_utf8_lossy(&uncompressed));
         state.update(&uncompressed);
         if state.get() != header.file_crc16 {
             Err(io::Error::new(io::ErrorKind::InvalidData, "CRC mismatch"))

@@ -2,6 +2,7 @@
 pub(crate) mod macros;
 pub mod date_time;
 
+pub mod Z;
 pub mod arc;
 pub mod arj;
 pub mod hyp;

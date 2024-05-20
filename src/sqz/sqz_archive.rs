@@ -1,7 +1,7 @@
 use super::{
     file_header::{CompressionMethod, FileHeader},
     sqz_header::{SqzHeader, SQZ_HEADER_SIZE},
-    unsqueeze,
+    unsqz,
 };
 use std::io::{self, Read, Seek};
 
@@ -36,17 +36,7 @@ impl<T: Read + Seek> SqzArchieve<T> {
 
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
-            CompressionMethod::Compressed => {
-                unsqueeze::unsqueeze(&compressed_buffer[..])?
-
-                /*return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "unsupported compression method {:?}",
-                        header.compression_method
-                    ),
-                ))*/
-            }
+            CompressionMethod::Compressed => unsqz::unsqz(&compressed_buffer[..])?,
 
             CompressionMethod::Unknown(_) => {
                 return Err(io::Error::new(
