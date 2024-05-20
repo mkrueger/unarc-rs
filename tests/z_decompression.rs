@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use unarc_rs::Z::ZArchieve;
+use unarc_rs::z::ZArchieve;
 
 #[test]
 fn extract_z() {
