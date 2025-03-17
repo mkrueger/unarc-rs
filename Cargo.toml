@@ -1,18 +1,18 @@
 [package]
 name = "unarc-rs"
-version = "0.4.1"
+version = "0.4.3"
 edition = "2021"
-description = "Library for handling & extracting ARC, ZOO, SQZ and HYP archives."
+description = "Library for handling & extracting ARJ, ARC, ZOO, SQ/SQ2/QQQ, SQZ, .Z and HYP archives."
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 homepage = "https://github.com/mkrueger/unarc-rs"
 repository = "https://github.com/mkrueger/unarc-rs"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crc32fast = "1.4.0"
+crc32fast = "1.4.2"
 crc16 = "0.4.0"
 delharc = "0.6.1"
 salzweg = "0.1.4"
-bitstream-io = "2.3.0"
+bitstream-io = "2.6.0"
