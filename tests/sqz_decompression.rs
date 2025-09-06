@@ -13,7 +13,8 @@ fn extract_stored() {
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
 
-/*#[test]
+#[ignore = "implement me"]
+#[test]
 fn extract_default() {
     let file = Cursor::new(include_bytes!("sqz/license.sqz"));
     let mut archive = SqzArchive::new(file).unwrap();
@@ -21,4 +22,4 @@ fn extract_default() {
 
     let result = archive.read(&entry).unwrap();
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
-}*/
+}

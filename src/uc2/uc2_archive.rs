@@ -307,6 +307,12 @@ impl<T: Read + Seek> Uc2Archive<T> {
 
         Ok(output)
     }
+
+    pub fn skip(&mut self, _entry: &Uc2ArchiveEntry) -> io::Result<()> {
+        // UC2 archives are already fully parsed during get_next_entry,
+        // so skip is a no-op - we just move to the next entry
+        Ok(())
+    }
 }
 
 fn read_header<T: Read + Seek>(reader: &mut T) -> Result<(u32, bool), io::Error> {

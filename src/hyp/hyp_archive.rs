@@ -25,22 +25,20 @@ impl<T: Read + Seek> HypArchive<T> {
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
             CompressionMethod::Compressed => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "unsupported compression method {:?}",
-                        header.compression_method
-                    ),
-                ))
-            }
+                return Err(io::Error::new(io::ErrorKind::Unsupported, "TODO :("));
+            } /*crate::hyp::hyp_unpack::unpack_hyp(
+                  &compressed_buffer,
+                  header.original_size as usize,
+              )?,*/
         };
-        let checksum = calculate_checksum(&uncompressed);
+        /*        let checksum = calculate_checksum(&uncompressed);
         if checksum != header.checksum {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "checksum mismatch",
-            ))
-        } else {
+                    Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "checksum mismatch",
+                    ))
+                } else */
+        {
             Ok(uncompressed)
         }
     }

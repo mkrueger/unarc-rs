@@ -37,6 +37,7 @@ use crate::sq::header::Header as SqHeader;
 use crate::sq::sq_archive::SqArchive;
 use crate::sqz::file_header::FileHeader as SqzFileHeader;
 use crate::sqz::sqz_archive::SqzArchive;
+use crate::uc2::uc2_archive::{Uc2Archive, Uc2ArchiveEntry as Uc2Header};
 use crate::z::ZArchive;
 use crate::zip::zip_archive::{ZipArchive, ZipFileHeader};
 use crate::zoo::dirent::DirectoryEntry as ZooEntry;
@@ -67,7 +68,8 @@ pub enum ArchiveFormat {
     Rar,
     /// 7z archive format (.7z)
     SevenZ,
-    // Future formats:
+    //
+    Uc2,
 }
 
 impl ArchiveFormat {
@@ -80,6 +82,7 @@ impl ArchiveFormat {
         ArchiveFormat::Sqz,
         ArchiveFormat::Z,
         ArchiveFormat::Hyp,
+        ArchiveFormat::Uc2,
         ArchiveFormat::Lha,
         ArchiveFormat::Zip,
         ArchiveFormat::Rar,
@@ -105,6 +108,7 @@ impl ArchiveFormat {
             "sq" | "sq2" | "qqq" => Some(ArchiveFormat::Sq),
             "sqz" => Some(ArchiveFormat::Sqz),
             "z" => Some(ArchiveFormat::Z),
+            "uc2" => Some(ArchiveFormat::Uc2),
             "hyp" => Some(ArchiveFormat::Hyp),
             "lha" | "lzh" => Some(ArchiveFormat::Lha),
             "zip" => Some(ArchiveFormat::Zip),
@@ -148,6 +152,7 @@ impl ArchiveFormat {
             ArchiveFormat::Sqz => "sqz",
             ArchiveFormat::Z => "Z",
             ArchiveFormat::Hyp => "hyp",
+            ArchiveFormat::Uc2 => "uc2",
             ArchiveFormat::Lha => "lha",
             ArchiveFormat::Zip => "zip",
             ArchiveFormat::Rar => "rar",
@@ -165,6 +170,7 @@ impl ArchiveFormat {
             ArchiveFormat::Sqz => "SQZ (Squeeze It)",
             ArchiveFormat::Z => "Z (Unix compress)",
             ArchiveFormat::Hyp => "HYP (Hyper)",
+            ArchiveFormat::Uc2 => "UC2 (Ultra Compressor II)",
             ArchiveFormat::Lha => "LHA/LZH",
             ArchiveFormat::Zip => "ZIP",
             ArchiveFormat::Rar => "RAR",
@@ -182,6 +188,7 @@ impl ArchiveFormat {
             ArchiveFormat::Sqz => &["sqz"],
             ArchiveFormat::Z => &["Z"],
             ArchiveFormat::Hyp => &["hyp"],
+            ArchiveFormat::Uc2 => &["uc2"],
             ArchiveFormat::Lha => &["lha", "lzh"],
             ArchiveFormat::Zip => &["zip"],
             ArchiveFormat::Rar => &["rar"],
@@ -276,6 +283,7 @@ enum EntryIndex {
     /// Z format has no header per file, just one file
     Z,
     Hyp(HypHeader),
+    Uc2(Uc2Header),
     Lha(LhaFileHeader),
     Zip(ZipFileHeader),
     Rar(RarFileHeader),
@@ -372,6 +380,7 @@ enum ArchiveInner<T: Read + Seek> {
     Sqz(SqzArchive<T>),
     Z(ZArchive<T>, bool), // bool = already read
     Hyp(HypArchive<T>),
+    Uc2(Uc2Archive<T>),
     Lha(LhaArchiveSeekable<T>),
     Zip(ZipArchive<T>),
     Rar(RarArchive<T>),
@@ -406,6 +415,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Sqz => ArchiveInner::Sqz(SqzArchive::new(reader)?),
             ArchiveFormat::Z => ArchiveInner::Z(ZArchive::new(reader)?, false),
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
+            ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
             ArchiveFormat::Lha => ArchiveInner::Lha(LhaArchiveSeekable::new(reader)?),
             ArchiveFormat::Zip => ArchiveInner::Zip(ZipArchive::new(reader)?),
             ArchiveFormat::Rar => ArchiveInner::Rar(RarArchive::new(reader)?),
@@ -547,6 +557,21 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 }
             }
+            ArchiveInner::Uc2(archive) => {
+                if let Some(header) = archive.get_next_entry()? {
+                    Ok(Some(ArchiveEntry {
+                        name: header.name.clone(),
+                        compressed_size: header.compress_info.compressed_length as u64,
+                        original_size: header.original_size as u64,
+                        compression_method: format!("{:?}", header.compress_info.method),
+                        modified_time: Some(DosDateTime::new(header.dos_time)),
+                        crc: header.crc as u64,
+                        index: EntryIndex::Uc2(header),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
             ArchiveInner::Lha(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
                     Ok(Some(ArchiveEntry {
@@ -634,6 +659,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Sqz(archive), EntryIndex::Sqz(header)) => archive.read(header),
             (ArchiveInner::Z(archive, _), EntryIndex::Z) => archive.read(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.read(header),
+            (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.read(header),
             (ArchiveInner::Lha(archive), EntryIndex::Lha(header)) => archive.read(header),
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.read(header),
             (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.read(header),
@@ -686,6 +712,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Sqz(archive), EntryIndex::Sqz(header)) => archive.skip(header),
             (ArchiveInner::Z(archive, _), EntryIndex::Z) => archive.skip(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.skip(header),
+            (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.skip(header),
             (ArchiveInner::Lha(archive), EntryIndex::Lha(header)) => archive.skip(header),
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.skip(header),
             (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.skip(header),
