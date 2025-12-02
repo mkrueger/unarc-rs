@@ -13,6 +13,10 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 crc32fast = "1.4.2"
 crc16 = "0.4.0"
+chrono = "0.4.42"
 delharc = "0.6.1"
 salzweg = "0.1.4"
-bitstream-io = "2.6.0"
+bitstream-io = "4.9.0"
+zip = { version="6.0.0", features = ["legacy-zip"] }
+rar = "0.4.0"
+

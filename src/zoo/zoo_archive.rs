@@ -101,7 +101,13 @@ impl<T: Read + Seek> ZooArchieve<T> {
         }
         let mut header_bytes = [0; DIRENT_HEADER_SIZE];
         self.reader.read_exact(&mut header_bytes)?;
-        let current_local_file_header = DirectoryEntry::load_from(&header_bytes)?;
-        Ok(Some(current_local_file_header))
+        let entry = DirectoryEntry::load_from(&header_bytes)?;
+
+        // Mark as no more entries if this is the last one
+        if entry.next == 0 {
+            self.has_next = false;
+        }
+
+        Ok(Some(entry))
     }
 }

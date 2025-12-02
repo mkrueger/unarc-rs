@@ -18,6 +18,7 @@ impl From<u8> for CompressionMethod {
         }
     }
 }
+#[derive(Debug, Clone)]
 pub struct FileHeader {
     pub checksum: u8,
     pub compression_method: CompressionMethod,

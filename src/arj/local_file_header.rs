@@ -56,6 +56,7 @@ impl From<u8> for CompressionMethod {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct LocalFileHeader {
     pub archiver_version_number: u8,
     pub min_version_to_extract: u8,

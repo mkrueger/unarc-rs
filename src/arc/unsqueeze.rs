@@ -24,7 +24,7 @@ pub fn unsqueeze(mut buf: &[u8]) -> io::Result<Vec<u8>> {
     let mut i: i16 = 0;
     let mut decoded = Vec::new();
     loop {
-        i = dnode[i as usize][reader.read::<u8>(1)? as usize];
+        i = dnode[i as usize][reader.read::<1, u8>()? as usize];
         if i < 0 {
             i = -(i + 1);
             if i == SPEOF {

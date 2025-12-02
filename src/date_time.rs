@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DosDateTime(u32);
 
 impl DosDateTime {

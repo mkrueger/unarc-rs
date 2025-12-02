@@ -61,6 +61,7 @@ impl From<u8> for CompressionMethod {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct LocalFileHeader {
     pub compression_method: CompressionMethod,
     pub name: String,

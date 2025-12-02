@@ -7,7 +7,7 @@ pub fn decode_val(r: &mut BitReader<&[u8], BigEndian>, from: u32, to: u32) -> io
     let mut exp = 1 << from;
     let mut bit = from;
     while bit < to {
-        res = r.read::<u16>(1)?;
+        res = r.read::<1, u16>()?;
         if res == 0 {
             break;
         }
@@ -16,7 +16,7 @@ pub fn decode_val(r: &mut BitReader<&[u8], BigEndian>, from: u32, to: u32) -> io
         bit += 1;
     }
     if bit != 0 {
-        res = r.read::<u16>(bit)?;
+        res = r.read_var::<u16>(bit)?;
     }
     res += add;
     Ok(res)
@@ -30,7 +30,7 @@ pub fn decode_fastest(data: &[u8], original_size: usize) -> io::Result<Vec<u8>> 
     while res.len() < original_size {
         let len = decode_val(&mut r, 0, 7)?;
         if len == 0 {
-            let next_char = r.read::<u8>(8)?;
+            let next_char = r.read::<8, u8>()?;
             res.push(next_char);
         } else {
             let rep_count = len as usize + THRESHOLD - 1;

@@ -10,6 +10,7 @@ pub enum CompressionMethod {
 const SQ_SIG: [u8; 2] = [0x76, 0xFF];
 const SQ2_SIG: [u8; 2] = [0xFA, 0xFF];
 
+#[derive(Debug, Clone)]
 pub struct Header {
     pub name: String,
     pub checksum: u16,

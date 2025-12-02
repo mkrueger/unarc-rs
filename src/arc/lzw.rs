@@ -56,7 +56,7 @@ impl Lzw {
             }
         }
 
-        if let Ok(code) = reader.read::<u16>(self.n_bits as u32) {
+        if let Ok(code) = reader.read_var::<u16>(self.n_bits as u32) {
             Some(code as u16)
         } else {
             None

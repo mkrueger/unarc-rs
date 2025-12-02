@@ -12,6 +12,7 @@ pub enum CompressionMethod {
     Compressed,
 }
 
+#[derive(Debug, Clone)]
 pub struct Header {
     pub compression_method: CompressionMethod,
     pub version: u8,

@@ -41,6 +41,7 @@ impl From<u8> for CompressionMethod {
         }
     }
 }
+#[derive(Debug, Clone)]
 pub struct DirectoryEntry {
     //unsigned long zoo_tag;     /* tag -- redundancy check */
     //uchar type;                 /* type of directory entry.  always 1 for now */
