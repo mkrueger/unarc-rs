@@ -2,12 +2,12 @@ use std::io::{self, Read, Seek};
 
 use super::header::Header;
 
-pub struct SqArchieve<T: Read + Seek> {
+pub struct SqArchive<T: Read + Seek> {
     reader: T,
     read_header: bool,
 }
 
-impl<T: Read + Seek> SqArchieve<T> {
+impl<T: Read + Seek> SqArchive<T> {
     pub fn new(reader: T) -> io::Result<Self> {
         Ok(Self {
             reader,

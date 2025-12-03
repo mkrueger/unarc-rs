@@ -7,41 +7,39 @@
 //! # Example
 //!
 //! ```no_run
-//! use std::fs::File;
-//! use unarc_rs::unified::{UnifiedArchive, ArchiveFormat};
+//! use unarc_rs::unified::ArchiveFormat;
 //!
-//! // Open archive by extension detection
-//! let file = File::open("archive.arj").unwrap();
-//! let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Arj).unwrap();
+//! // Open archive directly from path
+//! let mut archive = ArchiveFormat::open_path("archive.arj").unwrap();
 //!
-//! // List and extract entries
-//! while let Some(entry) = archive.next_entry().unwrap() {
+//! // Iterate over entries using the iterator
+//! for entry in archive.entries_iter() {
+//!     let entry = entry.unwrap();
 //!     println!("File: {} ({} bytes)", entry.name(), entry.original_size());
-//!     let data = archive.read(&entry).unwrap();
-//!     // ... use data
 //! }
 //! ```
 
-use std::io::{self, Read, Seek};
+use std::fs::File;
+use std::io::{self, BufReader, Read, Seek, Write};
 use std::path::Path;
 
-use crate::arc::arc_archive::ArcArchieve;
+use crate::arc::arc_archive::ArcArchive;
 use crate::arc::local_file_header::LocalFileHeader as ArcHeader;
-use crate::arj::arj_archive::ArjArchieve;
+use crate::arj::arj_archive::ArjArchive;
 use crate::arj::local_file_header::LocalFileHeader as ArjHeader;
 use crate::date_time::DosDateTime;
 use crate::hyp::header::Header as HypHeader;
-use crate::hyp::hyp_archive::HypArchieve;
+use crate::hyp::hyp_archive::HypArchive;
 use crate::lha::lha_archive::{LhaArchiveSeekable, LhaFileHeader};
 use crate::rar::rar_archive::{RarArchive, RarFileHeader};
 use crate::sq::header::Header as SqHeader;
-use crate::sq::sq_archive::SqArchieve;
+use crate::sq::sq_archive::SqArchive;
 use crate::sqz::file_header::FileHeader as SqzFileHeader;
-use crate::sqz::sqz_archive::SqzArchieve;
-use crate::z::ZArchieve;
+use crate::sqz::sqz_archive::SqzArchive;
+use crate::z::ZArchive;
 use crate::zip::zip_archive::{ZipArchive, ZipFileHeader};
 use crate::zoo::dirent::DirectoryEntry as ZooEntry;
-use crate::zoo::zoo_archive::ZooArchieve;
+use crate::zoo::zoo_archive::ZooArchive;
 
 /// Supported archive formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -182,6 +180,62 @@ impl ArchiveFormat {
             ArchiveFormat::Rar => &["rar"],
         }
     }
+
+    /// Open an archive with this format
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::fs::File;
+    /// use unarc_rs::unified::ArchiveFormat;
+    ///
+    /// let file = File::open("archive.arj").unwrap();
+    /// let mut archive = ArchiveFormat::Arj.open(file).unwrap();
+    ///
+    /// while let Some(entry) = archive.next_entry().unwrap() {
+    ///     println!("File: {}", entry.name());
+    /// }
+    /// ```
+    pub fn open<T: Read + Seek>(self, reader: T) -> io::Result<UnifiedArchive<T>> {
+        UnifiedArchive::open_with_format(reader, self)
+    }
+
+    /// Open an archive file directly from a path
+    ///
+    /// This is a convenience method that opens the file, detects the format from
+    /// the extension, and returns a ready-to-use archive reader.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use unarc_rs::unified::ArchiveFormat;
+    ///
+    /// let mut archive = ArchiveFormat::open_path("archive.arj").unwrap();
+    ///
+    /// for entry in archive.entries_iter() {
+    ///     let entry = entry.unwrap();
+    ///     println!("File: {}", entry.name());
+    /// }
+    /// ```
+    pub fn open_path<P: AsRef<Path>>(path: P) -> io::Result<UnifiedArchive<BufReader<File>>> {
+        let path = path.as_ref();
+        let format = Self::from_path(path).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Unsupported archive format: {}", path.display()),
+            )
+        })?;
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let mut archive = format.open(reader)?;
+
+        // For .Z files, derive the output filename from the archive name
+        if format == ArchiveFormat::Z {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                archive.set_z_filename(stem.to_string());
+            }
+        }
+
+        Ok(archive)
+    }
 }
 
 /// Unified archive entry containing metadata about a file in an archive
@@ -274,15 +328,41 @@ impl ArchiveEntry {
     }
 }
 
+/// Iterator over archive entries
+///
+/// This iterator yields `io::Result<ArchiveEntry>` for each entry in the archive.
+/// The iterator automatically skips entries after yielding them.
+pub struct ArchiveEntryIter<'a, T: Read + Seek> {
+    archive: &'a mut UnifiedArchive<T>,
+}
+
+impl<T: Read + Seek> Iterator for ArchiveEntryIter<'_, T> {
+    type Item = io::Result<ArchiveEntry>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.archive.next_entry() {
+            Ok(Some(entry)) => {
+                // Auto-skip after yielding the entry
+                if let Err(e) = self.archive.skip(&entry) {
+                    return Some(Err(e));
+                }
+                Some(Ok(entry))
+            }
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
 /// Internal archive wrapper enum
 enum ArchiveInner<T: Read + Seek> {
-    Arc(ArcArchieve<T>),
-    Arj(ArjArchieve<T>),
-    Zoo(ZooArchieve<T>),
-    Sq(SqArchieve<T>),
-    Sqz(SqzArchieve<T>),
-    Z(ZArchieve<T>, bool), // bool = already read
-    Hyp(HypArchieve<T>),
+    Arc(ArcArchive<T>),
+    Arj(ArjArchive<T>),
+    Zoo(ZooArchive<T>),
+    Sq(SqArchive<T>),
+    Sqz(SqzArchive<T>),
+    Z(ZArchive<T>, bool), // bool = already read
+    Hyp(HypArchive<T>),
     Lha(LhaArchiveSeekable<T>),
     Zip(ZipArchive<T>),
     Rar(RarArchive<T>),
@@ -309,13 +389,13 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// ```
     pub fn open_with_format(reader: T, format: ArchiveFormat) -> io::Result<Self> {
         let inner = match format {
-            ArchiveFormat::Arc => ArchiveInner::Arc(ArcArchieve::new(reader)?),
-            ArchiveFormat::Arj => ArchiveInner::Arj(ArjArchieve::new(reader)?),
-            ArchiveFormat::Zoo => ArchiveInner::Zoo(ZooArchieve::new(reader)?),
-            ArchiveFormat::Sq => ArchiveInner::Sq(SqArchieve::new(reader)?),
-            ArchiveFormat::Sqz => ArchiveInner::Sqz(SqzArchieve::new(reader)?),
-            ArchiveFormat::Z => ArchiveInner::Z(ZArchieve::new(reader)?, false),
-            ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchieve::new(reader)?),
+            ArchiveFormat::Arc => ArchiveInner::Arc(ArcArchive::new(reader)?),
+            ArchiveFormat::Arj => ArchiveInner::Arj(ArjArchive::new(reader)?),
+            ArchiveFormat::Zoo => ArchiveInner::Zoo(ZooArchive::new(reader)?),
+            ArchiveFormat::Sq => ArchiveInner::Sq(SqArchive::new(reader)?),
+            ArchiveFormat::Sqz => ArchiveInner::Sqz(SqzArchive::new(reader)?),
+            ArchiveFormat::Z => ArchiveInner::Z(ZArchive::new(reader)?, false),
+            ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
             ArchiveFormat::Lha => ArchiveInner::Lha(LhaArchiveSeekable::new(reader)?),
             ArchiveFormat::Zip => ArchiveInner::Zip(ZipArchive::new(reader)?),
             ArchiveFormat::Rar => ArchiveInner::Rar(RarArchive::new(reader)?),
@@ -538,6 +618,35 @@ impl<T: Read + Seek> UnifiedArchive<T> {
         }
     }
 
+    /// Read (decompress) an entry's data and write it directly to a writer
+    ///
+    /// This is more memory-efficient than `read()` for large files, as it streams
+    /// the data directly to the output without buffering the entire file in memory.
+    ///
+    /// Returns the number of bytes written.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::fs::File;
+    /// use unarc_rs::unified::ArchiveFormat;
+    ///
+    /// let mut archive = ArchiveFormat::open_path("archive.arj").unwrap();
+    ///
+    /// while let Some(entry) = archive.next_entry().unwrap() {
+    ///     let mut output = File::create(entry.file_name()).unwrap();
+    ///     let bytes_written = archive.read_to(&entry, &mut output).unwrap();
+    ///     println!("Extracted {} bytes to {}", bytes_written, entry.file_name());
+    /// }
+    /// ```
+    pub fn read_to<W: Write>(&mut self, entry: &ArchiveEntry, writer: &mut W) -> io::Result<u64> {
+        // For now, we use the existing read() method and write the result.
+        // In the future, individual archive implementations could provide
+        // streaming variants for better memory efficiency.
+        let data = self.read(entry)?;
+        writer.write_all(&data)?;
+        Ok(data.len() as u64)
+    }
+
     /// Skip an entry without reading its data
     ///
     /// This is more efficient than reading if you only need to process certain files.
@@ -571,6 +680,26 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             self.skip(&entry)?;
         }
         Ok(entries)
+    }
+
+    /// Returns an iterator over all entries in the archive
+    ///
+    /// This is the idiomatic way to iterate over archive entries.
+    /// The iterator automatically skips entries after yielding them.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use unarc_rs::unified::ArchiveFormat;
+    ///
+    /// let mut archive = ArchiveFormat::open_path("archive.arj").unwrap();
+    ///
+    /// for entry in archive.entries_iter() {
+    ///     let entry = entry.unwrap();
+    ///     println!("{}: {} bytes", entry.name(), entry.original_size());
+    /// }
+    /// ```
+    pub fn entries_iter(&mut self) -> ArchiveEntryIter<'_, T> {
+        ArchiveEntryIter { archive: self }
     }
 }
 

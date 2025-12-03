@@ -1,14 +1,14 @@
 use std::fs;
 
-use unarc_rs::arc::arc_archive::ArcArchieve;
+use unarc_rs::arc::arc_archive::ArcArchive;
 
 fn main() {
     let path = std::env::args().nth(1).expect("no path given");
-    let mut archieve = ArcArchieve::new(fs::File::open(path).unwrap()).unwrap();
+    let mut archive = ArcArchive::new(fs::File::open(path).unwrap()).unwrap();
 
     println!("Name            Size            Compression  DateTime modified");
     println!("---------------------------------------------------");
-    while let Ok(Some(header)) = archieve.get_next_entry() {
+    while let Ok(Some(header)) = archive.get_next_entry() {
         println!(
             "{:<15}\t{:<7}\t\t{:?} {}-{}-{} {}:{}:{}",
             header.name,
@@ -21,6 +21,6 @@ fn main() {
             header.date_time.minute(),
             header.date_time.second(),
         );
-        archieve.skip(&header).unwrap();
+        archive.skip(&header).unwrap();
     }
 }

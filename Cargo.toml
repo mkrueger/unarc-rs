@@ -1,8 +1,8 @@
 [package]
 name = "unarc-rs"
-version = "0.4.3"
+version = "0.5.0"
 edition = "2021"
-description = "Library for handling & extracting ARJ, ARC, ZOO, SQ/SQ2/QQQ, SQZ, .Z and HYP archives."
+description = "Universal uncomrpession library for handling & extracting ZIP, RAR, LHZ, ARJ, ARC, ZOO, SQ/SQ2/QQQ, SQZ, .Z and HYP archives."
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 homepage = "https://github.com/mkrueger/unarc-rs"
 repository = "https://github.com/mkrueger/unarc-rs"
@@ -19,4 +19,3 @@ salzweg = "0.1.4"
 bitstream-io = "4.9.0"
 zip = { version="6.0.0", features = ["legacy-zip"] }
 rar = "0.4.0"
-

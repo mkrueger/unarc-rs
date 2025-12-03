@@ -1,6 +1,6 @@
 use std::io::{self, Read};
 mod lzw;
-pub struct ZArchieve<T: Read> {
+pub struct ZArchive<T: Read> {
     block_mode: bool,
     max_bits: u8,
     reader: T,
@@ -10,7 +10,7 @@ const ID: [u8; 2] = [0x1F, 0x9D];
 const BLOCK_MODE: u8 = 0x80;
 const BIT_MASK: u8 = 0x1f;
 
-impl<T: Read> ZArchieve<T> {
+impl<T: Read> ZArchive<T> {
     pub fn new(mut reader: T) -> io::Result<Self> {
         let mut header = [0; 3];
         reader.read_exact(&mut header)?;

@@ -5,7 +5,7 @@ use std::{
 
 use super::ExtendedHeader;
 
-pub struct Uc2Archieve<T: Read + Seek> {
+pub struct Uc2Archive<T: Read + Seek> {
     archive_len: u32,
     is_damage_protected: bool,
     reader: T,
@@ -15,7 +15,7 @@ const HEADER_SIZE: usize = 4 + 8 + 1;
 const ID: u32 = 0x1A324355; // UC2\x1A
 const AMAG: u32 = 0x01B2C3D4;
 
-impl<T: Read + Seek> Uc2Archieve<T> {
+impl<T: Read + Seek> Uc2Archive<T> {
     pub fn new(mut reader: T) -> io::Result<Self> {
         let (archive_len, is_damage_protected) = read_header(&mut reader)?;
         let x_head = ExtendedHeader::load_from(&mut reader)?;

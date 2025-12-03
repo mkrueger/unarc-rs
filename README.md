@@ -1,88 +1,151 @@
 # unarc-rs
-A library for rust which supports reading of ARC, ARJ, ZOO, SQ/SQ2/QQQ, SQZ, .Z (unix compress) and HYP files.
-This library was written for my bbs project as part of the file analyzation.
 
-This library contains outdated decompression algorithms. I didn't bother to write the compression for those. I don't need them for my project.
-Nor do I think they're worth implementing - at least for me. I'll take PRs.
+[![Crates.io](https://img.shields.io/crates/v/unarc-rs.svg)](https://crates.io/crates/unarc-rs)
+[![License](https://img.shields.io/crates/l/unarc-rs.svg)](https://github.com/mkrueger/unarc-rs)
 
-(In case I overlook  the issues/PRs here contact me on https://github.com/mkrueger/icy_board or per mail)
+A Rust library for reading and extracting various archive formats, with a focus on legacy/retro formats from the BBS era.
 
-## Out of scope
+## Supported Formats
 
-* LHA/LZH - there is the excellent https://crates.io/crates/delharc library for these formats. unarc-rs uses it for some compression methods.
-* ZIP - use https://crates.io/crates/zip - I added the legacy compression formats to this library
-* 7Z  - there is https://crates.io/crates/sevenz-rust seems to do it's things well
-* TAR - https://crates.io/crates/tar
-* RAR - there seems to be plenty of other libraries therefore I didn't look into that yet. But it's a format I need for my icy_board project and not yet looked into a specific library.
+| Format | Extensions | Compression Support |
+|--------|------------|---------------------|
+| **ARC** | `.arc` | Unpacked, Packed, Squeezed, Crunched, Squashed |
+| **ARJ** | `.arj` | Store, Method 1-4 |
+| **ZOO** | `.zoo` | Methods 0, 1, 2 |
+| **LHA/LZH** | `.lha`, `.lzh` | Full support via delharc |
+| **ZIP** | `.zip` | Full support via zip crate |
+| **RAR** | `.rar` | RAR5 format (listing + stored entries) |
+| **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Squeezed |
+| **SQZ** | `.sqz` | Store only |
+| **HYP** | `.hyp` | Store only |
+| **Z** | `.Z` | LZW (Unix compress) |
 
-## TODO
+## Installation
 
-As part of my bbs project this is finished for now - got a much bigger extend than planed. However there is always stuff to do:
+Add to your `Cargo.toml`:
 
-* Finish Squeeze It & Hyper compression methods 
-* UC2 - The source code of UtraCompressor II is released and available here: http://www.nicodevries.com/professional/
-  Not sure about the LGPL licensing.
-* Add more obscure formats like StuffIT, maybe Amiga ADF
+```toml
+[dependencies]
+unarc-rs = "0.4"
+```
 
-# Archive formats
+## Quick Start
 
-## arc
-Supported compression methods:
+### Using the Unified API (Recommended)
 
-* Unpacked
-* Packed
-* Squeezed
-* Crunched
-* Squashed
+```rust
+use unarc_rs::unified::ArchiveFormat;
 
-Not supported: Crushed & Distilled
+// Open archive directly from path
+let mut archive = ArchiveFormat::open_path("archive.arj")?;
 
-ARC was #1 in the BBS scene before "the patent thing" and ZIP overtook.
+// Iterate over entries
+for entry in archive.entries_iter() {
+    let entry = entry?;
+    println!("{}: {} bytes", entry.name(), entry.original_size());
+}
+```
 
-Currently it's enough for me - I tried to find a LZW implementation that works but they need some tweaks to work with ARC.
-Unfortunately the ARC implementations I found were GPL/LGPL and I want a MIT/Apache library so I can't just port these over.
+### Extracting Files
 
-## ARJ
+```rust
+use std::fs::File;
+use unarc_rs::unified::ArchiveFormat;
 
-Supported compression methods:
+let mut archive = ArchiveFormat::open_path("archive.zip")?;
 
-- STORE
-* Method 1-3
-* Method 4 (fastest)
+while let Some(entry) = archive.next_entry()? {
+    // Extract to a file
+    let mut output = File::create(entry.file_name())?;
+    archive.read_to(&entry, &mut output)?;
+}
+```
 
-Notes: That should cover all compressiom methods
+### Using a Specific Format
 
-This library was written for my bbs project as part of the file analyzation.
-ARJ was popular in the BBS scene in the 90' before RAR showed up.
+```rust
+use std::fs::File;
+use unarc_rs::unified::ArchiveFormat;
 
-All advanced ARJ features are not supported like multiple archives, password protection etc.
-The scope is limited to what I need. Feel free to add features you need.
-(In case I overlook  the issues/PRs here contact me on https://github.com/mkrueger/icy_board or per mail)
+let file = File::open("data.arj")?;
+let mut archive = ArchiveFormat::Arj.open(file)?;
 
-## Zoo
-Compression method 0, 1 & 2 are supported - should cover all methods.
+for entry in archive.entries_iter() {
+    let entry = entry?;
+    let data = archive.read(&entry)?;
+    // ... process data
+}
+```
 
+### Format Detection
 
-## SQ/SQ2
-I wrongly assumed that SQZ == SQ - after implementing squeeze for arc I recognized my error so I threw in the old SQ format even if it's 1 file only.
-I added support for the SQ2 format as well. These both don't have a real extension it's either Q as 2nd char or .SQ/.SQ2/.QQQ
-Both formats should be fully supported - there is only one compression method.
+```rust
+use std::path::Path;
+use unarc_rs::unified::{ArchiveFormat, is_supported_archive};
 
-## Store only
+// Check if a file is a supported archive
+if is_supported_archive(Path::new("file.arj")) {
+    println!("Supported!");
+}
 
-Here are the compression formats where the compression isn't supported (only 'store' methods). But archives can be opened & analyzed.
+// Get format from path
+if let Some(format) = ArchiveFormat::from_path(Path::new("archive.zoo")) {
+    println!("Format: {}", format.name()); // "ZOO"
+}
+```
 
-### SQZ - Squeeze It
-Only method 0 (Store) supported
-It's hard do find infos for that but I suppose they use Squeeze compression as ARC does in method 1
+## API Overview
 
-### HYP - Hyper
-Only method 0 (Store) supported
-It's hard do find infos for that - does anyone know which compression Hyper uses?
+### `ArchiveFormat`
+- `open_path(path)` - Open archive from file path (auto-detects format)
+- `open(reader)` - Open archive from any `Read + Seek`
+- `from_path(path)` / `from_extension(ext)` - Detect format
+- `name()` / `extension()` / `extensions()` - Format metadata
 
-### Z - Compress
-Only contains 1 file. It's a simple LZW compression. Need that as part of a mail exchange standard.
+### `UnifiedArchive`
+- `next_entry()` - Get next entry (returns `Option<ArchiveEntry>`)
+- `entries_iter()` - Iterator over all entries
+- `read(&entry)` - Read entry data into `Vec<u8>`
+- `read_to(&entry, &mut writer)` - Stream entry data to writer
+- `skip(&entry)` - Skip entry without reading
 
-# LICENSE
+### `ArchiveEntry`
+- `name()` / `file_name()` - Entry name (with/without path)
+- `original_size()` / `compressed_size()` - Sizes
+- `compression_method()` - Compression algorithm used
+- `compression_ratio()` - Compression efficiency
+- `modified_time()` - Modification timestamp
+- `crc()` - Checksum
 
-MIT or Apache-2.0 but I don't really care :)
+## Format-Specific Notes
+
+### ARC
+Classic DOS archiver. Crushed & Distilled methods are not supported.
+
+### ARJ
+Popular in the BBS scene in the 90s. Multi-volume and encrypted archives are not supported.
+
+### RAR
+Only RAR5 format is supported. Compressed entries require filesystem extraction via the `rar` crate.
+
+### LHA/LZH
+Full support via the excellent [delharc](https://crates.io/crates/delharc) crate.
+
+### ZIP
+Full support via the [zip](https://crates.io/crates/zip) crate with legacy compression methods enabled.
+
+## Out of Scope
+
+These formats have dedicated crates that handle them well:
+- **7Z** - Use [sevenz-rust](https://crates.io/crates/sevenz-rust)
+- **TAR** - Use [tar](https://crates.io/crates/tar)
+
+## Background
+
+This library was written for my [icy_board](https://github.com/mkrueger/icy_board) BBS project. It focuses on extraction (not creation) of legacy archive formats.
+
+Contributions welcome! Contact me on the icy_board repo or via email if I miss issues/PRs here.
+
+## License
+
+MIT OR Apache-2.0

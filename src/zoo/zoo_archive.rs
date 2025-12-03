@@ -9,13 +9,13 @@ use super::{
     zoo_header::{ZooHeader, ZOO_HEADER_SIZE},
 };
 
-pub struct ZooArchieve<T: Read + Seek> {
+pub struct ZooArchive<T: Read + Seek> {
     pub header: ZooHeader,
     has_next: bool,
     reader: T,
 }
 
-impl<T: Read + Seek> ZooArchieve<T> {
+impl<T: Read + Seek> ZooArchive<T> {
     pub fn new(mut reader: T) -> io::Result<Self> {
         let mut header_bytes = [0; ZOO_HEADER_SIZE];
         reader.read_exact(&mut header_bytes)?;

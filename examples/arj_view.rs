@@ -1,23 +1,23 @@
 use std::fs;
 
-use unarc_rs::arj::arj_archive::ArjArchieve;
+use unarc_rs::arj::arj_archive::ArjArchive;
 
 fn main() {
     let path = std::env::args().nth(1).expect("no path given");
-    let mut archieve = ArjArchieve::new(fs::File::open(path).unwrap()).unwrap();
+    let mut archive = ArjArchive::new(fs::File::open(path).unwrap()).unwrap();
     println!(
         "Arj file: {} created at {}-{}-{} {}:{}:{}",
-        archieve.get_name(),
-        archieve.get_creation_date_time().year(),
-        archieve.get_creation_date_time().month(),
-        archieve.get_creation_date_time().day(),
-        archieve.get_creation_date_time().hour(),
-        archieve.get_creation_date_time().minute(),
-        archieve.get_creation_date_time().second(),
+        archive.get_name(),
+        archive.get_creation_date_time().year(),
+        archive.get_creation_date_time().month(),
+        archive.get_creation_date_time().day(),
+        archive.get_creation_date_time().hour(),
+        archive.get_creation_date_time().minute(),
+        archive.get_creation_date_time().second(),
     );
     println!("Name            Size            Compression   DateTime modified");
     println!("---------------------------------------------------");
-    while let Ok(Some(header)) = archieve.get_next_entry() {
+    while let Ok(Some(header)) = archive.get_next_entry() {
         println!(
             "{:<15}\t{:<7}\t\t{:?}  {}-{}-{} {}:{}:{}",
             header.name,
@@ -30,6 +30,6 @@ fn main() {
             header.date_time_modified.minute(),
             header.date_time_modified.second(),
         );
-        archieve.skip(&header).unwrap();
+        archive.skip(&header).unwrap();
     }
 }

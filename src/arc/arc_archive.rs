@@ -8,11 +8,11 @@ use super::{
     rle::unpack_rle,
 };
 
-pub struct ArcArchieve<T: Read + Seek> {
+pub struct ArcArchive<T: Read + Seek> {
     reader: T,
 }
 
-impl<T: Read + Seek> ArcArchieve<T> {
+impl<T: Read + Seek> ArcArchive<T> {
     pub fn new(reader: T) -> io::Result<Self> {
         Ok(Self { reader })
     }

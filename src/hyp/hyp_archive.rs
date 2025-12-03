@@ -3,11 +3,11 @@ use std::io::{self, Read, Seek};
 use super::header::{CompressionMethod, Header, HEADER_SIZE};
 
 const HYP_ID: u8 = 0x1a;
-pub struct HypArchieve<T: Read + Seek> {
+pub struct HypArchive<T: Read + Seek> {
     reader: T,
 }
 
-impl<T: Read + Seek> HypArchieve<T> {
+impl<T: Read + Seek> HypArchive<T> {
     pub fn new(reader: T) -> io::Result<Self> {
         Ok(Self { reader })
     }

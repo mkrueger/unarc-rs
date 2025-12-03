@@ -10,12 +10,12 @@ use super::{
     main_header::{HostOS, MainHeader},
 };
 
-pub struct ArjArchieve<T: Read + Seek> {
+pub struct ArjArchive<T: Read + Seek> {
     reader: T,
     header: MainHeader,
 }
 
-impl<T: Read + Seek> ArjArchieve<T> {
+impl<T: Read + Seek> ArjArchive<T> {
     pub fn new(mut reader: T) -> io::Result<Self> {
         let header_bytes = read_header(&mut reader)?;
         if header_bytes.is_empty() {

@@ -4,13 +4,13 @@ use super::{
 };
 use std::io::{self, Read, Seek};
 
-pub struct SqzArchieve<T: Read + Seek> {
+pub struct SqzArchive<T: Read + Seek> {
     _header: SqzHeader,
     password_crc32: u32,
     reader: T,
 }
 
-impl<T: Read + Seek> SqzArchieve<T> {
+impl<T: Read + Seek> SqzArchive<T> {
     pub fn new(mut reader: T) -> io::Result<Self> {
         let mut header_bytes = [0; SQZ_HEADER_SIZE];
         reader.read_exact(&mut header_bytes)?;
