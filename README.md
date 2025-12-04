@@ -3,18 +3,19 @@
 [![Crates.io](https://img.shields.io/crates/v/unarc-rs.svg)](https://crates.io/crates/unarc-rs)
 [![License](https://img.shields.io/crates/l/unarc-rs.svg)](https://github.com/mkrueger/unarc-rs)
 
-A Rust library for reading and extracting various archive formats, with a focus on legacy/retro formats from the BBS era.
+A Rust library for reading and extracting various archive formats, with a focus on legacy/retro formats from the BBS era, plus modern formats like 7z.
 
 ## Supported Formats
 
 | Format | Extensions | Compression Support |
 |--------|------------|---------------------|
-| **ARC** | `.arc` | Unpacked, Packed, Squeezed, Crunched, Squashed |
-| **ARJ** | `.arj` | Store, Method 1-4 |
-| **ZOO** | `.zoo` | Methods 0, 1, 2 |
+| **7z** | `.7z` | Full support via sevenz-rust2 |
+| **ZIP** | `.zip` | Full support via zip crate (including legacy methods) |
+| **RAR** | `.rar` | Full support via unrar (RAR4 & RAR5) |
 | **LHA/LZH** | `.lha`, `.lzh` | Full support via delharc |
-| **ZIP** | `.zip` | Full support via zip crate |
-| **RAR** | `.rar` | RAR5 format (listing + stored entries) |
+| **ARJ** | `.arj` | Store, Method 1-4 |
+| **ARC** | `.arc` | Unpacked, Packed, Squeezed, Crunched, Squashed |
+| **ZOO** | `.zoo` | Methods 0, 1, 2 |
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Squeezed |
 | **SQZ** | `.sqz` | Store only |
 | **HYP** | `.hyp` | Store only |
@@ -26,7 +27,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unarc-rs = "0.4"
+unarc-rs = "0.5"
 ```
 
 ## Quick Start
@@ -97,12 +98,14 @@ if let Some(format) = ArchiveFormat::from_path(Path::new("archive.zoo")) {
 ## API Overview
 
 ### `ArchiveFormat`
+
 - `open_path(path)` - Open archive from file path (auto-detects format)
 - `open(reader)` - Open archive from any `Read + Seek`
 - `from_path(path)` / `from_extension(ext)` - Detect format
 - `name()` / `extension()` / `extensions()` - Format metadata
 
 ### `UnifiedArchive`
+
 - `next_entry()` - Get next entry (returns `Option<ArchiveEntry>`)
 - `entries_iter()` - Iterator over all entries
 - `read(&entry)` - Read entry data into `Vec<u8>`
@@ -110,6 +113,7 @@ if let Some(format) = ArchiveFormat::from_path(Path::new("archive.zoo")) {
 - `skip(&entry)` - Skip entry without reading
 
 ### `ArchiveEntry`
+
 - `name()` / `file_name()` - Entry name (with/without path)
 - `original_size()` / `compressed_size()` - Sizes
 - `compression_method()` - Compression algorithm used
@@ -119,25 +123,34 @@ if let Some(format) = ArchiveFormat::from_path(Path::new("archive.zoo")) {
 
 ## Format-Specific Notes
 
+### 7z
+
+Full support via the [sevenz-rust2](https://crates.io/crates/sevenz-rust2) crate. Supports LZMA, LZMA2, and other 7z compression methods.
+
+### ZIP
+
+Full support via the [zip](https://crates.io/crates/zip) crate with legacy compression methods enabled.
+
+### RAR
+
+Full support for RAR4 and RAR5 via the [unrar](https://crates.io/crates/unrar) crate (uses native unrar library).
+
+### LHA/LZH
+
+Full support via the excellent [delharc](https://crates.io/crates/delharc) crate.
+
 ### ARC
+
 Classic DOS archiver. Crushed & Distilled methods are not supported.
 
 ### ARJ
+
 Popular in the BBS scene in the 90s. Multi-volume and encrypted archives are not supported.
-
-### RAR
-Only RAR5 format is supported. Compressed entries require filesystem extraction via the `rar` crate.
-
-### LHA/LZH
-Full support via the excellent [delharc](https://crates.io/crates/delharc) crate.
-
-### ZIP
-Full support via the [zip](https://crates.io/crates/zip) crate with legacy compression methods enabled.
 
 ## Out of Scope
 
-These formats have dedicated crates that handle them well:
-- **7Z** - Use [sevenz-rust](https://crates.io/crates/sevenz-rust)
+Not on the todo list:
+
 - **TAR** - Use [tar](https://crates.io/crates/tar)
 
 ## Background

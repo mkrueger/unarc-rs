@@ -32,6 +32,7 @@ use crate::hyp::header::Header as HypHeader;
 use crate::hyp::hyp_archive::HypArchive;
 use crate::lha::lha_archive::{LhaArchiveSeekable, LhaFileHeader};
 use crate::rar::rar_archive::{RarArchive, RarFileHeader};
+use crate::sevenz::sevenz_archive::{SevenZArchive, SevenZFileHeader};
 use crate::sq::header::Header as SqHeader;
 use crate::sq::sq_archive::SqArchive;
 use crate::sqz::file_header::FileHeader as SqzFileHeader;
@@ -64,6 +65,8 @@ pub enum ArchiveFormat {
     Zip,
     /// RAR archive format (.rar) - RAR5 only
     Rar,
+    /// 7z archive format (.7z)
+    SevenZ,
     // Future formats:
 }
 
@@ -80,6 +83,7 @@ impl ArchiveFormat {
         ArchiveFormat::Lha,
         ArchiveFormat::Zip,
         ArchiveFormat::Rar,
+        ArchiveFormat::SevenZ,
     ];
 
     /// Try to detect the archive format from a file extension
@@ -105,6 +109,7 @@ impl ArchiveFormat {
             "lha" | "lzh" => Some(ArchiveFormat::Lha),
             "zip" => Some(ArchiveFormat::Zip),
             "rar" => Some(ArchiveFormat::Rar),
+            "7z" => Some(ArchiveFormat::SevenZ),
             _ => {
                 // Check for ?Q? pattern (e.g., .BQK, .CQM, .DQC)
                 let bytes = ext_lower.as_bytes();
@@ -146,6 +151,7 @@ impl ArchiveFormat {
             ArchiveFormat::Lha => "lha",
             ArchiveFormat::Zip => "zip",
             ArchiveFormat::Rar => "rar",
+            ArchiveFormat::SevenZ => "7z",
         }
     }
 
@@ -162,6 +168,7 @@ impl ArchiveFormat {
             ArchiveFormat::Lha => "LHA/LZH",
             ArchiveFormat::Zip => "ZIP",
             ArchiveFormat::Rar => "RAR",
+            ArchiveFormat::SevenZ => "7z",
         }
     }
 
@@ -178,6 +185,7 @@ impl ArchiveFormat {
             ArchiveFormat::Lha => &["lha", "lzh"],
             ArchiveFormat::Zip => &["zip"],
             ArchiveFormat::Rar => &["rar"],
+            ArchiveFormat::SevenZ => &["7z"],
         }
     }
 
@@ -271,6 +279,7 @@ enum EntryIndex {
     Lha(LhaFileHeader),
     Zip(ZipFileHeader),
     Rar(RarFileHeader),
+    SevenZ(SevenZFileHeader),
 }
 
 impl ArchiveEntry {
@@ -366,6 +375,7 @@ enum ArchiveInner<T: Read + Seek> {
     Lha(LhaArchiveSeekable<T>),
     Zip(ZipArchive<T>),
     Rar(RarArchive<T>),
+    SevenZ(SevenZArchive<T>),
 }
 
 /// Unified archive reader that provides a common interface for all supported formats
@@ -399,6 +409,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Lha => ArchiveInner::Lha(LhaArchiveSeekable::new(reader)?),
             ArchiveFormat::Zip => ArchiveInner::Zip(ZipArchive::new(reader)?),
             ArchiveFormat::Rar => ArchiveInner::Rar(RarArchive::new(reader)?),
+            ArchiveFormat::SevenZ => ArchiveInner::SevenZ(SevenZArchive::new(reader)?),
         };
 
         Ok(Self {
@@ -581,6 +592,21 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 }
             }
+            ArchiveInner::SevenZ(archive) => {
+                if let Some(header) = archive.get_next_entry()? {
+                    Ok(Some(ArchiveEntry {
+                        name: header.name.clone(),
+                        compressed_size: header.compressed_size,
+                        original_size: header.original_size,
+                        compression_method: header.compression_method.clone(),
+                        modified_time: header.date_time,
+                        crc: header.crc32 as u64,
+                        index: EntryIndex::SevenZ(header),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
 
@@ -611,6 +637,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Lha(archive), EntryIndex::Lha(header)) => archive.read(header),
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.read(header),
             (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.read(header),
+            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.read(header),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Entry does not belong to this archive",
@@ -662,6 +689,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Lha(archive), EntryIndex::Lha(header)) => archive.skip(header),
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.skip(header),
             (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.skip(header),
+            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.skip(header),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "Entry does not belong to this archive",
@@ -788,6 +816,10 @@ mod tests {
             ArchiveFormat::from_extension("rar"),
             Some(ArchiveFormat::Rar)
         );
+        assert_eq!(
+            ArchiveFormat::from_extension("7z"),
+            Some(ArchiveFormat::SevenZ)
+        );
     }
 
     #[test]
@@ -814,6 +846,7 @@ mod tests {
         assert!(is_supported_archive(Path::new("file.arc")));
         assert!(is_supported_archive(Path::new("file.zip")));
         assert!(is_supported_archive(Path::new("file.rar")));
+        assert!(is_supported_archive(Path::new("file.7z")));
         assert!(!is_supported_archive(Path::new("file.txt")));
     }
 
@@ -828,6 +861,7 @@ mod tests {
         assert!(exts.contains(&"Z"));
         assert!(exts.contains(&"hyp"));
         assert!(exts.contains(&"rar"));
+        assert!(exts.contains(&"7z"));
     }
 
     #[test]

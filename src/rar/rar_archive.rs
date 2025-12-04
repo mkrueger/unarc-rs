@@ -156,7 +156,8 @@ impl<T: Read + Seek> RarArchive<T> {
         }
 
         // Create temp directory for extraction
-        let temp_dir = std::env::temp_dir().join(format!("unarc_rar_extract_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("unarc_rar_extract_{}", std::process::id()));
         std::fs::create_dir_all(&temp_dir)?;
 
         // Open archive for processing

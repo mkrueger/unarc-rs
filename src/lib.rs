@@ -7,6 +7,7 @@ pub mod arj;
 pub mod hyp;
 pub mod lha;
 pub mod rar;
+pub mod sevenz;
 pub mod sq;
 pub mod sqz;
 pub mod z;
