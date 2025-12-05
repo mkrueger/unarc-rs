@@ -16,6 +16,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **ARJ** | `.arj` | Store, Method 1-4 |
 | **ARC** | `.arc` | Unpacked, Packed, Squeezed, Crunched, Squashed |
 | **ZOO** | `.zoo` | Methods 0, 1, 2 |
+| **UC2** | `.uc2` | Full LZ77+Huffman decompression |
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Squeezed |
 | **SQZ** | `.sqz` | Store only |
 | **HYP** | `.hyp` | Store only |
@@ -146,6 +147,10 @@ Classic DOS archiver. Crushed & Distilled methods are not supported.
 ### ARJ
 
 Popular in the BBS scene in the 90s. Multi-volume and encrypted archives are not supported.
+
+### UC2
+
+UltraCompressor II archive format. Supports decompression with SuperMaster dictionary and custom master entries.
 
 ## Out of Scope
 

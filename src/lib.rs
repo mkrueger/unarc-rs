@@ -10,9 +10,9 @@ pub mod rar;
 pub mod sevenz;
 pub mod sq;
 pub mod sqz;
+pub mod uc2;
 pub mod z;
 pub mod zip;
-//pub mod uc2;
 pub mod zoo;
 
 pub mod unified;

@@ -1,3 +1,9 @@
+Added the UC2 source code to docs.
+I got the permission to use it in unarc-rs 
+
+May the AI god be with it :).
+
+-------------
 From UC2 source code (SUPERMAN.H)
 
 Total (multivolume) archive format:

@@ -1,0 +1,1276 @@
+This software and accompanying documentation is protected by the
+Copyright laws of the Netherlands and also by International Treaty
+provisions.  Any use of this software in violation of Copyright law or
+the terms of this limited license will be prosecuted to the best of
+our ability. The conditions under which you may copy this software
+and documentation are clearly outlined below under "Distribution
+Restrictions" (paragraph E).
+
+AIP-NL hereby grants you a limited license to use this software for
+evaluation purposes for a period not to exceed thirty (30) days.  If
+you intend to continue using this software (and/or its documentation)
+after the thirty (30) day evaluation period, you MUST make a
+registration payment to AIP-NL.
+
+Using this software after the thirty (30) day evaluation period,
+without registering the software is a violation of the terms of this
+limited license.
+
+You shall not use, copy, emulate, clone, rent, lease, sell, modify,
+decompile, disassemble, otherwise reverse engineer, or transfer the
+licensed program, or any subset of the licensed program, except as
+provided for in this agreement.  Any such unauthorized use shall result in
+immediate and automatic termination of this license.
+
+All rights not expressly granted here are reserved by AIP-NL.
+
+===================================================================
+
+
+IFS=C:\OS2\HPFS.IFS /CACHE:128 /CRECL:4 /AUTOCHECK:D
+PROTSHELL=C:\OS2\PMSHELL.EXE
+SET USER_INI=C:\OS2\OS2.INI
+SET SYSTEM_INI=C:\OS2\OS2SYS.INI
+SET OS2_SHELL=C:\OS2\CMD.EXE
+SET AUTOSTART=PROGRAMS,TASKLIST,FOLDERS,CONNECTIONS
+SET RUNWORKPLACE=C:\OS2\PMSHELL.EXE
+SET COMSPEC=C:\OS2\CMD.EXE
+LIBPATH=.;C:\OS2\DLL;C:\OS2\MDOS;C:\;C:\OS2\APPS\DLL;C:\MMOS2\DLL
+SET PATH=C:\OS2;C:\OS2\SYSTEM;C:\OS2\MDOS\WINOS2;C:\OS2\INSTALL;C:\;C:\OS2\MDOS;C:\OS2\APPS;C:\MMOS2
+SET DPATH=C:\OS2;C:\OS2\SYSTEM;C:\OS2\MDOS\WINOS2;C:\OS2\INSTALL;C:\;C:\OS2\BITMAP;C:\OS2\MDOS;C:\OS2\APPS;C:\MMOS2;C:\MMOS2\INSTALL
+SET PROMPT=$i[$p]
+SET HELP=C:\OS2\HELP;C:\OS2\HELP\TUTORIAL;C:\MMOS2\HELP
+SET GLOSSARY=C:\OS2\HELP\GLOSS;
+SET IPF_KEYS=SBCS
+PRIORITY_DISK_IO=YES
+FILES=50
+DEVICE=C:\OS2\TESTCFG.SYS
+DEVICE=C:\OS2\DOS.SYS
+DEVICE=C:\OS2\PMDD.SYS
+BUFFERS=100
+IOPL=YES
+DISKCACHE=256,LW,AC:CD
+MAXWAIT=3
+MEMMAN=SWAP,PROTECT
+SWAPPATH=C:\OS2\SYSTEM  2048 4096
+BREAK=OFF
+THREADS=256
+PRINTMONBUFSIZE=134,134,134
+COUNTRY=001,C:\OS2\SYSTEM\COUNTRY.SYS
+SET KEYS=ON
+REM SET DELDIR=C:\DELETE,512;
+BASEDEV=PRINT01.SYS
+BASEDEV=IBM1FLPY.ADD
+BASEDEV=IBM1S506.ADD
+BASEDEV=OS2DASD.DMD
+SET BOOKSHELF=C:\OS2\BOOK;C:\MMOS2;
+SET EPMPATH=C:\OS2\APPS;
+REM DEVICE=C:\OS2\APPS\SASYNCDA.SYS
+PROTECTONLY=NO
+SHELL=C:\OS2\MDOS\COMMAND.COM C:\OS2\MDOS
+FCBS=16,8
+RMSIZE=640
+DEVICE=C:\OS2\MDOS\VEMM.SYS
+DEVICE=C:\OS2\MDOS\ANSI.SYS
+DOS=LOW,NOUMB
+DEVICE=C:\OS2\MDOS\VDPX.SYS
+DEVICE=C:\OS2\MDOS\VXMS.SYS /UMB
+DEVICE=C:\OS2\MDOS\VDPMI.SYS
+DEVICE=C:\OS2\MDOS\VCDROM.SYS
+DEVICE=C:\OS2\MDOS\VWIN.SYS
+REM DEVICE=C:\OS2\PCMCIA.SYS
+REM DEVICE=C:\OS2\MDOS\VPCMCIA.SYS
+BASEDEV=AHA152X.ADD
+DEVICE=C:\OS2\MDOS\VMOUSE.SYS
+DEVICE=C:\OS2\POINTDD.SYS
+DEVICE=C:\OS2\MOUSE.SYS
+DEVICE=C:\OS2\COM.SYS
+DEVICE=C:\OS2\MDOS\VCOM.SYS
+CODEPAGE=437,850
+DEVINFO=KBD,US,C:\OS2\KEYBOARD.DCP
+SET EPMPATH=C:\OS2\APPS
+SET FAXPM=C:\OS2\APPS
+SET VIO_SVGA=DEVICE(BVHVGA,BVHSVGA)
+SET MMBASE=C:\MMOS2;
+SET DSPPATH=C:\MMOS2\DSP;
+SET NCDEBUG=4000
+DEVICE=C:\MMOS2\SSMDD.SYS
+DEVICE=C:\MMOS2\ADSHDD.SYS
+DEVICE=C:\MMOS2\SMVDD.SYS
+DEVICE=C:\MMOS2\SBD2.SYS 1 7 220 4 /N:SBAud1$
+BASEDEV=LOCKDRV.FLT /UNIT:0,1,2,3,4
+struct ITEM_STRUCT{
+   char szName[13];             /* dir/file name                          */
+   unsigned long ulVersion;     /* file version number (0 == most recent) */
+   unsigned long ulFileSize;    /* file size                              */
+   int iDay, iMonth, iYear;     /* dir/file date                          */
+   int iHour, iMinute, iSecond; /* dir/file time                          */
+   char cArchive, cHidden,      /* dir/file attributes                    */
+	cSystem, cReadOnly;     /*                                        */
+   int iTags;                   /* number of tags                         */
+   char aszTag[100][100];       /* dir/file tags (e.g. OS/2 EA's)         */
+};
+
+int Exists (char *szFileName)
+{
+   /* use an attempt to open the file to determine its existance */
+   FILE *pfTmp = fopen (szFileName, "r");
+   if (pfTmp)
+   {
+      fclose (pfTmp);
+      return 1;
+   } else {
+      return 0;
+   }
+}
+1234567890-=_+{}|:"<>?~`ABCDEFGHIJKLMNOPQRSTUVWXYZ      1234567890qwertyuiop[]\asdfghjkl;'zxcvbnm,./abcdefghijklmnopqrstuvwxyz1234567890-=_+{}|:"<>?~`ABCDEFGHIJKLMNOPQRSTUVWXYZ      1234567890qwertyuiop
+#! rnews 1312
+Path: 
+From: mathematicians extended primality infinite 
+Newsgroups: comp.pictures.compression.general.german.french.dutch.american.crypt. number of following sequences digit opinion facilities 
+Subject: beginning length programmable anything interpreter comments anything 
+Message-ID: <document disadvantage descriptions rec.arts.movies 
+Date: GMT
+Reply-To: favorite question countenance 
+Organization: , San Diego
+Lines: comp.mail.header incompatible neighbours understand opportunity machine
+References: keyboard transmissions robotics cybernetics
+Sender: writes:
+>>>> ten thousand years
+In article <
+                            
+[disclaimer: 
+Summary: 
+Followup-To: 
+Distribution: , The Netherlands
+International Scotland Edinburg London Finland Delft Los Angelos Utrecht Helsinki Japanese English Spain Spanish Seattle Thailand Canada Denmark Aalborg France Desktop Publishing
+Keywords: none Latin, CWI, Amsterdam
+shell script experience expertsystems operating systems computer hardware software location Technology questions
+Expires: address  Laboratory for Foundation of Computing Science Department, University of project, 
+Reply-To: 
+~~ 
+ARPA:   jim%
+UUCP:   jim@
+JANET:  jim@
+, problem solution Switzerland Stockholm language 
+Telephone: Newcastle analog digital environment emacs rec.arts cut here 
+Internet: 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                                                        
+(w-flush (window fill-colour empty-ground 'utilities)
+
+(defvar field-properties           ((subfields)) 'aggregate-field-subfields
+
+(defun
+(declare
+  (special t)
+  (macros t))
+
+(eval-when (compile)
+  (load 'constants)
+
+(defstruct
+  (field                ; generic fields
+    (:displace t)
+    (:list)
+    (:conc-name)
+  (type 'generic-field)         ; type = generic
+  (zone (make-zone))            ; bounding zone
+  (properties (list nil))       ; empty property list
+)
+
+(solid pattern)
+background W-PATTERN-1))))
+ W-BACKGROUND))))
+ (pattern-zone-interior (field-zone f) 
+  (apply (concat '
+  (type (field-type 
+         (ncons f))) point-in-box-interior draw-labelled-button-field
+
+(defmacro  (let ((b (get (field-properties f) 'fill-ground))     
+
+(def lentenv
+expanded-bitmap-field-properties-ncols (divide-points draw-button-fields 
+
+ clear-zone-interior draw-field-background  subfields  selection  routines 
+ (equal (return (setq add-points vector subtract multiply division dimensions 
+(excluding boundaries) init-machine resulting sublist (mapcar '
+ second-level expression pairify alternating elements (nreverse manipulation 
+ (penultimate tail-recursive local fun -installed-fonts nil) resize-field 
+ toggle-field check-field alter-text make-point init-text-field 
+ input-text-field duplicate distribute radio-button-field otherwise 
+
+
+
+
+.pn 0
+.ls1
+.EQ
+delim $$
+.EN
+.ev1
+.ps-2
+.vs-2
+.ev
+.sp 5
+.ps+4
+.ce
+.ps-4
+.sp4
+.sp2
+.ce4
+.sp 8
+.in+1i
+.ll-1i
+.sp 3
+.in +0.5i
+.ti -0.5i
+.br
+.sh "Introduction"\fR \(em 
+.pp
+.ul
+.[
+.]
+.sh " \fI \&
+.FN
+.EF
+.LB
+.nf
+.ta \w'u +0.5i +\w'[0.23354, \(dg [0,\ 1)
+.fi
+.LE
+$code_value$Max_frequency$low$high$value$
+.ev2
+.nr x2 \w'symbol'/2README DOC. Wat te doen?
+========================
+
+Geef het UC commando om toegang tot het HELP systeem te krijgen. Zoeken op
+onderwerp is mogelijk.
+
+Dit document bevat een korte beschrijving van de bedoeling van de "Ultra
+Compressor"; wat algemene informatie die u moet weten; een algemeen overzicht
+van de UltraCompressor; een overzicht van alle bestanden die bij UC2_DIST.EXE
+horen en het doel daarvan, en als laatste een overzicht van het materiaal dat
+hoort bij verwante AIP produkten.
+
+Als u de "Algemene Informatie" gelezen hebt, kunt u desgewenst de rest van dit
+document overslaan.
+
+Wat is UltraCompressor 2 (UC)
+==============================
+
+UC is een archiver. Een archiver stelt u in staat om meerdere bestanden en
+zelfs complete directories/bomen op te slaan in een enkel bestand; het "ar-
+chief". UC gebruikt "data compressie" om dit archief zo klein mogelijk te
+maken, meestal veel kleiner dan de bestanden waren voor ze gearchiveerd werden.
+UC kan archieven ook SCHADE BESTENDIG maken, zodat alle bestanden in een
+archief beveiligd zijn, zelfs in geval van schijf fouten. (hier zijn grenzen
+aan)
+
+Algemene informatie
+====================
+
+Toen u UC2-DIST.EXE uitvoerde, deed u twee dingen:
+   -U bepaalde waar u UC in uw systeem wil hebben.
+   -U voegde (naar keuze) het pad waar UC zit toe aan uw 
+    AUTOEXEC.BAT.
+   
+
+(De mogelijkheid bestaat dat er na het toevoegen van het UC pad "Out of
+environment space" op uw scherm verschijnt. Om dit op te lossen moet u uw
+CONFIG.SYS shell regel, veranderen in SHELL=C: MSDOS COMMAND.COM /P /E:512
+[aangenomen dat dos in C; MSDOS staat] en/of uw DOS handleiding raadplegen.)
+
+Om meer over UC te weten te komen, hoeft u alleen het "UC" commando te geven.
+Alle documentatie is in leesbaar ASCII zodat het mogelijk is het uit te printen
+etc. Om bijvoorbeeld BASIC.DOC uit te printen, moet u het dos commando "COPY
+BASIC.DOC PRN". intypen. 
+
+UC IS NIET GRATIS. U moet ervoor betalen. Lees LICENCE.DOC voor informatie. UC
+is een "shareware"Qu'est ce qu'on peut faire.
+ entrer le systŠme AIDER
+Chercher au sujet etc. est possible.
+Ce document contient une brŠve description du but du "Ultra
+Compressor"; quelque information g‚n‚rale qui vous devez
+savoir; un r‚sum‚ de tous fichiers qui appartiennent … UC2_-
+DIST.EXE et leur but; et un r‚sum‚ du mat‚riel qui appartient
+… les produits contigu‰s de AIP-NL. Quand vous avez lu "l'in-
+formation g‚n‚ral" vous pouvez, quand vous voulez, passer sur
+plusieurs fichiers et mˆme des r‚pertoires complŠtes/arbres
+dans un seul fichier; "les archives". UC emploie "data com-
+pression" pour faire ces archives si bref comme possible,
+g‚n‚ralement plus bref qu'ils ‚taient avant qu'on les a entre-
+pos‚ dans les archives. UC est aussi capable de faire ces
+ mˆme en cas des d‚gƒts au
+disque magn‚tique. (dans les limites du possible)
+(C'est possible que "Out of environment space" apparait …
+votre ‚cran aprŠs ajouter le chemin d'UC. Pour r‚soudre cela
+vous devez changer votre CONFIG.SYS rŠgle d'interpr‚teur de
+commandes en SHELL=C: MSDOS COMMAND.COM /P /E:512 [… supposer
+que DOS est en C: MSDOS.], et/ou consultez votre notice expli-
+Pour apprendre plus d'UC, tous ce que vous devez faire est
+donner le commandement "UC". Toute documentation est en lisi-
+ble ASC11 de maniŠre que c'est possible de l'imprimer etc.
+Pour imprimer BASIC.DOC par exemple, vous devez taper … la
+machine le commandement de DOS "COPY BASIC.DOC PRN".
+UC n'est pas gratuit. Vous devez le payer. Lis LICENCE.DOC
+pour information. UC est un programme que vous pouvez trahir
+avant que vous l'achetez. En LICENCE.DOC vous trouvez aussi
+l'accord de licence de AIP-NL. Quand vous employez ce paquet
+am‚liorations vous pensez nous pouvons mettre en UC et  nos
+autres produits. Les programmes de AIP-NL sont toujours d‚ve-
+lopp‚s en collaboration avec les utilisateurs. Commentaire …
+les notices explicatives en g‚n‚ral, et … les notices explica-
+tives dans une certaine langue, nous appr‚cions aussi. Des
+suggestions originales sont r‚mun‚r‚es.
+ Bundesrepubliek Deutschland Familienname Vorname Alter Wohnort Adresse Mnchen Dsseldorf Oberhausen K”ln Hamburg 
+ mich das ist sehr gut Freundin Wie bitte wo wohnen Sie Halt! eins zwei fnf sieben neun zw”lf dreizehn sechsundzwanzig 
+ Welche Fragen kannst du stellen speichern richtig oder falsch Klassenlehrer Bonn Berlin Leverkusen Bremen Stuttgart Warum 
+ Jrgen Hans Dieter KarlHeinz eigentlich Dortmund Aachen Frankfurt Hannover Ruhrgebied Aussprache Postleitzahl Vater 
+ Mutter Geschwister der n„chtste Zug Hausfrau heiraten Ergebnisse Hauptstadt Schweiz ™sterreich Regierungssitz 
+ Schwimmen Zeihnen Tischtennis Die Mannschaft Mittwoch Donnerstag Samtag sonntags montag freitags der Winter Herbst 
+ Sommer Frhling Freunde das Alter gegnerisch L„ndern europ„ischen Natrlich m„nnlich weiblich s„chlich Polizei 
+ Umleitung ausrechend befriedigend berhaupt trotzdem versuchen Grundlage Vergleichstest CAD_Programme Seiten Programmierer 
+ meistgekaufte Verbesserungen Speicherkapazit„t Untersttzt schneller Festplatten Laufwerken geschwindigkeit Schalter 
+ ausfhrlichen Selbstverst„ndlich Prozessor Fertigung Protokoll Hilfestellung Benutzer Anwendung Einbaurahmen 3,5 Zoll 
+ Bildaufl”sung Steckerleiste Preis„nderungen Lieferm”glichkeit H„ndleranfragen Nadel-Drucker Sekunde abschaltbar Monitore 
+ Pr„zisionssockel F„higkeiten erforderlich Bodensee Extrema Wendepunkte Nullstellen schiefe Asymptoten Kurvendiskussion 
+ vielleicht Kickstart Skriptsprache kompatibel Merkmale Preis Bildkompression z.B. Sequenzerfunktionen Qualit„t Eing„nge 
+ Einsteckkarte Darstellung Profis ausgestattet Erflogreich Farbdruck eingebaute Papiereinzug Schriftarten Kombinierter 
+ Schubtraktor Textverarbeitung Durchgefhrter Spezialisten Entwicklung     .MODEL SMALL
+    ;    Registers modified 
+"bios.inc"
+$comm   macro   name,dist,size,count
+_BSS    segment word public 'BSS'
+_DATA   segment word public 'DATA'
+_s@     label   byte
+_TEXT   segment byte public 'CODE'
+_Transform     proc near
+        adc al,40h
+        add al,90h
+        add     ax,es:[bx]
+        add     bx,2
+    add      cx, dx
+    add     cx, ax
+    add     di, ax
+        add  dl,'0'
+        add  dl,'A'-'0'-10   ; Convert to A,B,C,D,E,F
+        add     eax,3614090360
+        add     eax,bp[ 0*4]
+        add     eax,ebx
+        add si,ax
+        and al,0Fh
+         and  dl,0fh
+        and     esi,edx
+    and     InpSta, ax
+        assume  cs:_TEXT,ds:DGROUP
+   BP      MOV     ES,BP      MOV     AH,50      MOV     BX,BP 
+  BP,CS      DEC     BP      MOV     ES,BP      SUB     DX,AX  
+ BX      PUSH    BX      MOV     AH,30      INT     21       
+    call    FileWrite
+    call    IntDivide C,ax,NumberOfValues
+    call    LoCase
+    call    ProcByte
+    call    Spaces
+    call    StoreTab
+    call    TabNext
+        cld
+        cli
+    cmp     al, 0
+    cmp     ax, 0
+        cmp     cx,0
+         cmp  dl,'9'
+    cmp     SpcCnt, 0
+        comm    dist name[size]:BYTE:count
+d@      label   byte
+d@w     label   word
+        daa
+        dec     ax
+        dec     di
+    dec     TabOff
+        dec     [byte es:di]
+    DEC     DX      INC     BP      ADD     BP,AX      INC    
+DGROUP  group   _DATA,_BSS
+        DOSSEG
+DX      PUSH    SI      PUSH    DI      PUSH    BP      PUSH   
+       end
+ES      PUSH    DS        XOR     DX,DX      POP     DS     
+ES,BP      POP     ES      PUSH    CS
+        EXTRN   _IntDivide:PROC
+        ifndef  ??version
+        in      al,dx
+        IN      AL,DX      INC     DH      INC     DI      INC 
+   inc     cx
+          inc     di
+        INC     SI      DEC     SP      MOV     SP,BP      POP
+include "imacros.mac" "dos.inc" "idos.mac" "ibios.mac"         
+   int     21h
+int  DOSINT
+        IRET
+         jbe  showhexdigit_showit
+    jc      filopw1           ;jump if error
+    je      stotab1
+    jmp     SHORT   parcmd1a
+    jnc     prolin6
+          jne     NoEqual
+    jnz     filfil1
+    jz       stospc1
+        lds     si, [StrAddress]
+          lds si,num
+    lea     bx, OutBlk
+    lea     di, LinBuf
+    lea     dx, Help
+    lea     si, LinBuf
+        les     bx,[bp+4]
+          les     di,var2
+        loop    AverageLoop
+        loop  HexLoop
+    mov     ah, 9
+        mov ah,al          ;save it
+         mov  ah,DOSPRINTCHAR
+    mov     al, [di-1]
+    mov     al, '?'
+    mov     al, ' '
+        mov al,ah
+          mov al,byteCount
+          mov     ax,@DATA
+        mov     ax,bx
+          mov     ax,es
+         mov  bh,bl
+         mov  bx,ax
+    mov     BYTE PTR [si], EOF
+          mov     ch,al
+        mov     cl, [byte es:di]
+          mov     cl,255
+          mov     cl,ah
+    mov     cx, dx
+    mov     di, si
+          mov     di,bx
+    mov     ds, ax
+    mov      dx, SpcCnt
+          mov dx,ds
+        mov     edi,ebx
+          mov     es:[bx],cl
+        mov     esi,ebx
+          mov     si,di
+    mov     SpcCnt, 0
+    mov     WORD PTR [bx], 1
+    mov     [bx+10], ax
+    mov     [bx+2], cx
+    mov     [bx+4], dx
+    mov     [bx+8], ax        ;save handle
+MOV     AX,BX      MOV     AX,F000      MOV     ES,AX      MOV
+NOP
+    not     ax
+        not     esi
+    or      ax, ax
+    or      cx, cx
+    or       dx, dx
+        or      edi,esi
+    or      InpSta, LAS_LET
+    pop     ax
+    pop     bx
+    pop     di
+    pop     ds
+    pop     dx
+    pop     es
+POP     DX      POP     CX      POP     BX      POP     AX
+POP     ES      POP     BP      POP     DI      POP     SI     
+       POPF
+        public  _draw_box
+     public    _Transform
+        public  name
+        push    ai
+    push    ax
+    push    bx
+    push    cx
+     push di
+    push    ds
+    push    dx
+     push si
+        push    WORD PTR [bp+8]
+        PUSH    AX      PUSH    BX      PUSH    CX      PUSH   
+       PUSHF
+          repe    cmpsb
+        RET
+        RETF      REPZ      MOVSB      INC     BP     MOV      
+     rol     eax,7
+        shl     di,1
+        shr al,1           ;extract high nibble
+   SI      MOV     DS,AX
+    stc
+        sti
+        STI
+    StoreSpc endp
+    stosb                   ;store
+        stosw
+    sub     cx, ax
+          sub     cx,di
+    sub     dx, dx
+    sub      TabOff, dx
+        test    al,1
+    test    InpSta, ax
+    test    Options, MAK_CAP
+        XCHG    AH,AL      NEG     AX      XCHG    AX,CX       
+         xor ah,ah
+        xor     al,al
+ XOR     DI,DI      POP     SS      MOV     SI,DIDEFINT A-Z
+DECLARE SUB 
+declare sub
+Player SetScreen Center ( GetInputs DoExplosion Results UpdateScores 
+DECLARE FUNCTION StartX, AS INTEGER
+declare function
+END TYPE
+end type
+'Constants
+CONST TRUE = -1
+CONST FALSE = NOT TRUE
+DIM SHARED 
+'Global Variables Mode Variables Color AS SINGLE
+ as single
+ INT(RND(1)
+  DEF SEG
+  KeyFlags = PEEK(1047)
+  IF AND OR XOR THEN
+  END IF
+  GOSUB InitVars
+END
+end if and or then
+data read sleep on error goto cls step call palette enseif screen timer randomize printloop until else
+return
+  DATA Restore RESTORE REDIM = FALSE
+  FOR i = 0 TO READ 
+    NEXT i
+  ELSE
+RETURN
+    CLS
+    LOCATE 10, 5
+    PRINT
+    END
+  RESUME NEXT
+  resume next i
+REM $STATIC
+FUNCTION PLAY "
+  DO
+  LOOP UNTIL TIMER
+END FUNCTION
+
+TYPE
+  CIRCLE(circle(LINE(line(paint(PAINT(SUNATTR
+  pset(PSET (SELECT CASE r
+  case 1
+  CASE 1
+  CASE 2 THEN PUT (OBJECTCOLOR TO 1 STEP -1
+  CASE ELSE
+    CALL CHR$(8) = MID$(STRING$(RIGHT$(STR$(SPACE$(VAL(LEFT$(LEN(UCASE$(CHR$(13)
+  WHILE INKEY$ <> "": WEND   'Clear keyboard buffer
+          BEEP
+  SCREEN Mode
+  SetScreen
+  VIEW PRINT 9 TO 24
+ PALETTE OBJECTCOLOR ELSEIF 
+  COLOR 7
+  J = 1
+    RANDOMIZE (TIMER)
+    SLEEP 1
+ (NOT CINT(PALETTE AS STRING * AS DOUBLE
+  ON ERROR GOTO OPEN FOR INPUT AS #1
+    CLOSE
+ CHR$(27)
+FIELD #1, head length finished      AS INTEGER
+    EXIT SUB
+ MKD$(0)
+ VARPTR(
+ VARSEG(
+MS-DOS QBasic
+LPRINT TAB
+LINE INPUT #1, 
+ CHR$(0) + = (currChoice + MaxChoice - 2) MOD MaxChoice + 1
+.Title
+.AType
+    CLOSE #2
+ DATE$ RESTORE colorTable(Y/N) STEP 2
+  POKE THEN END
+  WHILE NOT EOF(1)
+ "CON", "SCRN", "PRN", "COM1", "COM2" then end
+ data$ restore    Q       ] – N    Z  
+ ]  
+   
+ '  
+ G   O  
+   
+ '   7 	  ' 
+ 
+    F  F U œ N    8   8   8   8   8   8   8   8   8 	  8 
+  8   @   ! /            ÿ &     q 	 	                G             
+   
+   
+   
+   
+   
+   
+     	   
+          Gd                                   š     ™   ž                ð› @   á
+    á     á
+     á    á     á    á
+     á     PRINT_BLOCK ƒ      :    Q       ` – N   _   `   7     
+ 7  
+ <  < E 	 ( 7 
+ ( 7  ( 7  ( 7  = =  = L œ H   .   "   "   "   "   "   "    	   
+         /    ÿ        ÿ &     ñ 	                G                                	         Gd                                   š     ™   ž                n  €       4       žgw              ba 8fwfw                    ~     €fwÏfwÔfwÝfwæfwìfw÷fwüfwgwgwgwgwgwgw%gw+gw1gw6gw\  RADOX\TABLES\SAMPAPP\RESTTEMP.DB                                            Date Employee Customer State Home Group Year Total DOW # DOW Month # Month Vol Item # Quant Emp # Cust Price                                                                                                                                                                                                                                                                                                                                                                        ÿP                                                                                                                                   à`*ICROSOFT PIFEX ‡  q*INDOWS 386 3.0 h €d 2         Œ                                                                                     *INDOWS 286 3.0 ÿÿ       [windows]
+device=HP *aserJet 500+,HPPCL,LPT1.OS2
+load =
+run=
+Beep=yes
+Spooler=yes
+NullPort=None
+BorderWidth=3
+KeyboardSpeed=31
+CursorBlinkRate=530
+DoubleClickSpeed=452
+Programs=com exe bat pif
+Documents=
+DeviceNotSelectedTimeout=15
+TransmissionRetryTimeout=45
+swapdisk=
+MouseThreshold1=10
+MouseThreshold2=0
+MouseSpeed=0
+
+[Desktop]
+Pattern=(None)
+Wallpaper=(None)
+TileWallpaper=0
+GridGranularity=0
+IconSpacing=120
+
+[Extensions]
+
+[intl]
+sCountry=United States
+iCountry=1
+iDate=0
+iTime=0
+iTLZero=0
+iCurrency=0
+iCurrDigits=2
+iNegCurr=0
+iLzero=1
+iDigits=2
+iMeasure=1
+s1159=AM
+s2359=PM
+sCurrency=$
+sThousand=,
+sDecimal=.
+sDate=/
+sTime=:
+sList=,
+sShortDate=M/d/yy
+sLongDate=dddd, MMMM dd, yyyy
+
+[ports]
+; A line with [filename].PRN followed by an equal sign causes
+; [filename] to appear in the Control Panel's Printer Configuration dialog
+; box. A printer connected to [filename] directs its output into this file.
+LPT1.OS2=
+LPT2.OS2=
+FILE:=
+EPT:=
+LPT1:=
+LPT2:=
+LPT3:=
+COM1:=9600,n,8,1
+COM2:=9600,n,8,1
+COM3:=9600,n,8,1
+COM4:=9600,n,8,1
+
+[fonts]
+Roman (All res)=ROMAN.FON
+Script (All res)=SCRIPT.FON
+Modern (All res)=MODERN.FON
+Symbol 8,10,12,14,18,24 (VGA res)=SYMBOLE.FON
+Helv 8,10,12,14,18,24 (VGA res)=HELVE.FON
+Tms Rmn 8,10,12,14,18,24 (VGA res)=TMSRE.FON
+Courier 10,12,15 (VGA res)=COURE.FON
+
+[PSCRIPT]
+External Printers=6
+Printer1=40291760
+Printer2=40291730
+Printer3=40293930
+Printer4=40293960
+Printer5=IBM17521
+Printer6=IBM39521
+
+[PrinterPorts]
+HP *aserJet 500+=HPPCL,LPT1.OS2,45,15
+
+[devices]
+HP *aserJet 500+=HPPCL,LPT1.OS2
+
+[Clock]
+iFormat=1
+
+[Settings]
+Window=38 24 581 363 1
+SaveSettings=1
+MinOnRun=0
+AutoArrange=0
+
+[Groups]
+Group1=
+# include <windows.h>
+#include <windows.h>
+
+ ICON .ico
+
+STRINGTABLE
+BEGIN
+  IDS_NAME, "hapsnap"
+END
+
+MAIN DIALOG LOADONCALL MOVEABLE DISCARDABLE                                                           10,  19, 270, 123
+CAPTION "hapsnap"
+STYLE WS_BORDER | WS_CAPTION | WS_DLGFRAME | WS_SYSMENU | WS_GROUP | WS_VISIBLE | WS_POPUP
+BEGIN
+    CONTROL "Pattern:",     101,        "static",  SS_LEFT | WS_CHILD,                                 3,   7,  32,   7
+    CONTROL "",             102,        "edit",    ES_LEFT | WS_BORDER | WS_TABSTOP | WS_CHILD,       36,   5, 104,  12
+    CONTROL "Drives:",      103,        "static",  SS_LEFT | WS_CHILD,                                 3,  22,  28,   8
+    CONTROL "",             104,        "listbox", LBS_NOTIFY | WS_BORDER | WS_VSCROLL | WS_CHILD,     2,  41, 253,  81
+    CONTROL "#:    0",      105,        "static",  SS_RIGHT | WS_CHILD,                              216,  22,  50,   8
+    CONTROL "", 106, "static", SS_LEFT | WS_CHILD,  4,  31, 250,   9
+    CONTROL "Search",       107,        "button",  BS_DEFPUSHBUTTON | WS_TABSTOP | WS_CHILD,
+    CONTROL "Clear",        108,        "button",  BS_PUSHBUTTON | WS_TABSTOP | WS_CHILD,
+    CONTROL "1:",           110,        "button",  BS_AUTOCHECKBOX | WS_TABSTOP | WS_CHILD,
+END
+
+SQLHistory: Created Edited
+grant select on lookup to public
+/
+commit
+/
+declare
+select distinct for update 
+delete from 
+insert into demp values (
+update set 
+where 
+create table 
+create index 
+create view 
+group by 
+order by 
+alter table 
+alter database controlfile reuse maxlogfiles maxdatafiles maxinstances noarchivelog exclusive
+alter rollback segment 
+alter session set sql_trace true
+drop table number(char(date, not null,
+drop view 
+drop sequence 
+exception
+ cluster rollback to savepoint pctused pctfree size initrans maxtrans default storage backup dismount shared open noresetlogs close immediate
+audit whenever not successfull;
+abs(ceil(floor(mod(power(round(sign(sqrt(trunc(chr(initcap(lower(lpad(rpad(ltrim(rtrim(soundex(replace(substr(translate(upper(ascii(instr(length(avg(count(min(max(stddev(variance(decode(least(greatest(to_char(to_number(to_date(userenv(round(sysdate
+.currval.nextval.level.rowid
+union intersect minus prior increment by synonym character decimal long varchar double precision nomaxvalue nominvalue nocycle noorder modify constraint tablespace connect to identified by using '
+ user_users dba_tablespaces dba_data_files dba_segments sys.dual dba_free_space dba_users 
+GRANT SELECT ON LOOKUP TO PUBLIC
+/
+COMMIT
+/
+DECLARE 
+SELECT DISTINCT FOR UPDATE OF 
+DELETE FROM 
+INSERT INTO DEMP VALUES (7900,',',00);
+UPDATE SET 
+WHERE 
+CREATE TABLE 
+CREATE INDEX 
+CREATE VIEW SALES AS
+GROUP BY 
+ORDER BY 
+ALTER TABLE 
+ALTER DATABASE CONTROLFILE REUSE MAXLOGFILES MAXDATAFILES MAXINSTANCES NOARCHIVELOG EXCLUSIVE 
+ALTER ROLLBACK SEGMENT 
+ALTER SESSION SET SQL_TRACE TRUE
+DROP TABLE NUMBER(CHAR(DATE, NOT NULL,
+DROP VIEW 
+DROP SEQUENCE 
+CREATE SEQUENCE ORDID
+INCREMENT BY 1
+START WITH 622
+NOCACHE;
+EXCEPTION
+ CLUSTER ROLLBACK TO SAVEPOINT PCTUSED PCTFREE SIZE INITRANS MAXTRANS DEFAULT STORAGE BACKUP DISMOUNT SHARED OPEN NORESETLOGS CLOSE IMMEDIATE
+AUDIT WHENEVER NOT SUCCESSFULL;
+ABS(CEIL(FLOOR(MOD(POWER(ROUND(SIGN(SQRT(TRUNC(CHR(INITCAP(LOWER(UPPER(LPAD(RPAD(SOUNDEX(LTRIN(RTRIM(REPLACE(SUBSTR(TRANSLATE(ASCII(INSTR(LENGTH(AVG(COUNT(MIN(MAX(STDDEV(VARIANCE(DECODE(LEAST(GREATEST(TO_CHAR(TO_NUMBER(TO_DATE(USERENV(ROUND(SYSDATE
+.CURRVAL.NEXTVAL.LEVEL.ROWID
+UNION INTERSECT MINUS PRIOR INCREMENT BY SYNONYM CHARACTER DECIMAL LONG VARCHAR DOUBLE PRECISION NOMAXVALUE NOMINVALUE NOCYCLE NOORDER MODIFY CONSTRAINT TABLESPACE CONNECT TO IDENTIFIED BY USING '
+ USER_USERS DBA_TABLESPACES DBA_DATA_FILES DBA_SEGMENTS SYS.DUAL DBA_FREE_SPACE DBA_USERS 
+host echo "Building demonstration tables.  Please wait."
+set termout off
+set feedback off Common LISP Pascal batch files numeric updating decrementing incrementing DEBUG contents introduction predicates conditionals local global iterations technique quick reference 
+ pattern matching implementation arithmetic entering compatible methods and theory definitions adjacent successor predecessor edge Level computer failure evaluation nothing minus 
+ routine possible terminate simulation compare rounding up common resulting headerfile generation obsolete digital analog communications engineering blitter graphics linker women 
+ assembler compiler generate harddisk PC constants partial the attributes object-oriented disadvantage makefile syntax semantic overloading boundaries matrix exception spool only
+ information hiding conventions tree head interpreters static dynamic abstraction smalltalk Prolog declaration separate libraries hexadecimal binary octal statement executable 
+ scope volatile assignment unary preprocessor resolution starting signal wait ANSI ASCII machine essential dereferencing keywords solve special remove extract determine verify 
+ calculate feature history duplicate controller improvements polymorphic garbage collection raytracing organization edition languages classification sequential parallel serial 
+ vector program counter mainframes magnetic frequency networks distributed systems asynchronous transmission equivalent interrupts kernel Management semaphores demand questions 
+ loading interactive requirements hierarchical workstation identifier transformation differential generalize anti-aliasing Bresenham algorithm rotation surface perspective Huffman 
+ projection dimensions pattern displayed quality plotters complement difference business maintenance toolbox environment sliding dictionary Shannon-Fano bibliographic techniques 
+ leaves statistics decoding following Fibonacci concerning forever heuristics conclusions readable writable LempelZivStorer parent collections properties with from the pointer 
+ for the information representing instructions components formulas blocks users guide notepad ctrl backspace insert overwrite typeover asterisk semi-colon scientific calculator 
+ connector track sector heads physical device driver tested certified wordprocessing warning double sided automatic tracks per inch address miscellaneous appendices experiment the 
+ anything something description internal external 65535 4095 16384 32768 32767 0xFFFF versus windows gadgets requesters menus viewport joystick suicide handshaking bidirectional 
+ disclaimer DISCLAIMER transmit receive acknowledgement trademark thresholds overflow parity stopbits framing listing understand calendar help replace save move searching printing 
+ quit cut paste forward backward compatibility uppercase lowercase underlining punctuation manipulating warning failure truncated word_wrapped linesize pagesize heading numwidth 
+ unique primary secondary foreign Database Administrator concatenation composite key integrity constraint join column keyword logical expression precedence consistency glossary 
+ registration player participant emerald handicap you were he was she is they are I am have been them incorporated international this that if then than where what which with until 
+ TCP/IP SPX/IPX acquire security record tuple shadow 1,000,000 prototype shareware context configuration suitable LARGEINT credit card screen saver RS232 shortcut key profiling 
+ performance workbench paradigms structured hypercubes multitasking microprocessor EISA development embedded {*******************************************************}
+{                                                       }
+{       *urbo Pascal Version 6.0                        }
+{       *urbo Vision Unit                               }
+{                                                       }
+{       Copyright (c) 1990 International        }
+
+(*
+*)
+
+const
+  ('DefaultFont', 'TriplexFont', 'SmallFont', 'SansSerifFont', 'GothicFont');
+  ('SolidLn', 'DottedLn', 'CenterLn', 'DashedLn', 'UserBitLn');
+  ('EmptyFill', 'SolidFill', 'LineFill', 'LtBkSlashFill', 'XHatchFill', 'InterleaveFill', 'WideDotFill', 'CloseDotFill');
+ FillStyles TextDirect conditional ] of string[8] = ('HorizDir', 'VertDir');
+ = packed array[1..] = ('LeftText', 'CenterText', 'RightText');
+'BottomText', 'TopText'] of Char;
+
+type
+
+var
+  GraphDriver : integer;
+  MaxX, MaxY  : word;
+  ErrorCode   : integer;
+  OldExitProc : Pointer;
+{$F+}
+
+PROCEDURE = ARRAY[1.. := false;
+procedure Initialize;
+begin
+BEGIN
+ InGraphicsMode : boolean; { DirectVideo repeat until REPEAT UNTIL INTEGER;
+BOOLEAN;
+REAL;
+TYPE VAR CONST := FALSE;
+FUNCTION ] OF CHAR;
+{$IFDEF Use := true;
+{$ELSE}
+{$ENDIF}
+InitGraph(GraphDriver, GraphMode, PathToDriver);
+Randomize;
+end; { 
+function DrawBorder;
+{ ViewPort : ViewPortType;
+SetLineStyle(GetViewSettings(with ViewPort do
+WITHRectangle(SetViewPort(OutTextXY(SetTextStyle(SetTextJustify(FullPort;
+LineSettingsType;
+FillSettingsType;
+TextSettingsType;
+  IF <> NIL THEN ELSE
+    if WriteOut('do then
+    else
+ Right := Left := Depth := trunc(Trunc(OutTextXY(Round(round(Cos(Sin(Circle(MoveTo(LineTo(Points[KeyPressed;
+while (not Width, Height Ellipse(FreeMem(Rectangle(Writeln('Write('unit App;
+WHILE (NOT width, height writeln('write(':= TRUE;
+{$F+,O+,S-,X+,D-}
+ index BlackWhite TApplication CBackground = nil;
+implementation
+  WriteLine(Dispose(HandleEvent(Message(Boolean;
+  Readln;
+  readln;
+virtual;
+constructor destructor Dialogs record MenuBar LongInt;
+end.
+QuickSort(assembler;
+ScrollBar, PutPeerViewPtr SetCmdState(RegisterType(NumInputLine.FileNameCheckCollide(ReversesbHandleKeyboardShowTerminalWindow;
+
+uses
+  Dos, Objects, Drivers, Memory, Views, Menus, Dialogs, StdDlg, MsgBox, App,
+  DemoCmds, Gadgets, Puzzle, Calendar, AsciiTab, Calc, FViewer, HelpFile,
+  DemoHelp, ColorSel, MouseDlg, Overlay;
+  Screen, Bricks;
+  Dos, Crt, Graph;
+  TCUtil, TCLStr, TCScreen, TCHash;
+
+USES
+  DOS, CRT, GRAPH;
+  dos, crt, graph;
+
+ cmRetrieveDesktop cmCalculator ClearEvent(Event);
+ PProtectedStream HelpCounter Offset Length ReadParagraph(TClockView = PSortedCollection;
+FOR i := 1 TO RECORD
+for i := 1 to NewSubMenu(WriteCard(NewItem('R.Assign(^.Next; <> nil  NumLines MagicHeader = 
+  NodePtr = ^Node;
+  Node = record
+    Item: PointPtr;
+    Next: NodePtr;
+  end;
+
+RootNode List.Item HeapStatus(' Modified Clicked MouseDown ovrNotFound := Board[Y, X];
+ := MemAlloc(SizeOf( and Directory Control := False;
+  CellTypes = (ClEmpty, ClValue, ClText, ClFormula, ClRepeat);
+  Justification = (JLeft, JCenter, JRight);
+  CellHashTable Empty := True;
+ LegalValue Overwrite Found  Total  FirstItem result value label 99;
+     Exit;
+ GetQuit or (S <> '')   ClrEOLXY(System.NewLen < OldLenprogram interval(input,output);
+{dataflow simulator for real interval arithmetic}
+{number of maxint;
+        Sreal  = record
+(finite,infinite)cardinality mantissa exponent hulp help Shift Dummy (not eof) mod MOD DIV div MAXINT PROGRAM (INPUT,OUTPUT);
+END.
+  END;README.DOC: This document describes how to get started, features etc.
+
+JUST GIVE THE UC COMMAND TO GET ACCESS TO THE HELP SYSTEM!
+
+This document describes the purpose of "UltraCompressor II".
+
+UC IS NOT A FREE PRODUCT. You have to pay for it if you use it. Read
+LICENSE.DOC for more information. UC is a "try-before-you-buy" program
+so you can try it before you buy it. LICENSE.DOC also contains the AIP
+licence agreement. By using this package, you are agreeing to be bound
+by the terms of this agreement.
+
+This document consists of the following paragraphs:
+
+       - A. What is Ultra Compressor II
+       - B. Support, feedback
+       - C. Ultra Compressor main feature overview
+       - D. Related products
+       - E. Manual overview
+       - F. Included files
+
+To jump to a certain paragraph, press the corresponding letter. To
+jump to a specific document/chapter, press the digit. See paragraph E
+for an overview of all documentation.
+
+
+1.A WHAT IS ULTRA COMPRESSOR II (UC).
+=====================================
+
+UltraCompressor II (UC) from Ad Infinitum Programs (AIP) is an
+archiver. An archiver is a file handling and compression utility. It
+will make most of your files significantly smaller and it can keep
+related files together. When you need the files, you can decompress
+them with the same UC utility. UC is very easy to use, thanks to its
+simple user interface and has support for all archiving needs
+
+An archive behaves just like a floppy disk. It has a directory
+structure, you can copy from the archive with extraction and copy to
+the archive by adding. It is also possible to delete files from the
+archive.
+
+UC can also make such an archive DAMAGE PROTECTED, so ALL files in the
+archive are safe, even if there are disk errors (within reasonable
+limits). With UC an archive can contain multiple versions of the same
+file.
+
+With a clear manual and a limited number of commands, UC will turn out
+to be very easy to use. Most of the options are configurable, so the
+commands are ve
+NAME
+
+DESCRIPTION 'adad'
+
+CODE         PRELOAD MOVEABLE DISCARDABLE
+DATA         PRELOAD MOVEABLE MULTIPLE
+
+EXETYPE      WINDOWS
+
+SEGMENTS
+       _RES  PRELOAD MOVEABLE DISCARDABLE
+
+HEAPSIZE     128
+STACKSIZE    8192
+
+EXPORTS
+             TstAppWndProc
+             About
+             DDEClientWndProc
+
+NAME           DLLDEMO
+DESCRIPTION    'C++ Windows DLL Demo'
+EXETYPE        WINDOWS
+CODE           PRELOAD MOVEABLE
+DATA           PRELOAD MOVEABLE MULTIPLE
+HEAPSIZE       1024
+STACKSIZE      5120
+CC = BCC
+AS = TASM 
+RC = RC
+.asm.obj:
+      $(AS) $(AFLAGS) $&.asm
+.c.exe:
+      $(CC) $(CFLAGS) $&.c
+.c.obj:
+      $(CC) $(CFLAGS) /c $&.c
+.cpp.obj:
+      $(CC) $(CPPFLAGS) /c $&.cpp
+.rc.res:
+      $(RC) $(RFLAGS) /r $&
+.SUFFIXES: .exe .obj .asm .c .res .rc 
+AUTODEPEND
+#		*Translator Definitions*
+#		*Implicit Rules*
+.c.obj:
+  $(CC) -c {$< }
+.cpp.obj:
+  $(CC) -c {$< }
+#		*List Macros*
+EXE_dependencies =  \
+ genprime.obj \
+ init.obj \
+ mathsup.obj \
+ basics.obj \
+ random.obj \
+ md5p.obj \
+ fprims.obj
+#		*Explicit Rules*
+genprime.exe: genprime.cfg $(EXE_dependencies)
+		# no map file
+#		*Individual File Dependencies*
+genprime.obj: genprime.cfg genprime.c 
+random.obj: genprime.cfg random.c 
+#		*Compiler Configuration File*
+genprime.cfg: genprime.mak
+  copy &&|
+-f-
+-C
+-w+
+-N
+-v
+-G
+-O
+-Og
+-Oe
+-Om
+-Ov
+-Ol
+-Ob
+-Op
+-Oi
+-Z
+-k-
+-vi-
+(C) Copyright 1991 by International
+
+// Example Program
+*/
+#include <stdio.h>
+#include <stdlib.h>
+ include files initialise goto global variables <errno.h> <float.h>
+ <object.h> <assert.h> <graphics.h>
+ <collect.h> <math.h> <conio.h>
+ <abstarry.h> <io.h> <dos.h> <dir.h> <windows.h>
+ <alloc.h> <dde.h> <string.h>
+ <time.h> <bios.h> <ctype.h>
+ <clstypes.h> <contain.h>
+#include <iostream.h>
+#error 
+#asm
+#endasm
+#define NR_
+#define MAX 
+void main(void)
+{
+(argc, argv)
+{
+int argc, char *argv[])
+{
+  int i;
+  FILE *fp;
+  for(i = 0;i <;i++)
+  for(;;)
+  printf("  float  scanf("%d",&,NULL);
+  getch();
+  detectgraph(&g_driver, &g_mode);
+  initgraph(&g_driver, &g_mode, "..\\bgi");
+  wide = (int)((getmaxx()) / ((ARRAYMAX * 2 ) + 1));
+  bottom = getmaxy() - 20;
+  return;
+int DoWMCommand(WORD wParam);
+void DoLButtonDown(HWND hWnd,LONG lParam);
+UpdateWindow(DoLButtonUp(DoMouseMove(RECTANGLE:
+long FAR PASCAL function Background character delay(total;
+struct 
+typedef struct WS_OVERLAPPEDWINDOW ELLIPSE:
+  char *str;
+  char str[ p->next;
+  int counter;
+  while (1)
+  while(1)
+  return 0;
+  switch(
+  case 
+  break;
+  continue;
+  default:
+static left = top = total = min(max(parameters wclass
+  return 1;
+typedef unsigned int  WORD;
+typedef unsigned char BYTE;
+typedef unsigned long DWORD;
+extern char *tmp WM_DDE_FIRST, GWW_HINSTANCE | CS_HREDRAW | CS_VREDRAW;
+hInstancehCursor CW_USEDEFAULT,  if (Execute(Command
+  int len;
+GlobalUnlock(GlobalAlloc(GMEM_MOVEABLE, WM_QUEYENDSESSION:
+WM_DDE_FIRST,WS_CAPTION |
+ WS_SYSMENU |
+ WS_MINIMIZEBOX,
+  time_t t1;
+  time(&t1);
+  do
+union {
+ lfHeight lfWidth lfCharSet message = FALSE;
+cprintf("sprintf("UpdateWindow(UnlockResource(FreeResource(!CreateDialogIndirect(
+#pragma argsused
+#ifdef _Cdecl
+#ifndef 
+#else
+#endif
+#undef _FARFUNC far
+ || && += -= != == >> << <<= >>= ' ' " " "\n";
+__cplusplus
+  bioskey(0);
+_HEAPEMPTY_HEAPOK_FREEENTRY_USEDENTRY_HEAPEND_HEAPCORRUPT_BADNODE_BADVALUE_STDDEF_PTRDIFF_T_PTRDIFF_T
+*_Cdecl calloc(free(realloc(brk(sbrk(heapcheck(coreleft(farmalloc(  friend bcd 
+#pragma option -Vo-
+#pragma inline
+abs(acos(acos(asin(atan(cosh(exp(log(log10(pow(sinh(sqrt(tanh(operator+(const  return *this;
+private:
+protected:
+enum LASTMODECOLORS {
+    BLACK,    BLUE,    GREEN,    CYAN,    RED,    MAGENTA,    BROWN,    LIGHTGRAY,    DARKGRAY,    LIGHTBLUE,    LIGHTGREEN,    LIGHTCYAN,    LIGHTRED,    LIGHTMAGENTA,    YELLOW,    WHITE
+clreol(clrscr(gotoxy(wherex(wherey(getch(getche(kbhit(putch(ungetch(malloc(sizeof(
+class : public virtual 
+inline void isalnum(isalpha(isascii(iscntrl(isdigit(isgraph(islower(isprint(ispunct(isspace(isupper(isxdigit(tolower(toupper(
+extern int errno;
+hourminutesecondhsecondsleep(_EPSILONgetpixel(moveto(_CLASSDEF(memcpy(read(ostream(istream(ceil(ldexp(memchr(memcmp(memcpy(memmove(memset(set_new_handler(new(abort( SEEK_CUR SEEK_END SEEK_SET stdin stdout stderr fclose(fgetc(fopen(fputc(fread(fscanf(fseek(ftell(fwrite(feof(getchar(putchar(atof(atoi(atol(getenv(rand(system(randomize();
+strcat(strchr(strcmp(strcpy(strcspn(strlen(strncat(strncmp(strncpy(strrchr(strpbrk(strstr(time(
+optionS*InBuffer,*OutBufferwcHdumpClass.lp
+typedef struct scrollkeys
+SCROLLKEYS key2scroll [] =
+VK_HOME,WM_COMMAND,IDM_HOME,VK_END,WM_VSCROLL,SB_BOTTOM,VK_PRIOR,SB_PAGEUP,VK_NEXT,SB_PAGEDOWN,VK_UP,SB_LINEUP,VK_DOWN,SB_LINEDOWN,VK_LEFT,WM_HSCROLL,SB_PAGEUP,VK_RIGHT,SB_PAGEDOWN};
+RegisterClass(GetInstanceData(CreateWindow(cursfont.lfSelectObject(getcwd(curpath,setmode( - 'A';
+   printf("Hello, world\n");
+::AbstractArray::ArrayIterator::Point::HashTable::Arc::Circle::Sortable::Queue::Error::Location::GMessage::String::Definition::Container::DoubleList::Stack::SortedArray::Set::Object::BaseTime::ListElement::ListIterator::BaseDate::FilesByName::FileData::DoubleListElement::Directory::Deque::Dictionary::DoubleListIterator::ContainerIterator::Collection::Class::Bag::Array::Association::The following symbols control inclusion of various parts of this file:
+WINVERversion numberNOKERNEL APIsNOUSERNOSOUNDNOCOMMNODRIVERSNOMINMAXNOLOGERRORNOPROFILERNOLFILEIOPENFILENORESOURCENOATOMNOLANGUAGENOLSTRINGNODBCSNOKEYBOARDINFONOGDICAPMASKSNOCOLORNOGDIOBJNODRAWTEXTNOTEXTMETRIC
+NOSCALABLEFONTNOBITMAPNORASTEROPSNOMETAFILENOSYSMETRICSNOSYSTEMPARAMSINFONOMSGNOWINSTYLESNOWINOFFSETSNOSHOWWINDOWPOSNOVIRTUALKEYCODESNOKEYSTATESNOWHNOMENUSNOSCROLLNOCLIPBOARDNOICONSNOMBNOSYSCOMMANDSNOMDINOCTLMGRNOWINMESSAGESNOHELP
+SELECTORFIELDOFFSETDECLARE_HANDLE32GetVersionGetFreeSpaceGetCurrentPDBGetWindowsDirectoryGetSystemDirectoryGetFreeSystemResourcesGFSR_SYSTEMRESOURCES0x0000GFSR_GDIRESOURCES0x0001GFSR_USERRESOURCES0x0002GetWinFlags
+WF_PMODEWF_CPU286WF_CPU3860x0004WF_CPU486WF_STANDARDWF_WIN286WF_ENHANCEDWF_WIN386WF_CPU086WF_CPU186WF_LARGEFRAMEWF_SMALLFRAMEWF_80x87WF_PAGINGWF_WLO
+ GetDOSEnvironmentGetCurrentTimeGetTickCountGetTimerResolutionNOLOGERRORLogErrorLogParamErrorLogParamError
+ERR_WARNINGERR_PARAMERR_SIZE_MASKERR_BYTERR_WORDERR_DWORDERR_BAD_VALUERR_BAD_FLAGSERR_BAD_INDEXERR_BAD_DVALUERR_BAD_DFLAGSERR_BAD_DINDEXERR_BAD_PTRERR_BAD_FUNC_PTRERR_BAD_SELECTORERR_BAD_STRING_PTRERR_BAD_HANDLERR_BAD_HINSTANCERR_BAD_HMODULE
+ERR_BAD_GLOBAL_HANDLERR_BAD_LOCAL_HANDLERR_BAD_ATOMERR_BAD_HFILERR_BAD_HWNDERR_BAD_HMENUERR_BAD_HCURSORERR_BAD_HICONERR_BAD_HDWPERR_BAD_CIDERR_BAD_HDRVRERR_BAD_COORDSERR_BAD_GDI_OBJECTERR_BAD_HDCERR_BAD_HPENERR_BAD_HFONTERR_BAD_HBRUSH
+ERR_BAD_HBITMAPERR_BAD_HRGNERR_BAD_HPALETTERR_BAD_HMETAFILERR_GALLOCERR_GREALLOCERR_GLOCKERR_LALLOCERR_LREALLOCERR_LLOCKERR_ALLOCRESERR_LOCKRESERR_LOADMODULERR_CREATEDLGERR_CREATEDLG2ERR_REGISTERCLASSERR_DCBUSYERR_CREATEWNDERR_STRUCEXTRA
+ERR_LOADSTRERR_LOADMENUERR_NESTEDBEGINPAINTERR_BADINDEXERR_CREATEMENUERR_CREATEDCERR_CREATEMETAERR_DELOBJSELECTEDERR_SELBITMAP
+dwOptionsdwFilterachAllocModule[8]dwAllocBreakdwAllocCountWINDEBUGINFOGetWinDebugInfoSetWinDebugInfoDebugOutputWDI_OPTIONSWDI_FILTERWDI_ALLOCBREAKDBO_CHECKHEAPDBO_BUFFERFILLDBO_DISABLEGPTRAPPINGDBO_CHECKFREEDBO_TRACEBREAKDBO_WARNINGBREAKDBO_NOERRORBREAK
+DBO_NOFATALBREAKDBO_INT3BREAKDBF_TRACEDBF_WARNINGDBF_ERRORDBF_FATALDBF_KERNELDBF_KRN_MEMMANDBF_KRN_LOADMODULEDBF_KRN_SEGMENTLOADDBF_USERDBF_GDIDBF_MMSYSTEMDBF_PENWINDBF_APPLICATIONDBF_DRIVERFatalExitWindowsExecFatalAppExitWindowsEW_RESTARTWINDOWS
+EW_REBOOTSYSTEMDebugBreakOutputDebugStringSEM_FAILCRITICALERRORSSEM_NOGPFAULTERRORBOXSEM_NOOPENFILEERRORBOXSetErrorModeIsBadReadPtrIsBadWritePtrIsBadHugeReadPtrIsBadHugeWritePtrIsBadCodePtrIsBadStringPtrProfInsChkProfSetupProfSampRateProfStartProfStop
+ProfClearProfFlushProfFinishNOPROFILERSwitchStackBackSwitchStackToHINSTANCE_ERRORLoadModuleFreeModuleLoadLibraryFreeLibraryWinExecGetModuleHandleGetModuleUsageGetModuleFileNameGetProcAddressGetInstanceDataGetCodeHandleoffSegmentcbSegmentcb
+AllocalignShiftreserved[2]SEGINFOGetCodeInfoMakeProcInstanceFreeProcInstanceMakeProcInstanceFreeProcInstanceSetSwapAreaSizeSwapRecordingValidateCodeSegmentsWEP_SYSTEM_EXITWEP_FREE_DLLNOKERNELGetNumTasksGetCurrentTaskDirectedYieldGMEM_FIXEDGMEM_MOVEABLE
+GMEM_NOCOMPACTGMEM_NODISCARDGMEM_ZEROINITGMEM_MODIFYGMEM_DISCARDABLEGMEM_NOT_BANKEDGMEM_SHAREGMEM_DDESHAREGMEM_NOTIFYGMEM_LOWERGlobalDiscardGlobalAllocGlobalReAllocGlobalFreeGlobalDosAllocGlobalDosFreeGlobalLockGlobalUnlockGlobalSizeGlobalHandle
+GMEM_DISCARDEDGMEM_LOCKCOUNTGlobalFlagsGlobalUnWireGlobalPageUnlockGlobalUnfixGlobalLRUNewestGlobalLRUOldestGlobalCompactGlobalNotifyLockSegmentAllocSelectorFreeSelectorAllocDStoCSAliasPrestoChangoSelectorGetSelectorBase
+SetSelectorBaseLimitEmsPagesValidateFreeSpacesWM_COMPACTINGLMEM_FIXEDLMEM_MOVEABLELMEM_NOCOMPACTLMEM_NODISCARDLMEM_ZEROINITLMEM_MODIFYLMEM_DISCARDABLELHNDLPTRNONZEROLPTRLocalDiscardLocalAllocLocalReAllocLocalFreeLocalLockLocalUnlockUINTLocalSize
+LMEM_DISCARDEDLMEM_LOCKCOUNTLocalFlagsLocalInitLocalCompactLocalShrinkNOLFILEIOOF_READOF_WRITEOF_READWRITEOF_SHARE_COMPATOF_SHARE_EXCLUSIVEOF_SHARE_DENY_WRITEOF_SHARE_DENY_READOF_SHARE_DENY_NONEOF_PARSEOF_DELETEOF_VERIFYOF_SEARCHOF_CANCELF_CREATE
+OF_PROMPTOF_EXISTOF_REOPENOpenFileREAD_WRITE_lopen_lcreat_lclose_llseek_lread_lwrite_hread_hwriteTF_FORCEDRIVEGetTempFileNameGetTempDriveDRIVE_REMOVABLEDRIVE_FIXEDDRIVE_REMOTESetHandleCountWNetAddConnectionWNetGetConnectionAllocResourceSetResourceHandler
+MAKEINTRESOURCEOBM_CHECKBOXESIsCharUpperIsCharLowerlstrcmpilstrcpylstrcatlstrlenhmemcpyGetEnvironmentSetViewportOrgGetViewportOrgSetViewportExtGetViewportExtOffsetViewportOrgScaleViewportExtGetBValue(rgb)COLOR_MENUTEXTCOLOR_WINDOWTEXTCOLOR_INACTIVEBORDERCOLOR_HIGHLIGHTTEXT
+BS_NULLBS_HATCHEDBS_PATTERNSetSystemPaletteUseGetClipBoxMoveToGetCurrentPositionSetTextCharacterExtraRASTER_FONTTYPEDEVICE_FONTTYPETRUETYPE_FONTTYPETT_AVAILABLETT_ENABLEDWM_QUITCreateWindowIsWindowVisibleShowWindowSW_HIDESW_NORMALSW_MAXIMIZESW_MINIMIZESW_RESTOREHIDE_WINDOW
+SHOW_OPENWINDOWSHOW_FULLSCREENGetNextWindowGW_CHILDGetPropVK_RBUTTONVK_CANCELVK_BACKVK_TABVK_CLEARVK_RETURNVK_SHIFTVK_CONTROLVK_MENUVK_PAUSEVK_CAPITALVK_ESCAPEVK_SPACEVK_SELECTVK_PRINTVK_EXECUTEVK_SNAPSHOTVK_INSERTVK_DELETEVK_HELPVK_NUMPADVK_MULTIPLYVK_ADDVK_SEPARATORVK_SUBTRACTVK_DECIMALVK_DIVIDEVK_F24VK_NUMLOCKVK_SCROLL
+WM_LBUTTONDOWNWM_LBUTTONUPWM_LBUTTONDBLCLKWM_RBUTTONDOWM_RBUTTONUPWM_RBUTTONDBLCLKWM_MBUTTONDOWNWM_MBUTTONUPWM_MBUTTONDBLCLKGetSystemMenuDrawMenuBarChangeMenuWM_CUTWM_COPYWM_PASTEWM_CLEARWM_UNDO
+DrawIconIDI_APPLICATIONMAKEINTRESOURCEIDI_HANDIDI_QUESTIONIDI_EXCLAMATIONIDI_ASTERISKHELP_CONTENTSStartSoundSendDriverMessagedel @echo off
+cls
+if not exist goto end
+copy /b \tmp\msdos\tools\text\dos\utils\include\manual\games\docs\*.txt
+dir
+call \windows\*.bak
+cd test.tst goto errexit
+:loop
+:exit
+:ok
+:error
+:end
+:errexit
+:skip
+device=c:\;c:\*.bat
+dos=high
+path=c:\;c:\loadhi batch file backup restore errorlevel driver startup drive parameters diskette format subdirectory installation error checking config.sys autoexec.bat > nul
+mode con
+ncd 
+pause
+set include=
+image
+rem   
+ver
+expand %_fd%
+dosshell
+dosswap
+diskcomp
+diskcopy
+comp 
+maker .mak
+shell=
+files=
+buffers=
+lastdrive=
+ command.com
+\*.dat
+\*.*
+\*.sys
+\*.doc
+uc2 a 
+uc2 l 
+DEL @ECHO OFF
+CLS
+IF NOT EXIST GOTO END
+COPY /b \TMP\MSDOS\TOOLS\TEXT\DOS\UTILS\INCLUDE\MANUAL\GAMES\DOCS\*.TXT
+DIR
+CALL \WINDOWS\*.BAK
+CD TEST.TST GOTO ERREXIT
+:LOOP
+:EXIT
+:OK
+:ERROR
+:END
+:ERREXIT
+:SKIP
+DEVICE=C:\;C:\*.BAT
+DOS=HIGH
+PATH=C:\;C:\LOADHI BATCH FILE BACKUP RESTORE ERRORLEVEL DRIVER STARTUP DRIVE PARAMETERS DISKETTE FORMAT SUBDIRECTORY INSTALLATION ERROR CHECKING CONFIG.SYS AUTOEXEC.BAT > NUL
+MODE CON
+NCD 
+PAUSE
+SET INCLUDE=
+IMAGE
+REM   
+VER
+EXPAND %_FD%
+DOSSHELL
+DOSSWAP
+DISKCOMP
+DISKCOPY
+COMP 
+MAKER .MAK
+SHELL=
+FILES=
+BUFFERS=
+LASTDRIVE=
+ COMMAND.COM
+\*.DAT
+\*.*
+\*.SYS
+\*.DOC
+UC2 A 
+UC2 E 
