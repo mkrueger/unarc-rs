@@ -20,7 +20,7 @@
 //! ```
 
 use std::fs::File;
-use std::io::{self, BufReader, Read, Seek, Write};
+use std::io::{BufReader, Read, Seek, Write};
 use std::path::Path;
 
 use crate::arc::arc_archive::ArcArchive;
@@ -28,6 +28,7 @@ use crate::arc::local_file_header::LocalFileHeader as ArcHeader;
 use crate::arj::arj_archive::ArjArchive;
 use crate::arj::local_file_header::LocalFileHeader as ArjHeader;
 use crate::date_time::DosDateTime;
+use crate::error::{ArchiveError, Result};
 use crate::hyp::header::Header as HypHeader;
 use crate::hyp::hyp_archive::HypArchive;
 use crate::lha::lha_archive::{LhaArchiveSeekable, LhaFileHeader};
@@ -210,7 +211,7 @@ impl ArchiveFormat {
     ///     println!("File: {}", entry.name());
     /// }
     /// ```
-    pub fn open<T: Read + Seek>(self, reader: T) -> io::Result<UnifiedArchive<T>> {
+    pub fn open<T: Read + Seek>(self, reader: T) -> Result<UnifiedArchive<T>> {
         UnifiedArchive::open_with_format(reader, self)
     }
 
@@ -230,13 +231,13 @@ impl ArchiveFormat {
     ///     println!("File: {}", entry.name());
     /// }
     /// ```
-    pub fn open_path<P: AsRef<Path>>(path: P) -> io::Result<UnifiedArchive<BufReader<File>>> {
+    pub fn open_path<P: AsRef<Path>>(path: P) -> Result<UnifiedArchive<BufReader<File>>> {
         let path = path.as_ref();
         let format = Self::from_path(path).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("Unsupported archive format: {}", path.display()),
-            )
+            ArchiveError::UnsupportedFormat(format!(
+                "Unsupported archive format: {}",
+                path.display()
+            ))
         })?;
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -298,10 +299,7 @@ impl ArchiveEntry {
 
     /// Returns just the file name without any path components
     pub fn file_name(&self) -> &str {
-        self.name
-            .rsplit(|c| c == '/' || c == '\\')
-            .next()
-            .unwrap_or(&self.name)
+        self.name.rsplit(['/', '\\']).next().unwrap_or(&self.name)
     }
 
     /// Returns the compressed size in bytes
@@ -347,14 +345,14 @@ impl ArchiveEntry {
 
 /// Iterator over archive entries
 ///
-/// This iterator yields `io::Result<ArchiveEntry>` for each entry in the archive.
+/// This iterator yields `Result<ArchiveEntry>` for each entry in the archive.
 /// The iterator automatically skips entries after yielding them.
 pub struct ArchiveEntryIter<'a, T: Read + Seek> {
     archive: &'a mut UnifiedArchive<T>,
 }
 
 impl<T: Read + Seek> Iterator for ArchiveEntryIter<'_, T> {
-    type Item = io::Result<ArchiveEntry>;
+    type Item = Result<ArchiveEntry>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.archive.next_entry() {
@@ -406,7 +404,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// let file = File::open("archive.arj").unwrap();
     /// let archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Arj).unwrap();
     /// ```
-    pub fn open_with_format(reader: T, format: ArchiveFormat) -> io::Result<Self> {
+    pub fn open_with_format(reader: T, format: ArchiveFormat) -> Result<Self> {
         let inner = match format {
             ArchiveFormat::Arc => ArchiveInner::Arc(ArcArchive::new(reader)?),
             ArchiveFormat::Arj => ArchiveInner::Arj(ArjArchive::new(reader)?),
@@ -444,7 +442,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// Get the next entry in the archive
     ///
     /// Returns `Ok(None)` when there are no more entries.
-    pub fn next_entry(&mut self) -> io::Result<Option<ArchiveEntry>> {
+    pub fn next_entry(&mut self) -> Result<Option<ArchiveEntry>> {
         match &mut self.inner {
             ArchiveInner::Arc(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
@@ -650,7 +648,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     ///     println!("Read {} bytes from {}", data.len(), entry.name());
     /// }
     /// ```
-    pub fn read(&mut self, entry: &ArchiveEntry) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self, entry: &ArchiveEntry) -> Result<Vec<u8>> {
         match (&mut self.inner, &entry.index) {
             (ArchiveInner::Arc(archive), EntryIndex::Arc(header)) => archive.read(header),
             (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => archive.read(header),
@@ -664,9 +662,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.read(header),
             (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.read(header),
             (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.read(header),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Entry does not belong to this archive",
+            _ => Err(ArchiveError::IndexMismatch(
+                "Entry does not belong to this archive".to_string(),
             )),
         }
     }
@@ -691,7 +688,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     ///     println!("Extracted {} bytes to {}", bytes_written, entry.file_name());
     /// }
     /// ```
-    pub fn read_to<W: Write>(&mut self, entry: &ArchiveEntry, writer: &mut W) -> io::Result<u64> {
+    pub fn read_to<W: Write>(&mut self, entry: &ArchiveEntry, writer: &mut W) -> Result<u64> {
         // For now, we use the existing read() method and write the result.
         // In the future, individual archive implementations could provide
         // streaming variants for better memory efficiency.
@@ -703,7 +700,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// Skip an entry without reading its data
     ///
     /// This is more efficient than reading if you only need to process certain files.
-    pub fn skip(&mut self, entry: &ArchiveEntry) -> io::Result<()> {
+    pub fn skip(&mut self, entry: &ArchiveEntry) -> Result<()> {
         match (&mut self.inner, &entry.index) {
             (ArchiveInner::Arc(archive), EntryIndex::Arc(header)) => archive.skip(header),
             (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => archive.skip(header),
@@ -717,9 +714,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.skip(header),
             (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.skip(header),
             (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.skip(header),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Entry does not belong to this archive",
+            _ => Err(ArchiveError::IndexMismatch(
+                "Entry does not belong to this archive".to_string(),
             )),
         }
     }
@@ -728,7 +724,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     ///
     /// Note: After calling this, you'll need to re-open the archive to read entries.
     /// This method is useful when you need to know all entries upfront.
-    pub fn entries(&mut self) -> io::Result<Vec<ArchiveEntry>> {
+    pub fn entries(&mut self) -> Result<Vec<ArchiveEntry>> {
         let mut entries = Vec::new();
         while let Some(entry) = self.next_entry()? {
             entries.push(entry.clone());

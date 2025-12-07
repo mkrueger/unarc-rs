@@ -1,6 +1,9 @@
 #[macro_use]
 pub(crate) mod macros;
 pub mod date_time;
+pub mod error;
+
+pub use error::{ArchiveError, Result};
 
 pub mod arc;
 pub mod arj;

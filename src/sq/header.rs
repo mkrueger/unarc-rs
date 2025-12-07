@@ -1,4 +1,6 @@
-use std::io::{self, Read};
+use std::io::Read;
+
+use crate::error::{ArchiveError, Result};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,7 +20,7 @@ pub struct Header {
 
 pub const HEADER_SIZE: usize = 21;
 impl Header {
-    pub fn load_from<T: Read>(reader: &mut T) -> io::Result<Self> {
+    pub fn load_from<T: Read>(reader: &mut T) -> Result<Self> {
         let mut header: [u8; 2] = [0; 2];
         reader.read_exact(&mut header)?;
         if header == SQ_SIG {
@@ -26,14 +28,11 @@ impl Header {
         } else if header == SQ2_SIG {
             Self::load_sq2_header(reader)
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid header signature",
-            ))
+            Err(ArchiveError::invalid_header("SQ"))
         }
     }
 
-    fn load_sq1_header<T: Read>(reader: &mut T) -> io::Result<Self> {
+    fn load_sq1_header<T: Read>(reader: &mut T) -> Result<Self> {
         let mut bytes: [u8; 2] = [0; 2];
         reader.read_exact(&mut bytes)?;
         let checksum = u16::from_le_bytes(bytes);
@@ -49,7 +48,7 @@ impl Header {
         Ok(Self { name, checksum })
     }
 
-    fn load_sq2_header<T: Read>(reader: &mut T) -> io::Result<Self> {
+    fn load_sq2_header<T: Read>(reader: &mut T) -> Result<Self> {
         let mut name = String::new();
         let mut byte = [0; 1];
         loop {

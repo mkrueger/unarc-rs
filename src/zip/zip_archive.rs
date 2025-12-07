@@ -2,9 +2,10 @@
 //!
 //! Uses the `zip` crate for decompression.
 
-use std::io::{self, Read, Seek};
+use std::io::{Read, Seek};
 
 use crate::date_time::DosDateTime;
+use crate::error::{ArchiveError, Result};
 
 /// Header information for a ZIP entry
 #[derive(Debug, Clone)]
@@ -35,9 +36,9 @@ pub struct ZipArchive<T: Read + Seek> {
 
 impl<T: Read + Seek> ZipArchive<T> {
     /// Create a new ZIP archive reader
-    pub fn new(reader: T) -> io::Result<Self> {
+    pub fn new(reader: T) -> Result<Self> {
         let archive = zip::ZipArchive::new(reader)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("ZIP error: {}", e)))?;
+            .map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
 
         Ok(Self {
             archive,
@@ -46,7 +47,7 @@ impl<T: Read + Seek> ZipArchive<T> {
     }
 
     /// Get the next entry in the archive
-    pub fn get_next_entry(&mut self) -> io::Result<Option<ZipFileHeader>> {
+    pub fn get_next_entry(&mut self) -> Result<Option<ZipFileHeader>> {
         if self.current_index >= self.archive.len() {
             return Ok(None);
         }
@@ -57,7 +58,7 @@ impl<T: Read + Seek> ZipArchive<T> {
         let file = self
             .archive
             .by_index_raw(index)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("ZIP error: {}", e)))?;
+            .map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
 
         let name = file.name().to_string();
         let compressed_size = file.compressed_size();
@@ -97,13 +98,13 @@ impl<T: Read + Seek> ZipArchive<T> {
     }
 
     /// Skip the current entry without reading its data
-    pub fn skip(&mut self, _header: &ZipFileHeader) -> io::Result<()> {
+    pub fn skip(&mut self, _header: &ZipFileHeader) -> Result<()> {
         // Nothing to do - we already advanced in get_next_entry
         Ok(())
     }
 
     /// Read and decompress an entry's data
-    pub fn read(&mut self, header: &ZipFileHeader) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self, header: &ZipFileHeader) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
         }
@@ -111,7 +112,7 @@ impl<T: Read + Seek> ZipArchive<T> {
         let mut file = self
             .archive
             .by_index(header.index)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("ZIP error: {}", e)))?;
+            .map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
 
         let mut data = Vec::with_capacity(header.original_size as usize);
         file.read_to_end(&mut data)?;

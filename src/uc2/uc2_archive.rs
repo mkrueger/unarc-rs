@@ -1,7 +1,9 @@
 use std::{
     collections::HashMap,
-    io::{self, ErrorKind, Read, Seek, SeekFrom},
+    io::{Read, Seek, SeekFrom},
 };
+
+use crate::error::{ArchiveError, Result};
 
 use super::decompress::{self, MasterDict};
 use super::{CompressInfo, EntryType, ExtendedHeader, FileAttributes, Location};
@@ -39,7 +41,7 @@ const ID: u32 = 0x1A324355; // UC2\x1A
 const AMAG: u32 = 0x01B2C3D4;
 
 impl<T: Read + Seek> Uc2Archive<T> {
-    pub fn new(mut reader: T) -> io::Result<Self> {
+    pub fn new(mut reader: T) -> Result<Self> {
         let (_archive_len, _is_damage_protected) = read_header(&mut reader)?;
         let x_head = ExtendedHeader::load_from(&mut reader)?;
 
@@ -52,7 +54,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
         })
     }
 
-    pub fn get_next_entry(&mut self) -> io::Result<Option<Uc2ArchiveEntry>> {
+    pub fn get_next_entry(&mut self) -> Result<Option<Uc2ArchiveEntry>> {
         self.ensure_cdir_parsed()?;
         if self.current_entry >= self.entries.len() {
             return Ok(None);
@@ -62,7 +64,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
         Ok(Some(entry))
     }
 
-    fn parse_cdir(&mut self) -> io::Result<()> {
+    fn parse_cdir(&mut self) -> Result<()> {
         if !self.entries.is_empty() {
             return Ok(());
         }
@@ -75,8 +77,9 @@ impl<T: Read + Seek> Uc2Archive<T> {
         let compress_info = CompressInfo::load_from(&mut self.reader)?;
 
         if compress_info.master_prefix != 1 {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
+            return Err(ArchiveError::corrupted_entry_named(
+                "UC2",
+                "CDIR",
                 format!(
                     "unexpected CDIR master prefix: {}",
                     compress_info.master_prefix
@@ -138,9 +141,9 @@ impl<T: Read + Seek> Uc2Archive<T> {
                     let location = read_location(&mut cursor)?;
 
                     if location.volume > 1 {
-                        return Err(io::Error::new(
-                            ErrorKind::Unsupported,
-                            "multi-volume UC2 archives are not supported",
+                        return Err(ArchiveError::unsupported_method(
+                            "UC2",
+                            "multi-volume archives",
                         ));
                     }
 
@@ -177,9 +180,9 @@ impl<T: Read + Seek> Uc2Archive<T> {
                     let location = read_location(&mut cursor)?;
 
                     if location.volume > 1 {
-                        return Err(io::Error::new(
-                            ErrorKind::Unsupported,
-                            "multi-volume master entries are not supported",
+                        return Err(ArchiveError::unsupported_method(
+                            "UC2",
+                            "multi-volume master entries",
                         ));
                     }
 
@@ -201,38 +204,36 @@ impl<T: Read + Seek> Uc2Archive<T> {
         Ok(())
     }
 
-    fn ensure_cdir_parsed(&mut self) -> io::Result<()> {
+    fn ensure_cdir_parsed(&mut self) -> Result<()> {
         if self.entries.is_empty() {
             self.parse_cdir()?;
         }
         Ok(())
     }
 
-    fn ensure_master(&mut self, id: u32) -> io::Result<()> {
+    fn ensure_master(&mut self, id: u32) -> Result<()> {
         if id < 2 {
             return Ok(());
         }
 
-        if let Some(record) = self.masters.get(&id) {
-            if record.data.is_some() {
-                return Ok(());
-            }
-        } else {
-            return Err(io::Error::new(
-                ErrorKind::NotFound,
+        let Some(record) = self.masters.get(&id) else {
+            return Err(ArchiveError::corrupted_entry_named(
+                "UC2",
+                "master",
                 format!("master {} not found in CDIR", id),
             ));
+        };
+
+        if record.data.is_some() {
+            return Ok(());
         }
 
-        let (size, offset, compressed_len, master_prefix) = {
-            let record = self.masters.get(&id).expect("master exists");
-            (
-                record.size,
-                record.location.offset,
-                record.compress_info.compressed_length as usize,
-                record.compress_info.master_prefix,
-            )
-        };
+        let (size, offset, compressed_len, master_prefix) = (
+            record.size,
+            record.location.offset,
+            record.compress_info.compressed_length as usize,
+            record.compress_info.master_prefix,
+        );
 
         self.reader.seek(SeekFrom::Start(offset as u64))?;
         let mut compressed = vec![0u8; compressed_len];
@@ -247,7 +248,13 @@ impl<T: Read + Seek> Uc2Archive<T> {
                     .masters
                     .get(&parent)
                     .and_then(|m| m.data.as_ref())
-                    .ok_or_else(|| io::Error::new(ErrorKind::Other, "missing parent master"))?;
+                    .ok_or_else(|| {
+                        ArchiveError::corrupted_entry_named(
+                            "UC2",
+                            "master",
+                            "missing parent master",
+                        )
+                    })?;
                 decompress::decompress_with_dict(
                     &compressed,
                     size,
@@ -263,7 +270,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
         Ok(())
     }
 
-    pub fn read(&mut self, entry: &Uc2ArchiveEntry) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self, entry: &Uc2ArchiveEntry) -> Result<Vec<u8>> {
         self.ensure_cdir_parsed()?;
 
         let compressed_len = entry.compress_info.compressed_length as usize;
@@ -296,7 +303,13 @@ impl<T: Read + Seek> Uc2Archive<T> {
                     .masters
                     .get(&master_id)
                     .and_then(|m| m.data.as_ref())
-                    .ok_or_else(|| io::Error::new(ErrorKind::Other, "missing master data"))?;
+                    .ok_or_else(|| {
+                        ArchiveError::corrupted_entry_named(
+                            "UC2",
+                            &entry.name,
+                            "missing master data",
+                        )
+                    })?;
                 decompress::decompress_with_dict(
                     &compressed,
                     original_size,
@@ -308,29 +321,27 @@ impl<T: Read + Seek> Uc2Archive<T> {
         Ok(output)
     }
 
-    pub fn skip(&mut self, _entry: &Uc2ArchiveEntry) -> io::Result<()> {
+    pub fn skip(&mut self, _entry: &Uc2ArchiveEntry) -> Result<()> {
         // UC2 archives are already fully parsed during get_next_entry,
         // so skip is a no-op - we just move to the next entry
         Ok(())
     }
 }
 
-fn read_header<T: Read + Seek>(reader: &mut T) -> Result<(u32, bool), io::Error> {
+fn read_header<T: Read + Seek>(reader: &mut T) -> Result<(u32, bool)> {
     let mut header_bytes = vec![0; HEADER_SIZE];
     reader.read_exact(&mut header_bytes)?;
     let mut header_bytes = header_bytes.as_slice();
     convert_u32!(id, header_bytes);
     if id != ID {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid UC2 archive",
-        ));
+        return Err(ArchiveError::invalid_header("UC2"));
     }
     convert_u32!(archive_len, header_bytes);
     convert_u32!(archive_len2, header_bytes);
     if archive_len.wrapping_add(AMAG) != archive_len2 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
+        return Err(ArchiveError::corrupted_entry_named(
+            "UC2",
+            "header",
             "file header is damaged",
         ));
     }
@@ -338,33 +349,30 @@ fn read_header<T: Read + Seek>(reader: &mut T) -> Result<(u32, bool), io::Error>
     Ok((archive_len, damage_protected_flag != 0))
 }
 
-fn take<'a>(cursor: &mut &'a [u8], len: usize) -> io::Result<&'a [u8]> {
+fn take<'a>(cursor: &mut &'a [u8], len: usize) -> Result<&'a [u8]> {
     if cursor.len() < len {
-        return Err(io::Error::new(
-            ErrorKind::UnexpectedEof,
-            "truncated UC2 CDIR",
-        ));
+        return Err(ArchiveError::corrupted_entry("UC2", "truncated UC2 CDIR"));
     }
     let (head, tail) = cursor.split_at(len);
     *cursor = tail;
     Ok(head)
 }
 
-fn read_u8(cursor: &mut &[u8]) -> io::Result<u8> {
+fn read_u8(cursor: &mut &[u8]) -> Result<u8> {
     Ok(take(cursor, 1)?[0])
 }
 
-fn read_u16_le(cursor: &mut &[u8]) -> io::Result<u16> {
+fn read_u16_le(cursor: &mut &[u8]) -> Result<u16> {
     let bytes = take(cursor, 2)?;
     Ok(u16::from_le_bytes([bytes[0], bytes[1]]))
 }
 
-fn read_u32_le(cursor: &mut &[u8]) -> io::Result<u32> {
+fn read_u32_le(cursor: &mut &[u8]) -> Result<u32> {
     let bytes = take(cursor, 4)?;
     Ok(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 
-fn read_compress(cursor: &mut &[u8]) -> io::Result<CompressInfo> {
+fn read_compress(cursor: &mut &[u8]) -> Result<CompressInfo> {
     Ok(CompressInfo {
         compressed_length: read_u32_le(cursor)?,
         method: read_u16_le(cursor)?,
@@ -372,7 +380,7 @@ fn read_compress(cursor: &mut &[u8]) -> io::Result<CompressInfo> {
     })
 }
 
-fn read_location(cursor: &mut &[u8]) -> io::Result<Location> {
+fn read_location(cursor: &mut &[u8]) -> Result<Location> {
     Ok(Location {
         volume: read_u32_le(cursor)?,
         offset: read_u32_le(cursor)?,
@@ -407,7 +415,7 @@ fn decode_dos_name(raw: &[u8; 11]) -> String {
     name
 }
 
-fn read_tags(cursor: &mut &[u8]) -> io::Result<Option<String>> {
+fn read_tags(cursor: &mut &[u8]) -> Result<Option<String>> {
     let mut long_name = None;
     loop {
         let raw_tag = take(cursor, 16)?;

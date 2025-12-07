@@ -1,4 +1,4 @@
-use std::io;
+use crate::error::{ArchiveError, Result};
 
 /// A random choice
 pub const ZOO_TAG: u32 = 0xFDC4A7DC;
@@ -27,20 +27,14 @@ pub struct ZooHeader {
 
 pub const ZOO_HEADER_SIZE: usize = SIZ_TEXT + 4 + 22;
 impl ZooHeader {
-    pub fn load_from(mut header_bytes: &[u8]) -> io::Result<Self> {
+    pub fn load_from(mut header_bytes: &[u8]) -> Result<Self> {
         if !header_bytes.starts_with(TEXT) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid archive header",
-            ));
+            return Err(ArchiveError::invalid_header("ZOO"));
         }
         header_bytes = &header_bytes[SIZ_TEXT..];
         convert_u32!(zoo_tag, header_bytes);
         if zoo_tag != ZOO_TAG {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid archive tag",
-            ));
+            return Err(ArchiveError::invalid_header("ZOO"));
         }
         convert_u32!(zoo_start, header_bytes);
         convert_u32!(zoo_minus, header_bytes);

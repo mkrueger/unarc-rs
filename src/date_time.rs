@@ -31,9 +31,9 @@ impl DosDateTime {
     }
 }
 
-impl Into<u32> for DosDateTime {
-    fn into(self) -> u32 {
-        self.0
+impl From<DosDateTime> for u32 {
+    fn from(dt: DosDateTime) -> u32 {
+        dt.0
     }
 }
 
@@ -43,9 +43,9 @@ impl From<u32> for DosDateTime {
     }
 }
 
-impl Into<(u16, u16)> for DosDateTime {
-    fn into(self) -> (u16, u16) {
-        ((self.0 >> 16) as u16, self.0 as u16)
+impl From<DosDateTime> for (u16, u16) {
+    fn from(dt: DosDateTime) -> (u16, u16) {
+        ((dt.0 >> 16) as u16, dt.0 as u16)
     }
 }
 

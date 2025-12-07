@@ -1,4 +1,4 @@
-use std::io;
+use crate::error::{ArchiveError, Result};
 
 const TEXT: &[u8; 5] = b"HLSQZ";
 
@@ -37,12 +37,9 @@ pub struct SqzHeader {
 
 pub const SQZ_HEADER_SIZE: usize = 8;
 impl SqzHeader {
-    pub fn load_from(mut header_bytes: &[u8]) -> io::Result<Self> {
+    pub fn load_from(mut header_bytes: &[u8]) -> Result<Self> {
         if !header_bytes.starts_with(TEXT) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid archive header",
-            ));
+            return Err(ArchiveError::invalid_header("SQZ"));
         }
         header_bytes = &header_bytes[TEXT.len()..];
 

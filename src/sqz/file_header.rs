@@ -1,5 +1,5 @@
 use crate::date_time::DosDateTime;
-use std::io;
+use crate::error::Result;
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +35,7 @@ pub struct FileHeader {
 }
 
 impl FileHeader {
-    pub fn load_from(mut header_bytes: &[u8]) -> io::Result<Self> {
+    pub fn load_from(mut header_bytes: &[u8]) -> Result<Self> {
         convert_u8!(checksum, header_bytes);
         convert_u8!(compression_method, header_bytes);
         convert_u32!(compressed_size, header_bytes);
@@ -44,7 +44,7 @@ impl FileHeader {
         convert_u8!(attribute, header_bytes);
         convert_u32!(crc32, header_bytes);
 
-        let name = String::from_utf8_lossy(&header_bytes).to_string();
+        let name = String::from_utf8_lossy(header_bytes).to_string();
 
         Ok(FileHeader {
             checksum,

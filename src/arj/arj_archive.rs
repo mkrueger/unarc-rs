@@ -1,8 +1,9 @@
-use std::io::{self, Read, Seek};
+use std::io::{Read, Seek};
 
 use delharc::decode::{Decoder, DecoderAny};
 
 use crate::date_time::DosDateTime;
+use crate::error::{ArchiveError, Result};
 
 use super::{
     decode_fastest::decode_fastest,
@@ -16,13 +17,10 @@ pub struct ArjArchive<T: Read + Seek> {
 }
 
 impl<T: Read + Seek> ArjArchive<T> {
-    pub fn new(mut reader: T) -> io::Result<Self> {
+    pub fn new(mut reader: T) -> Result<Self> {
         let header_bytes = read_header(&mut reader)?;
         if header_bytes.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "archive ends without any headers",
-            ));
+            return Err(ArchiveError::invalid_header("ARJ"));
         }
         let header = MainHeader::load_from(&header_bytes);
         // Skip extended headers
@@ -31,13 +29,13 @@ impl<T: Read + Seek> ArjArchive<T> {
         Ok(Self { header, reader })
     }
 
-    pub fn skip(&mut self, header: &LocalFileHeader) -> io::Result<()> {
+    pub fn skip(&mut self, header: &LocalFileHeader) -> Result<()> {
         self.reader
-            .seek(io::SeekFrom::Current(header.compressed_size as i64))?;
+            .seek(std::io::SeekFrom::Current(header.compressed_size as i64))?;
         Ok(())
     }
 
-    pub fn read(&mut self, header: &LocalFileHeader) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self, header: &LocalFileHeader) -> Result<Vec<u8>> {
         let mut compressed_buffer = vec![0; header.compressed_size as usize];
         self.reader.read_exact(&mut compressed_buffer)?;
         let uncompressed = match header.compression_method {
@@ -59,32 +57,37 @@ impl<T: Read + Seek> ArjArchive<T> {
             CompressionMethod::NoDataNoCrc
             | CompressionMethod::NoData
             | CompressionMethod::Unknown(_) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "unsupported compression method {:?}",
-                        header.compression_method
-                    ),
-                ))
+                return Err(ArchiveError::unsupported_method(
+                    "ARJ",
+                    format!("{:?}", header.compression_method),
+                ));
             }
         };
 
         if uncompressed.len() != header.original_size as usize {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "decompressed size does not match the original size",
+            return Err(ArchiveError::decompression_failed(
+                &header.name,
+                format!(
+                    "size mismatch: expected {}, got {}",
+                    header.original_size,
+                    uncompressed.len()
+                ),
             ));
         }
 
         let checksum = crc32fast::hash(&uncompressed);
         if checksum != header.original_crc32 {
-            Err(io::Error::new(io::ErrorKind::InvalidData, "CRC32 mismatch"))
+            Err(ArchiveError::crc_mismatch(
+                &header.name,
+                header.original_crc32,
+                checksum,
+            ))
         } else {
             Ok(uncompressed)
         }
     }
 
-    pub fn get_next_entry(&mut self) -> io::Result<Option<LocalFileHeader>> {
+    pub fn get_next_entry(&mut self) -> Result<Option<LocalFileHeader>> {
         let header_bytes = read_header(&mut self.reader)?;
         if header_bytes.is_empty() {
             return Ok(None);
@@ -127,7 +130,7 @@ const MAX_HEADER_SIZE: usize = 2600;
 const ARJ_MAGIC_1: u8 = 0x60;
 const ARJ_MAGIC_2: u8 = 0xEA;
 
-fn read_header<R: Read>(reader: &mut R) -> io::Result<Vec<u8>> {
+fn read_header<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
     let mut u8_buf = [0];
     loop {
         reader.read_exact(&mut u8_buf)?;
@@ -147,9 +150,13 @@ fn read_header<R: Read>(reader: &mut R) -> io::Result<Vec<u8>> {
         return Ok(Vec::new());
     }
     if header_size > MAX_HEADER_SIZE as u16 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "header size is too big",
+        return Err(ArchiveError::corrupted_entry_named(
+            "ARJ",
+            "header",
+            format!(
+                "header size {} exceeds maximum {}",
+                header_size, MAX_HEADER_SIZE
+            ),
         ));
     }
     let mut header_bytes = vec![0; header_size as usize];
@@ -157,17 +164,15 @@ fn read_header<R: Read>(reader: &mut R) -> io::Result<Vec<u8>> {
     let mut crc = [0, 0, 0, 0];
     reader.read_exact(&mut crc)?;
     let checksum = crc32fast::hash(&header_bytes);
-    if checksum != u32::from_le_bytes(crc) {
-        Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "header checksum is invalid",
-        ))
+    let expected = u32::from_le_bytes(crc);
+    if checksum != expected {
+        Err(ArchiveError::crc_mismatch("ARJ header", expected, checksum))
     } else {
         Ok(header_bytes)
     }
 }
 
-fn read_extended_headers<R: Read>(reader: &mut R) -> io::Result<Vec<Vec<u8>>> {
+fn read_extended_headers<R: Read>(reader: &mut R) -> Result<Vec<Vec<u8>>> {
     let mut extended_header = Vec::new();
     let mut u16_buf = [0, 0];
     loop {
@@ -181,10 +186,12 @@ fn read_extended_headers<R: Read>(reader: &mut R) -> io::Result<Vec<Vec<u8>>> {
         let mut crc = [0, 0, 0, 0];
         reader.read_exact(&mut crc)?;
         let checksum = crc32fast::hash(&header);
-        if checksum != u32::from_le_bytes(crc) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "extended header checksum is invalid",
+        let expected = u32::from_le_bytes(crc);
+        if checksum != expected {
+            return Err(ArchiveError::crc_mismatch(
+                "ARJ extended header",
+                expected,
+                checksum,
             ));
         }
         extended_header.push(header);

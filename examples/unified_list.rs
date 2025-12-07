@@ -5,9 +5,10 @@
 use std::env;
 use std::fs::File;
 use std::path::Path;
+use unarc_rs::error::ArchiveError;
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), ArchiveError> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -24,10 +25,10 @@ fn main() -> std::io::Result<()> {
 
     // Detect format from extension
     let format = ArchiveFormat::from_path(archive_path).ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("Unsupported archive format: {:?}", archive_path.extension()),
-        )
+        ArchiveError::UnsupportedFormat(format!(
+            "Unsupported archive format: {:?}",
+            archive_path.extension()
+        ))
     })?;
 
     println!("Archive: {} ({})", archive_path.display(), format.name());
@@ -56,7 +57,7 @@ fn main() -> std::io::Result<()> {
         let entry = match archive.next_entry() {
             Ok(Some(e)) => e,
             Ok(None) => break,
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(ArchiveError::Io(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
             Err(e) => return Err(e),
         };
 
@@ -81,7 +82,8 @@ fn main() -> std::io::Result<()> {
 
         // Skip to next entry (don't decompress)
         if let Err(e) = archive.skip(&entry) {
-            if e.kind() != std::io::ErrorKind::UnexpectedEof {
+            if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == std::io::ErrorKind::UnexpectedEof)
+            {
                 return Err(e);
             }
             break;

@@ -2,9 +2,10 @@
 //!
 //! Uses the `sevenz-rust2` crate for decompression.
 
-use std::io::{self, Read, Seek};
+use std::io::{Read, Seek};
 
 use crate::date_time::DosDateTime;
+use crate::error::{ArchiveError, Result};
 
 /// Header information for a 7z entry
 #[derive(Debug, Clone)]
@@ -36,13 +37,11 @@ pub struct SevenZArchive<T: Read + Seek> {
 
 impl<T: Read + Seek> SevenZArchive<T> {
     /// Create a new 7z archive reader
-    pub fn new(mut reader: T) -> io::Result<Self> {
+    pub fn new(mut reader: T) -> Result<Self> {
         // Parse the archive and collect all entries upfront
         let archive =
             sevenz_rust2::ArchiveReader::new(&mut reader, sevenz_rust2::Password::empty())
-                .map_err(|e| {
-                    io::Error::new(io::ErrorKind::InvalidData, format!("7z error: {}", e))
-                })?;
+                .map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
 
         let mut entries = Vec::new();
 
@@ -89,7 +88,7 @@ impl<T: Read + Seek> SevenZArchive<T> {
     }
 
     /// Get the next entry in the archive
-    pub fn get_next_entry(&mut self) -> io::Result<Option<SevenZFileHeader>> {
+    pub fn get_next_entry(&mut self) -> Result<Option<SevenZFileHeader>> {
         if self.current_index >= self.entries.len() {
             return Ok(None);
         }
@@ -101,13 +100,13 @@ impl<T: Read + Seek> SevenZArchive<T> {
     }
 
     /// Skip the current entry without reading its data
-    pub fn skip(&mut self, _header: &SevenZFileHeader) -> io::Result<()> {
+    pub fn skip(&mut self, _header: &SevenZFileHeader) -> Result<()> {
         // Nothing to do - we already advanced in get_next_entry
         Ok(())
     }
 
     /// Read and decompress an entry's data
-    pub fn read(&mut self, header: &SevenZFileHeader) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self, header: &SevenZFileHeader) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
         }
@@ -115,14 +114,12 @@ impl<T: Read + Seek> SevenZArchive<T> {
         // We need to re-open the archive and read the specific file
         let mut archive =
             sevenz_rust2::ArchiveReader::new(&mut self.reader, sevenz_rust2::Password::empty())
-                .map_err(|e| {
-                    io::Error::new(io::ErrorKind::InvalidData, format!("7z error: {}", e))
-                })?;
+                .map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
 
         // Find and extract the file by name
         archive
             .read_file(&header.name)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("7z error: {}", e)))
+            .map_err(|e| ArchiveError::decompression_failed(&header.name, e.to_string()))
     }
 }
 
@@ -159,7 +156,7 @@ fn convert_nt_time_to_dos_datetime(ts: u64) -> Option<DosDateTime> {
 
         let (month, day) = day_of_year_to_month_day(days as u32, is_leap_year(year));
 
-        if year >= 1980 && year <= 2107 {
+        if (1980..=2107).contains(&year) {
             let dos_year = ((year - 1980) as u32) & 0x7F;
             let dos_date = (dos_year << 9) | ((month as u32) << 5) | (day as u32);
             let dos_time = (hour << 11) | (minute << 5) | (second / 2);

@@ -1,5 +1,4 @@
-use std::io;
-
+use crate::error::{ArchiveError, Result};
 use crate::{date_time::DosDateTime, zoo::zoo_header::ZOO_TAG};
 
 #[repr(u8)]
@@ -94,13 +93,10 @@ pub const DIRENT_HEADER_SIZE: usize = 5 +  // tag + dir_type
 const _H_TYPE: u8 = 1;
 
 impl DirectoryEntry {
-    pub fn load_from(mut header_bytes: &[u8]) -> io::Result<Self> {
+    pub fn load_from(mut header_bytes: &[u8]) -> Result<Self> {
         convert_u32!(zoo_tag, header_bytes);
         if zoo_tag != ZOO_TAG {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "invalid archive tag",
-            ));
+            return Err(ArchiveError::invalid_header("ZOO"));
         }
         convert_u8!(_dir_type, header_bytes); // type of directory entry.  always 1 for now
 

@@ -3,8 +3,8 @@ use std::io::{self, ErrorKind};
 use super::consts::*;
 use super::supermaster_decompressed::SUPERMASTER;
 
-/// UC2 decompression implementation
-/// Based on ULTRACMP.CPP from the original UC2 source code
+// UC2 decompression implementation
+// Based on ULTRACMP.CPP from the original UC2 source code
 
 /// Master dictionary selection for UC2 decompression
 pub enum MasterDict<'a> {
@@ -286,8 +286,8 @@ fn decode_tree_lengths(
 
     // Read lengths for the length codes table (15 * 3 bits)
     let mut tlengths = [0u8; NUM_LEN_CODES];
-    for i in 0..NUM_LEN_CODES {
-        tlengths[i] = bits.read_bits(3)? as u8;
+    for item in &mut tlengths {
+        *item = bits.read_bits(3)? as u8;
     }
 
     // Build temporary Huffman table

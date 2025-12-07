@@ -1,7 +1,8 @@
 // Based on dearc.pas
-use std::io;
 
 use bitstream_io::{BitRead, BitReader, LittleEndian};
+
+use crate::error::{ArchiveError, Result};
 
 const BITS: usize = 12;
 const CRUNCH_BITS: usize = 12;
@@ -21,6 +22,12 @@ pub struct Lzw {
     stack: Vec<u8>,
     free_ent: u16,
     maxcodemax: u16,
+}
+
+impl Default for Lzw {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Lzw {
@@ -56,22 +63,18 @@ impl Lzw {
             }
         }
 
-        if let Ok(code) = reader.read_var::<u16>(self.n_bits as u32) {
-            Some(code as u16)
-        } else {
-            None
-        }
+        reader.read_var::<u16>(self.n_bits as u32).ok()
     }
 
-    pub fn decomp(&mut self, mut input: &[u8], use_crunched: bool) -> io::Result<Vec<u8>> {
+    pub fn decomp(&mut self, mut input: &[u8], use_crunched: bool) -> Result<Vec<u8>> {
         let mut result = Vec::new();
         let bits = if use_crunched {
             let b = input[0];
             input = &input[1..];
             if b as usize != BITS {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("file packed with {}, I can only handle {}", b, BITS),
+                return Err(ArchiveError::decompression_failed(
+                    "LZW",
+                    format!("file packed with {} bits, expected {}", b, BITS),
                 ));
             }
             CRUNCH_BITS
@@ -90,7 +93,7 @@ impl Lzw {
         let mut reader = BitReader::endian(input, LittleEndian);
         self.free_ent = FIRST;
         self.oldcode = if let Some(old) = self.getcode(&mut reader) {
-            old as u16
+            old
         } else {
             return Ok(result);
         };
@@ -109,8 +112,8 @@ impl Lzw {
                 }
             }
             let incode = code;
-            if code >= self.free_ent as u16 {
-                self.stack.push(self.finchar as u8);
+            if code >= self.free_ent {
+                self.stack.push(self.finchar);
                 code = self.oldcode;
             }
             while code >= 256 {
@@ -120,7 +123,7 @@ impl Lzw {
             self.finchar = self.suffix[code as usize];
             self.stack.push(self.finchar);
             result.extend(self.stack.drain(..).rev());
-            code = self.free_ent as u16;
+            code = self.free_ent;
             if code < self.maxcodemax {
                 self.prefix[code as usize] = self.oldcode;
                 self.suffix[code as usize] = self.finchar;

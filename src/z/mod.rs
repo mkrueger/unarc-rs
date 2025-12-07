@@ -1,4 +1,7 @@
-use std::io::{self, Read};
+use std::io::Read;
+
+use crate::error::{ArchiveError, Result};
+
 mod lzw;
 pub struct ZArchive<T: Read> {
     block_mode: bool,
@@ -11,14 +14,11 @@ const BLOCK_MODE: u8 = 0x80;
 const BIT_MASK: u8 = 0x1f;
 
 impl<T: Read> ZArchive<T> {
-    pub fn new(mut reader: T) -> io::Result<Self> {
+    pub fn new(mut reader: T) -> Result<Self> {
         let mut header = [0; 3];
         reader.read_exact(&mut header)?;
         if header[0..2] != ID {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Not a Z archive",
-            ));
+            return Err(ArchiveError::invalid_header("Z"));
         }
         let block_mode = header[2] & BLOCK_MODE != 0;
         let max_bits = header[2] & BIT_MASK;
@@ -29,12 +29,12 @@ impl<T: Read> ZArchive<T> {
         })
     }
 
-    pub fn skip(&mut self) -> io::Result<()> {
+    pub fn skip(&mut self) -> Result<()> {
         // just 1 file in the archive
         Ok(())
     }
 
-    pub fn read(&mut self) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self) -> Result<Vec<u8>> {
         let mut compressed_buffer = Vec::new();
         self.reader.read_to_end(&mut compressed_buffer)?;
         let decompressed =

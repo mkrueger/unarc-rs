@@ -2,13 +2,14 @@
 //!
 //! Uses the delharc crate for decompression.
 
-use std::io::{self, Read, Seek};
+use std::io::{Read, Seek};
 
 use chrono::{Datelike, Timelike};
 use delharc::header::LhaHeader;
 use delharc::LhaDecodeReader;
 
 use crate::date_time::DosDateTime;
+use crate::error::{ArchiveError, Result};
 
 /// Header information for an LHA entry
 #[derive(Debug, Clone)]
@@ -42,11 +43,11 @@ impl LhaFileHeader {
         let date_time = modified.to_naive_utc().map(|dt| {
             // Convert to DOS datetime format
             let year = dt.year() as u32;
-            let month = dt.month() as u32;
-            let day = dt.day() as u32;
-            let hour = dt.hour() as u32;
-            let minute = dt.minute() as u32;
-            let second = dt.second() as u32;
+            let month = dt.month();
+            let day = dt.day();
+            let hour = dt.hour();
+            let minute = dt.minute();
+            let second = dt.second();
 
             // DOS date format: bits 0-4: day, 5-8: month, 9-15: year-1980
             // DOS time format: bits 0-4: second/2, 5-10: minute, 11-15: hour
@@ -82,7 +83,7 @@ pub struct LhaArchive<T: Read> {
 
 impl<T: Read> LhaArchive<T> {
     /// Create a new LHA archive reader
-    pub fn new(reader: T) -> io::Result<Self> {
+    pub fn new(reader: T) -> Result<Self> {
         let lha_reader = LhaDecodeReader::new(reader)?;
 
         // Get the first header
@@ -100,7 +101,7 @@ impl<T: Read> LhaArchive<T> {
     }
 
     /// Get the next entry in the archive
-    pub fn get_next_entry(&mut self) -> io::Result<Option<LhaFileHeader>> {
+    pub fn get_next_entry(&mut self) -> Result<Option<LhaFileHeader>> {
         if self.finished {
             return Ok(None);
         }
@@ -127,7 +128,7 @@ impl<T: Read> LhaArchive<T> {
     }
 
     /// Skip the current entry without reading its data
-    pub fn skip(&mut self, _header: &LhaFileHeader) -> io::Result<()> {
+    pub fn skip(&mut self, _header: &LhaFileHeader) -> Result<()> {
         // In LHA, we just need to advance to the next file
         // The next call to get_next_entry will handle this
         if let Some(ref mut reader) = self.reader {
@@ -147,18 +148,15 @@ impl<T: Read> LhaArchive<T> {
     }
 
     /// Read and decompress the current entry's data
-    pub fn read(&mut self, header: &LhaFileHeader) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self, header: &LhaFileHeader) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
         }
 
         if !header.is_supported {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "unsupported compression method: {}",
-                    header.compression_method
-                ),
+            return Err(ArchiveError::unsupported_method(
+                "LHA",
+                &header.compression_method,
             ));
         }
 
@@ -184,8 +182,8 @@ impl<T: Read> LhaArchive<T> {
 
             Ok(data)
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
+            Err(ArchiveError::decompression_failed(
+                &header.name,
                 "Archive reader not available",
             ))
         }
@@ -199,24 +197,24 @@ pub struct LhaArchiveSeekable<T: Read + Seek> {
 
 impl<T: Read + Seek> LhaArchiveSeekable<T> {
     /// Create a new seekable LHA archive reader
-    pub fn new(reader: T) -> io::Result<Self> {
+    pub fn new(reader: T) -> Result<Self> {
         Ok(Self {
             inner: LhaArchive::new(reader)?,
         })
     }
 
     /// Get the next entry in the archive
-    pub fn get_next_entry(&mut self) -> io::Result<Option<LhaFileHeader>> {
+    pub fn get_next_entry(&mut self) -> Result<Option<LhaFileHeader>> {
         self.inner.get_next_entry()
     }
 
     /// Skip the current entry without reading its data
-    pub fn skip(&mut self, header: &LhaFileHeader) -> io::Result<()> {
+    pub fn skip(&mut self, header: &LhaFileHeader) -> Result<()> {
         self.inner.skip(header)
     }
 
     /// Read and decompress the current entry's data
-    pub fn read(&mut self, header: &LhaFileHeader) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self, header: &LhaFileHeader) -> Result<Vec<u8>> {
         self.inner.read(header)
     }
 }

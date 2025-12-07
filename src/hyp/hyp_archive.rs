@@ -1,6 +1,7 @@
-use std::io::{self, Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 
 use super::header::{CompressionMethod, Header, HEADER_SIZE};
+use crate::error::{ArchiveError, Result};
 
 const HYP_ID: u8 = 0x1a;
 pub struct HypArchive<T: Read + Seek> {
@@ -8,24 +9,27 @@ pub struct HypArchive<T: Read + Seek> {
 }
 
 impl<T: Read + Seek> HypArchive<T> {
-    pub fn new(reader: T) -> io::Result<Self> {
+    pub fn new(reader: T) -> Result<Self> {
         Ok(Self { reader })
     }
 
-    pub fn skip(&mut self, header: &Header) -> io::Result<()> {
+    pub fn skip(&mut self, header: &Header) -> Result<()> {
         self.reader
-            .seek(io::SeekFrom::Current(header.compressed_size as i64))?;
+            .seek(SeekFrom::Current(header.compressed_size as i64))?;
         Ok(())
     }
 
-    pub fn read(&mut self, header: &Header) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self, header: &Header) -> Result<Vec<u8>> {
         let mut compressed_buffer = vec![0; header.compressed_size as usize];
         self.reader.read_exact(&mut compressed_buffer)?;
 
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
             CompressionMethod::Compressed => {
-                return Err(io::Error::new(io::ErrorKind::Unsupported, "TODO :("));
+                return Err(ArchiveError::UnsupportedMethod {
+                    format: "HYP".to_string(),
+                    method: "HYP decompression is not yet implemented".to_string(),
+                })
             } /*crate::hyp::hyp_unpack::unpack_hyp(
                   &compressed_buffer,
                   header.original_size as usize,
@@ -43,14 +47,14 @@ impl<T: Read + Seek> HypArchive<T> {
         }
     }
 
-    pub fn get_next_entry(&mut self) -> io::Result<Option<Header>> {
+    pub fn get_next_entry(&mut self) -> Result<Option<Header>> {
         let mut next_header = [0; 1];
         let Ok(_) = self.reader.read_exact(&mut next_header) else {
             return Ok(None);
         };
 
         if next_header[0] != HYP_ID {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid HYP ID"));
+            return Err(ArchiveError::invalid_header("HYP"));
         }
         let mut header_bytes = [0; HEADER_SIZE];
         self.reader.read_exact(&mut header_bytes)?;

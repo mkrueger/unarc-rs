@@ -1,4 +1,6 @@
-use std::io::{self, Read, Seek};
+use std::io::{Read, Seek};
+
+use crate::error::{ArchiveError, Result};
 
 use super::header::Header;
 
@@ -8,19 +10,19 @@ pub struct SqArchive<T: Read + Seek> {
 }
 
 impl<T: Read + Seek> SqArchive<T> {
-    pub fn new(reader: T) -> io::Result<Self> {
+    pub fn new(reader: T) -> Result<Self> {
         Ok(Self {
             reader,
             read_header: false,
         })
     }
 
-    pub fn skip(&mut self, _header: &Header) -> io::Result<()> {
+    pub fn skip(&mut self, _header: &Header) -> Result<()> {
         // just 1 file in the archive
         Ok(())
     }
 
-    pub fn read(&mut self, header: &Header) -> io::Result<Vec<u8>> {
+    pub fn read(&mut self, header: &Header) -> Result<Vec<u8>> {
         let mut compressed_buffer = Vec::new();
         self.reader.read_to_end(&mut compressed_buffer)?;
 
@@ -32,16 +34,17 @@ impl<T: Read + Seek> SqArchive<T> {
         }
 
         if checksum != header.checksum {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "checksum mismatch",
+            Err(ArchiveError::crc_mismatch(
+                &header.name,
+                header.checksum as u32,
+                checksum as u32,
             ))
         } else {
             Ok(data)
         }
     }
 
-    pub fn get_next_entry(&mut self) -> io::Result<Option<Header>> {
+    pub fn get_next_entry(&mut self) -> Result<Option<Header>> {
         if self.read_header {
             return Ok(None);
         }

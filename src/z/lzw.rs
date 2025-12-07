@@ -1,6 +1,6 @@
-use std::io;
-
 use bitstream_io::{BitRead, BitReader, LittleEndian};
+
+use crate::error::Result;
 
 const BITS: usize = 12;
 const INIT_BITS: usize = 9;
@@ -57,14 +57,10 @@ impl Lzw {
             }
         }
 
-        if let Ok(code) = reader.read_var::<u16>(self.n_bits as u32) {
-            Some(code as u16)
-        } else {
-            None
-        }
+        reader.read_var::<u16>(self.n_bits as u32).ok()
     }
 
-    pub fn decomp(&mut self, input: &[u8]) -> io::Result<Vec<u8>> {
+    pub fn decomp(&mut self, input: &[u8]) -> Result<Vec<u8>> {
         let mut result = Vec::new();
         self.maxcodemax = 1 << self.max_bits;
 
@@ -78,7 +74,7 @@ impl Lzw {
         let mut reader = BitReader::endian(input, LittleEndian);
         self.free_ent = if self.block_mode { FIRST } else { 256 };
         self.oldcode = if let Some(old) = self.getcode(&mut reader) {
-            old as u16
+            old
         } else {
             return Ok(result);
         };
@@ -98,7 +94,7 @@ impl Lzw {
             }
             let incode = code;
             if code >= self.free_ent as u16 {
-                self.stack.push(self.finchar as u8);
+                self.stack.push(self.finchar);
                 code = self.oldcode;
             }
             while code >= 256 {

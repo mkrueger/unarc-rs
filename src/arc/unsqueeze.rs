@@ -1,15 +1,15 @@
 use crate::arc::rle::unpack_rle;
+use crate::error::{ArchiveError, Result};
 use bitstream_io::{BitRead, BitReader, LittleEndian};
-use std::io;
 
 const NUMVALS: usize = 257;
 const SPEOF: i16 = 256;
 
-pub fn unsqueeze(mut buf: &[u8]) -> io::Result<Vec<u8>> {
+pub fn unsqueeze(mut buf: &[u8]) -> Result<Vec<u8>> {
     convert_u16!(numnodes, buf);
     if numnodes as usize >= NUMVALS {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
+        return Err(ArchiveError::decompression_failed(
+            "Squeeze",
             format!("invalid number of nodes {} (max {})", numnodes, NUMVALS - 1),
         ));
     }

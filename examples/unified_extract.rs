@@ -5,9 +5,10 @@
 use std::env;
 use std::fs::{self, File};
 use std::path::Path;
+use unarc_rs::error::ArchiveError;
 use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), ArchiveError> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -33,10 +34,10 @@ fn main() -> std::io::Result<()> {
 
     // Detect format from extension
     let format = ArchiveFormat::from_path(archive_path).ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("Unsupported archive format: {:?}", archive_path.extension()),
-        )
+        ArchiveError::UnsupportedFormat(format!(
+            "Unsupported archive format: {:?}",
+            archive_path.extension()
+        ))
     })?;
 
     println!(

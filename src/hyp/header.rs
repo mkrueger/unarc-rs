@@ -1,6 +1,7 @@
-use std::io::{self, Read};
+use std::io::Read;
 
 use crate::date_time::DosDateTime;
+use crate::error::{ArchiveError, Result};
 
 const COMPRESSED: u16 = 0x5048; // "HP"
 const STORED: u16 = 0x5453; // "ST"
@@ -25,7 +26,7 @@ pub struct Header {
 }
 pub const HEADER_SIZE: usize = 21;
 impl Header {
-    pub fn load_from<T: Read>(mut header_bytes: &[u8], reader: &mut T) -> io::Result<Self> {
+    pub fn load_from<T: Read>(mut header_bytes: &[u8], reader: &mut T) -> Result<Self> {
         convert_u16!(compression_method, header_bytes);
         convert_u8!(version, header_bytes);
         convert_u32!(compressed_size, header_bytes);
@@ -42,9 +43,9 @@ impl Header {
                 STORED => CompressionMethod::Stored,
                 COMPRESSED => CompressionMethod::Compressed,
                 _ => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "invalid compression method",
+                    return Err(ArchiveError::unsupported_method(
+                        "HYP",
+                        format!("0x{:04X}", compression_method),
                     ))
                 }
             },
