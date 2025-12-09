@@ -1,8 +1,8 @@
 use std::io::Cursor;
 
-use unarc_rs::ha::{ha_archive::HaArchive, header::CompressionMethod};
 use unarc_rs::ha::asc::decompress_asc;
 use unarc_rs::ha::header::{ArchiveHeader, FileHeader};
+use unarc_rs::ha::{ha_archive::HaArchive, header::CompressionMethod};
 
 #[test]
 fn extract_stored() {
@@ -54,7 +54,7 @@ fn extract_hsc() {
 #[test]
 fn extract_asc_alt() {
     use std::io::Read;
-    
+
     let data = include_bytes!("ha/asc.ha");
     let mut cursor = Cursor::new(&data[..]);
 

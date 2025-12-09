@@ -13,12 +13,13 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **ZIP** | `.zip` | Full support via zip crate (including legacy methods) |
 | **RAR** | `.rar` | Full support via unrar (RAR4 & RAR5) |
 | **LHA/LZH** | `.lha`, `.lzh` | Full support via delharc |
-| **ARJ** | `.arj` | Store, Method 1-4 |
+| **ACE** | `.ace` | ACE 1.0 (LZ77) and ACE 2.0 (Blocked) |
+| **ARJ** | `.arj` | Store, Method 1-4 (full support) |
 | **ARC** | `.arc` | Unpacked, Packed, Squeezed, Crunched, Squashed |
-| **ZOO** | `.zoo` | Methods 0, 1, 2 |
-| **HA** | `.ha` | Store, ASC, HSC |
-| **UC2** | `.uc2` | Full LZ77+Huffman decompression |
-| **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Squeezed |
+| **ZOO** | `.zoo` | Store, LZW, LH5 (full support) |
+| **HA** | `.ha` | Store, ASC, HSC (full support) |
+| **UC2** | `.uc2` | Full support  |
+| **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support |
 | **SQZ** | `.sqz` | Store only |
 | **HYP** | `.hyp` | Store only |
 | **Z** | `.Z` | LZW (Unix compress) |
@@ -140,6 +141,10 @@ Full support for RAR4 and RAR5 via the [unrar](https://crates.io/crates/unrar) c
 ### LHA/LZH
 
 Full support via the excellent [delharc](https://crates.io/crates/delharc) crate.
+
+### ACE
+
+ACE archive support with LZ77+Huffman decompression. Supports both ACE 1.0 (LZ77 mode) and ACE 2.0 (Blocked mode). Password-protected and multi-volume archives are not supported.
 
 ### ARC
 

@@ -5,6 +5,7 @@ pub mod error;
 
 pub use error::{ArchiveError, Result};
 
+pub mod ace;
 pub mod arc;
 pub mod arj;
 pub mod ha;

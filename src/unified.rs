@@ -23,6 +23,7 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek, Write};
 use std::path::Path;
 
+use crate::ace::{AceArchive, FileHeader as AceFileHeader};
 use crate::arc::arc_archive::ArcArchive;
 use crate::arc::local_file_header::LocalFileHeader as ArcHeader;
 use crate::arj::arj_archive::ArjArchive;
@@ -49,6 +50,8 @@ use crate::zoo::zoo_archive::ZooArchive;
 /// Supported archive formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArchiveFormat {
+    /// ACE archive format (.ace)
+    Ace,
     /// ARC archive format (.arc)
     Arc,
     /// ARJ archive format (.arj)
@@ -80,6 +83,7 @@ pub enum ArchiveFormat {
 impl ArchiveFormat {
     /// All supported archive formats
     pub const ALL: &'static [ArchiveFormat] = &[
+        ArchiveFormat::Ace,
         ArchiveFormat::Arc,
         ArchiveFormat::Arj,
         ArchiveFormat::Zoo,
@@ -108,6 +112,7 @@ impl ArchiveFormat {
     pub fn from_extension(ext: &str) -> Option<Self> {
         let ext_lower = ext.to_lowercase();
         match ext_lower.as_str() {
+            "ace" => Some(ArchiveFormat::Ace),
             "arc" => Some(ArchiveFormat::Arc),
             "arj" => Some(ArchiveFormat::Arj),
             "zoo" => Some(ArchiveFormat::Zoo),
@@ -152,6 +157,7 @@ impl ArchiveFormat {
     /// Returns the typical file extension for this format
     pub fn extension(&self) -> &'static str {
         match self {
+            ArchiveFormat::Ace => "ace",
             ArchiveFormat::Arc => "arc",
             ArchiveFormat::Arj => "arj",
             ArchiveFormat::Zoo => "zoo",
@@ -171,6 +177,7 @@ impl ArchiveFormat {
     /// Returns a human-readable name for this format
     pub fn name(&self) -> &'static str {
         match self {
+            ArchiveFormat::Ace => "ACE",
             ArchiveFormat::Arc => "ARC",
             ArchiveFormat::Arj => "ARJ",
             ArchiveFormat::Zoo => "ZOO",
@@ -190,6 +197,7 @@ impl ArchiveFormat {
     /// Returns all typical file extensions for this format
     pub fn extensions(&self) -> &'static [&'static str] {
         match self {
+            ArchiveFormat::Ace => &["ace"],
             ArchiveFormat::Arc => &["arc"],
             ArchiveFormat::Arj => &["arj"],
             ArchiveFormat::Zoo => &["zoo"],
@@ -285,6 +293,7 @@ pub struct ArchiveEntry {
 /// Internal index to track which entry to read
 #[derive(Debug, Clone)]
 enum EntryIndex {
+    Ace(AceFileHeader),
     Arc(ArcHeader),
     Arj(ArjHeader),
     Zoo(ZooEntry),
@@ -381,6 +390,7 @@ impl<T: Read + Seek> Iterator for ArchiveEntryIter<'_, T> {
 
 /// Internal archive wrapper enum
 enum ArchiveInner<T: Read + Seek> {
+    Ace(AceArchive<T>),
     Arc(ArcArchive<T>),
     Arj(ArjArchive<T>),
     Zoo(ZooArchive<T>),
@@ -417,6 +427,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// ```
     pub fn open_with_format(reader: T, format: ArchiveFormat) -> Result<Self> {
         let inner = match format {
+            ArchiveFormat::Ace => ArchiveInner::Ace(AceArchive::new(reader)?),
             ArchiveFormat::Arc => ArchiveInner::Arc(ArcArchive::new(reader)?),
             ArchiveFormat::Arj => ArchiveInner::Arj(ArjArchive::new(reader)?),
             ArchiveFormat::Zoo => ArchiveInner::Zoo(ZooArchive::new(reader)?),
@@ -456,6 +467,21 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// Returns `Ok(None)` when there are no more entries.
     pub fn next_entry(&mut self) -> Result<Option<ArchiveEntry>> {
         match &mut self.inner {
+            ArchiveInner::Ace(archive) => {
+                if let Some(header) = archive.get_next_entry()? {
+                    Ok(Some(ArchiveEntry {
+                        name: header.filename.clone(),
+                        compressed_size: header.packed_size,
+                        original_size: header.original_size,
+                        compression_method: format!("{}", header.compression_type),
+                        modified_time: Some(header.datetime),
+                        crc: header.crc32 as u64,
+                        index: EntryIndex::Ace(header),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
             ArchiveInner::Arc(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
                     Ok(Some(ArchiveEntry {
@@ -677,6 +703,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// ```
     pub fn read(&mut self, entry: &ArchiveEntry) -> Result<Vec<u8>> {
         match (&mut self.inner, &entry.index) {
+            (ArchiveInner::Ace(archive), EntryIndex::Ace(header)) => archive.read(header),
             (ArchiveInner::Arc(archive), EntryIndex::Arc(header)) => archive.read(header),
             (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => archive.read(header),
             (ArchiveInner::Zoo(archive), EntryIndex::Zoo(header)) => archive.read(header),
@@ -730,6 +757,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// This is more efficient than reading if you only need to process certain files.
     pub fn skip(&mut self, entry: &ArchiveEntry) -> Result<()> {
         match (&mut self.inner, &entry.index) {
+            (ArchiveInner::Ace(archive), EntryIndex::Ace(header)) => archive.skip(header),
             (ArchiveInner::Arc(archive), EntryIndex::Arc(header)) => archive.skip(header),
             (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => archive.skip(header),
             (ArchiveInner::Zoo(archive), EntryIndex::Zoo(header)) => archive.skip(header),
