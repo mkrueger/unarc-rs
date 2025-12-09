@@ -68,6 +68,23 @@ fn test_hyp_via_unified() {
 }
 
 #[test]
+fn test_ha_via_unified() {
+    let file = File::open("tests/ha/copy.ha").unwrap();
+    let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Ha).unwrap();
+
+    assert_eq!(archive.format(), ArchiveFormat::Ha);
+
+    let entry = archive.next_entry().unwrap().unwrap();
+    assert_eq!(entry.name(), "license");
+
+    let data = archive.read(&entry).unwrap();
+    assert!(!data.is_empty());
+    // Check for license text
+    let text = String::from_utf8_lossy(&data);
+    assert!(text.contains("MIT") || text.contains("License") || text.contains("license"));
+}
+
+#[test]
 fn test_sq_via_unified() {
     let file = File::open("tests/qqq/license.sq").unwrap();
     let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Sq).unwrap();
@@ -160,6 +177,10 @@ fn test_format_detection() {
         Some(ArchiveFormat::Z)
     );
     assert_eq!(
+        ArchiveFormat::from_path(Path::new("test.ha")),
+        Some(ArchiveFormat::Ha)
+    );
+    assert_eq!(
         ArchiveFormat::from_path(Path::new("test.lha")),
         Some(ArchiveFormat::Lha)
     );
@@ -183,6 +204,7 @@ fn test_is_supported() {
     assert!(is_supported_archive(Path::new("file.arj")));
     assert!(is_supported_archive(Path::new("file.zoo")));
     assert!(is_supported_archive(Path::new("FILE.ARC")));
+    assert!(is_supported_archive(Path::new("file.ha")));
     assert!(is_supported_archive(Path::new("file.lha")));
     assert!(is_supported_archive(Path::new("file.lzh")));
     assert!(is_supported_archive(Path::new("file.zip")));
@@ -197,6 +219,7 @@ fn test_supported_extensions_list() {
     assert!(exts.contains(&"zoo"));
     assert!(exts.contains(&"arc"));
     assert!(exts.contains(&"hyp"));
+    assert!(exts.contains(&"ha"));
     assert!(exts.contains(&"sqz"));
     assert!(exts.contains(&"sq"));
     assert!(exts.contains(&"Z"));

@@ -16,6 +16,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **ARJ** | `.arj` | Store, Method 1-4 |
 | **ARC** | `.arc` | Unpacked, Packed, Squeezed, Crunched, Squashed |
 | **ZOO** | `.zoo` | Methods 0, 1, 2 |
+| **HA** | `.ha` | Store, ASC, HSC |
 | **UC2** | `.uc2` | Full LZ77+Huffman decompression |
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Squeezed |
 | **SQZ** | `.sqz` | Store only |

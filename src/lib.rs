@@ -7,6 +7,7 @@ pub use error::{ArchiveError, Result};
 
 pub mod arc;
 pub mod arj;
+pub mod ha;
 pub mod hyp;
 pub mod lha;
 pub mod rar;
