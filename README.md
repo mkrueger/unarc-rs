@@ -23,6 +23,9 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **SQZ** | `.sqz` | Store only |
 | **HYP** | `.hyp` | Store only |
 | **Z** | `.Z` | LZW (Unix compress) |
+| **TAR** | `.tar` | Full support via tar crate (uncompressed) |
+| **TGZ** | `.tgz`, `.tar.gz` | Full support (gzip-compressed TAR) |
+| **TBZ** | `.tbz`, `.tbz2`, `.tar.bz2` | Full support (bzip2-compressed TAR) |
 
 ## Installation
 
@@ -157,12 +160,6 @@ Popular in the BBS scene in the 90s. Multi-volume and encrypted archives are not
 ### UC2
 
 UltraCompressor II archive format. Supports decompression with SuperMaster dictionary and custom master entries.
-
-## Out of Scope
-
-Not on the todo list:
-
-- **TAR** - Use [tar](https://crates.io/crates/tar)
 
 ## Background
 

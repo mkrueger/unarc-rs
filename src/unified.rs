@@ -41,6 +41,10 @@ use crate::sq::header::Header as SqHeader;
 use crate::sq::sq_archive::SqArchive;
 use crate::sqz::file_header::FileHeader as SqzFileHeader;
 use crate::sqz::sqz_archive::SqzArchive;
+use crate::tar::{TarArchive, TarFileHeader};
+use crate::tarz::TarZArchive;
+use crate::tbz::TbzArchive;
+use crate::tgz::TgzArchive;
 use crate::uc2::uc2_archive::{Uc2Archive, Uc2ArchiveEntry as Uc2Header};
 use crate::z::ZArchive;
 use crate::zip::zip_archive::{ZipArchive, ZipFileHeader};
@@ -76,6 +80,14 @@ pub enum ArchiveFormat {
     Rar,
     /// 7z archive format (.7z)
     SevenZ,
+    /// TAR archive format (.tar)
+    Tar,
+    /// TGZ (tar.gz) archive format (.tgz, .tar.gz)
+    Tgz,
+    /// TBZ (tar.bz2) archive format (.tbz, .tbz2, .tar.bz2)
+    Tbz,
+    /// TAR.Z (tar + Unix compress) archive format (.tar.Z)
+    TarZ,
     //
     Uc2,
 }
@@ -97,6 +109,10 @@ impl ArchiveFormat {
         ArchiveFormat::Zip,
         ArchiveFormat::Rar,
         ArchiveFormat::SevenZ,
+        ArchiveFormat::Tar,
+        ArchiveFormat::Tgz,
+        ArchiveFormat::Tbz,
+        ArchiveFormat::TarZ,
     ];
 
     /// Try to detect the archive format from a file extension
@@ -126,6 +142,9 @@ impl ArchiveFormat {
             "zip" => Some(ArchiveFormat::Zip),
             "rar" => Some(ArchiveFormat::Rar),
             "7z" => Some(ArchiveFormat::SevenZ),
+            "tar" => Some(ArchiveFormat::Tar),
+            "tgz" | "gz" => Some(ArchiveFormat::Tgz),
+            "tbz" | "tbz2" | "bz2" => Some(ArchiveFormat::Tbz),
             _ => {
                 // Check for ?Q? pattern (e.g., .BQK, .CQM, .DQC)
                 let bytes = ext_lower.as_bytes();
@@ -149,6 +168,19 @@ impl ArchiveFormat {
     /// assert_eq!(ArchiveFormat::from_path(Path::new("/path/to/file.zoo")), Some(ArchiveFormat::Zoo));
     /// ```
     pub fn from_path(path: &Path) -> Option<Self> {
+        // Check for .tar.gz first (double extension)
+        let filename = path.file_name()?.to_str()?;
+        let filename_lower = filename.to_lowercase();
+        if filename_lower.ends_with(".tar.gz") {
+            return Some(ArchiveFormat::Tgz);
+        }
+        if filename_lower.ends_with(".tar.bz2") {
+            return Some(ArchiveFormat::Tbz);
+        }
+        if filename_lower.ends_with(".tar.z") {
+            return Some(ArchiveFormat::TarZ);
+        }
+
         path.extension()
             .and_then(|ext| ext.to_str())
             .and_then(Self::from_extension)
@@ -171,6 +203,10 @@ impl ArchiveFormat {
             ArchiveFormat::Zip => "zip",
             ArchiveFormat::Rar => "rar",
             ArchiveFormat::SevenZ => "7z",
+            ArchiveFormat::Tar => "tar",
+            ArchiveFormat::Tgz => "tgz",
+            ArchiveFormat::Tbz => "tbz2",
+            ArchiveFormat::TarZ => "tar.Z",
         }
     }
 
@@ -191,6 +227,10 @@ impl ArchiveFormat {
             ArchiveFormat::Zip => "ZIP",
             ArchiveFormat::Rar => "RAR",
             ArchiveFormat::SevenZ => "7z",
+            ArchiveFormat::Tar => "TAR",
+            ArchiveFormat::Tgz => "TGZ (tar.gz)",
+            ArchiveFormat::Tbz => "TBZ (tar.bz2)",
+            ArchiveFormat::TarZ => "TAR.Z (tar + Unix compress)",
         }
     }
 
@@ -211,6 +251,10 @@ impl ArchiveFormat {
             ArchiveFormat::Zip => &["zip"],
             ArchiveFormat::Rar => &["rar"],
             ArchiveFormat::SevenZ => &["7z"],
+            ArchiveFormat::Tar => &["tar"],
+            ArchiveFormat::Tgz => &["tgz", "tar.gz"],
+            ArchiveFormat::Tbz => &["tbz", "tbz2", "tar.bz2"],
+            ArchiveFormat::TarZ => &["tar.Z"],
         }
     }
 
@@ -308,6 +352,13 @@ enum EntryIndex {
     Zip(ZipFileHeader),
     Rar(RarFileHeader),
     SevenZ(SevenZFileHeader),
+    Tar(TarFileHeader),
+    /// TGZ uses the same header as TAR
+    Tgz(TarFileHeader),
+    /// TBZ uses the same header as TAR
+    Tbz(TarFileHeader),
+    /// TAR.Z uses the same header as TAR
+    TarZ(TarFileHeader),
 }
 
 impl ArchiveEntry {
@@ -404,6 +455,13 @@ enum ArchiveInner<T: Read + Seek> {
     Zip(ZipArchive<T>),
     Rar(RarArchive<T>),
     SevenZ(SevenZArchive<T>),
+    Tar(TarArchive<T>),
+    /// TGZ decompresses to memory, so it doesn't need the generic reader type
+    Tgz(TgzArchive),
+    /// TBZ decompresses to memory, so it doesn't need the generic reader type
+    Tbz(TbzArchive),
+    /// TAR.Z decompresses to memory, so it doesn't need the generic reader type
+    TarZ(TarZArchive),
 }
 
 /// Unified archive reader that provides a common interface for all supported formats
@@ -441,6 +499,10 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Zip => ArchiveInner::Zip(ZipArchive::new(reader)?),
             ArchiveFormat::Rar => ArchiveInner::Rar(RarArchive::new(reader)?),
             ArchiveFormat::SevenZ => ArchiveInner::SevenZ(SevenZArchive::new(reader)?),
+            ArchiveFormat::Tar => ArchiveInner::Tar(TarArchive::new(reader)?),
+            ArchiveFormat::Tgz => ArchiveInner::Tgz(TgzArchive::new(reader)?),
+            ArchiveFormat::Tbz => ArchiveInner::Tbz(TbzArchive::new(reader)?),
+            ArchiveFormat::TarZ => ArchiveInner::TarZ(TarZArchive::new(reader)?),
         };
 
         Ok(Self {
@@ -683,6 +745,66 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 }
             }
+            ArchiveInner::Tar(archive) => {
+                if let Some(header) = archive.get_next_entry()? {
+                    Ok(Some(ArchiveEntry {
+                        name: header.name.clone(),
+                        compressed_size: header.size, // TAR doesn't compress
+                        original_size: header.size,
+                        compression_method: "Stored".to_string(),
+                        modified_time: header.modified_time(),
+                        crc: 0, // TAR doesn't use CRC
+                        index: EntryIndex::Tar(header),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
+            ArchiveInner::Tgz(archive) => {
+                if let Some(header) = archive.get_next_entry()? {
+                    Ok(Some(ArchiveEntry {
+                        name: header.name.clone(),
+                        compressed_size: header.size, // Original TAR size (uncompressed)
+                        original_size: header.size,
+                        compression_method: "Gzip + Stored".to_string(),
+                        modified_time: header.modified_time(),
+                        crc: 0, // TAR doesn't use CRC
+                        index: EntryIndex::Tgz(header),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
+            ArchiveInner::Tbz(archive) => {
+                if let Some(header) = archive.get_next_entry()? {
+                    Ok(Some(ArchiveEntry {
+                        name: header.name.clone(),
+                        compressed_size: header.size, // Original TAR size (uncompressed)
+                        original_size: header.size,
+                        compression_method: "Bzip2 + Stored".to_string(),
+                        modified_time: header.modified_time(),
+                        crc: 0, // TAR doesn't use CRC
+                        index: EntryIndex::Tbz(header),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
+            ArchiveInner::TarZ(archive) => {
+                if let Some(header) = archive.get_next_entry()? {
+                    Ok(Some(ArchiveEntry {
+                        name: header.name.clone(),
+                        compressed_size: header.size, // Original TAR size (uncompressed)
+                        original_size: header.size,
+                        compression_method: "LZW + Stored".to_string(),
+                        modified_time: header.modified_time(),
+                        crc: 0, // TAR doesn't use CRC
+                        index: EntryIndex::TarZ(header),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
 
@@ -717,6 +839,10 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.read(header),
             (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.read(header),
             (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.read(header),
+            (ArchiveInner::Tar(archive), EntryIndex::Tar(header)) => archive.read(header),
+            (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.read(header),
+            (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.read(header),
+            (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.read(header),
             _ => Err(ArchiveError::IndexMismatch(
                 "Entry does not belong to this archive".to_string(),
             )),
@@ -771,6 +897,10 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.skip(header),
             (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.skip(header),
             (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.skip(header),
+            (ArchiveInner::Tar(archive), EntryIndex::Tar(header)) => archive.skip(header),
+            (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.skip(header),
+            (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.skip(header),
+            (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.skip(header),
             _ => Err(ArchiveError::IndexMismatch(
                 "Entry does not belong to this archive".to_string(),
             )),

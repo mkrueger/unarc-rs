@@ -85,6 +85,57 @@ fn test_ha_via_unified() {
 }
 
 #[test]
+fn test_tar_via_unified() {
+    let file = File::open("tests/tar/license.tar").unwrap();
+    let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Tar).unwrap();
+
+    assert_eq!(archive.format(), ArchiveFormat::Tar);
+
+    let entry = archive.next_entry().unwrap().unwrap();
+    assert_eq!(entry.name(), "LICENSE");
+
+    let data = archive.read(&entry).unwrap();
+    assert!(!data.is_empty());
+    // Check for license text
+    let text = String::from_utf8_lossy(&data);
+    assert!(text.contains("MIT") || text.contains("License"));
+}
+
+#[test]
+fn test_tgz_via_unified() {
+    let file = File::open("tests/tgz/license.tar.gz").unwrap();
+    let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Tgz).unwrap();
+
+    assert_eq!(archive.format(), ArchiveFormat::Tgz);
+
+    let entry = archive.next_entry().unwrap().unwrap();
+    assert_eq!(entry.name(), "LICENSE");
+
+    let data = archive.read(&entry).unwrap();
+    assert!(!data.is_empty());
+    // Check for license text
+    let text = String::from_utf8_lossy(&data);
+    assert!(text.contains("MIT") || text.contains("License"));
+}
+
+#[test]
+fn test_tbz_via_unified() {
+    let file = File::open("tests/tbz/license.tar.bz2").unwrap();
+    let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Tbz).unwrap();
+
+    assert_eq!(archive.format(), ArchiveFormat::Tbz);
+
+    let entry = archive.next_entry().unwrap().unwrap();
+    assert_eq!(entry.name(), "LICENSE");
+
+    let data = archive.read(&entry).unwrap();
+    assert!(!data.is_empty());
+    // Check for license text
+    let text = String::from_utf8_lossy(&data);
+    assert!(text.contains("MIT") || text.contains("License"));
+}
+
+#[test]
 fn test_sq_via_unified() {
     let file = File::open("tests/qqq/license.sq").unwrap();
     let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Sq).unwrap();
@@ -209,6 +260,11 @@ fn test_is_supported() {
     assert!(is_supported_archive(Path::new("file.lzh")));
     assert!(is_supported_archive(Path::new("file.zip")));
     assert!(is_supported_archive(Path::new("file.rar")));
+    assert!(is_supported_archive(Path::new("file.tar")));
+    assert!(is_supported_archive(Path::new("file.tgz")));
+    assert!(is_supported_archive(Path::new("file.tar.gz")));
+    assert!(is_supported_archive(Path::new("file.tbz2")));
+    assert!(is_supported_archive(Path::new("file.tar.bz2")));
     assert!(!is_supported_archive(Path::new("file.txt")));
 }
 
@@ -227,6 +283,12 @@ fn test_supported_extensions_list() {
     assert!(exts.contains(&"lzh"));
     assert!(exts.contains(&"zip"));
     assert!(exts.contains(&"rar"));
+    assert!(exts.contains(&"tar"));
+    assert!(exts.contains(&"tgz"));
+    assert!(exts.contains(&"tar.gz"));
+    assert!(exts.contains(&"tbz"));
+    assert!(exts.contains(&"tbz2"));
+    assert!(exts.contains(&"tar.bz2"));
 }
 
 #[test]

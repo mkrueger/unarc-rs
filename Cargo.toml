@@ -23,6 +23,9 @@ zip = { version="6.0.0", features = ["legacy-zip"] }
 unrar = "0.5.8"
 sevenz-rust2 = "0.20.0"
 thiserror = "2.0.17"
+tar = "0.4"
+flate2 = "1.1.5"
+bzip2 = "0.6.1"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

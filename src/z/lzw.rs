@@ -1,118 +1,176 @@
-use bitstream_io::{BitRead, BitReader, LittleEndian};
+//! LZW decompression for classic Unix .Z files
+//!
+//! Based on the classic Unix "uncompress" / "zcat" implementation. (from ncompress)
+//! Supports 9-16 bit codes and block mode (CLEAR code).
 
 use crate::error::Result;
 
-const BITS: usize = 12;
-const INIT_BITS: usize = 9;
-const FIRST: u32 = 257;
-const CLEAR: u16 = 256;
+/// Maximum bits for codes (9-16)
+const BITS: usize = 16;
+/// Hash table size
+const HSIZE: usize = 69001;
 
+/// Macro to calculate max code for n bits
+#[inline]
+fn maxcode(n: usize) -> usize {
+    (1 << n) - 1
+}
+
+/// LZW decompressor for .Z files
 pub struct Lzw {
-    oldcode: u16,
-    finchar: u8,
-    n_bits: usize,
-    maxcode: u32,
-    prefix: [u16; 8191],
-    suffix: [u8; 8191],
-    clear_flg: bool,
-    stack: Vec<u8>,
-    free_ent: u32,
-    maxcodemax: u32,
     max_bits: u8,
     block_mode: bool,
 }
 
 impl Lzw {
+    /// Create a new LZW decompressor
+    ///
+    /// # Arguments
+    /// * `max_bits` - Maximum bits per code (9-16), from .Z file header
+    /// * `block_mode` - If true, handle CLEAR codes (code 256) for table reset
     pub fn new(max_bits: u8, block_mode: bool) -> Self {
         Lzw {
             max_bits,
             block_mode,
-            oldcode: 0,
-            finchar: 0,
-            n_bits: 0,
-            maxcode: 0,
-            prefix: [0; 8191],
-            suffix: [0; 8191],
-            clear_flg: false,
-            stack: Vec::new(),
-            free_ent: FIRST,
-            maxcodemax: 0,
         }
     }
 
-    fn getcode(&mut self, reader: &mut BitReader<&[u8], LittleEndian>) -> Option<u16> {
-        if self.clear_flg || self.free_ent > self.maxcode {
-            if self.free_ent > self.maxcode {
-                self.n_bits += 1;
-                if self.n_bits == BITS {
-                    self.maxcode = self.maxcodemax;
-                } else {
-                    self.maxcode = (1 << self.n_bits) - 1;
-                }
-            }
-            if self.clear_flg {
-                self.clear_flg = false;
-                self.n_bits = INIT_BITS;
-                self.maxcode = (1 << self.n_bits) - 1;
-            }
-        }
-
-        reader.read_var::<u16>(self.n_bits as u32).ok()
-    }
-
+    /// Decompress LZW-compressed data
     pub fn decomp(&mut self, input: &[u8]) -> Result<Vec<u8>> {
-        let mut result = Vec::new();
-        self.maxcodemax = 1 << self.max_bits;
+        let max_bits = self.max_bits as usize;
+        let block_mode = self.block_mode;
 
-        self.clear_flg = false;
-        self.n_bits = INIT_BITS;
-        self.maxcode = (1 << self.n_bits) - 1;
-        for code in 0..256 {
-            self.suffix[code] = code as u8;
+        // Bit buffer for reading variable-width codes
+        let mut buf: u64 = 0;
+        let mut buflen: usize = 0;
+        let mut input_pos: usize = 0;
+
+        // Read next code from input stream
+        let read_code = |n_bits: usize,
+                         buf: &mut u64,
+                         buflen: &mut usize,
+                         input_pos: &mut usize|
+         -> Option<usize> {
+            while *buflen < n_bits {
+                if *input_pos >= input.len() {
+                    return None;
+                }
+                *buf |= (input[*input_pos] as u64) << *buflen;
+                *input_pos += 1;
+                *buflen += 8;
+            }
+            let code = (*buf & ((1u64 << n_bits) - 1)) as usize;
+            *buf >>= n_bits;
+            *buflen -= n_bits;
+            Some(code)
+        };
+
+        // Dictionary tables
+        let mut htab: Vec<u16> = vec![0; HSIZE]; // prefix table
+        let mut codetab: Vec<u8> = vec![0; HSIZE]; // suffix table
+
+        // Output buffer
+        let mut output: Vec<u8> = Vec::new();
+
+        // Stack for decoding (strings are built in reverse)
+        let mut stack: Vec<u8> = Vec::with_capacity(HSIZE);
+
+        // Initialize
+        let mut n_bits = 9usize;
+        let mut maxcode_val = maxcode(n_bits);
+        let mut free_ent = if block_mode { 257 } else { 256 };
+
+        // Read first code
+        let oldcode = match read_code(n_bits, &mut buf, &mut buflen, &mut input_pos) {
+            Some(c) => c,
+            None => return Ok(output),
+        };
+
+        if oldcode > 255 {
+            return Err(crate::error::ArchiveError::DecompressionFailed {
+                entry: String::new(),
+                reason: "First code > 255".to_string(),
+            });
         }
 
-        let mut reader = BitReader::endian(input, LittleEndian);
-        self.free_ent = if self.block_mode { FIRST } else { 256 };
-        self.oldcode = if let Some(old) = self.getcode(&mut reader) {
-            old
-        } else {
-            return Ok(result);
-        };
-        self.finchar = self.oldcode as u8;
-        result.push(self.finchar);
+        let mut finchar = oldcode as u8;
+        let mut oldcode = oldcode;
+        output.push(finchar);
 
-        while let Some(mut code) = self.getcode(&mut reader) {
-            if code == CLEAR && self.block_mode {
-                self.prefix.fill(0);
-                self.clear_flg = true;
-                self.free_ent = FIRST - 1;
-                if let Some(c) = self.getcode(&mut reader) {
-                    code = c;
-                } else {
-                    break;
+        // Main decompression loop
+        while let Some(incode) = read_code(n_bits, &mut buf, &mut buflen, &mut input_pos) {
+            // Handle CLEAR code in block mode
+            if incode == 256 && block_mode {
+                // Reset dictionary
+                htab.fill(0);
+                n_bits = 9;
+                maxcode_val = maxcode(n_bits);
+
+                // Read next code after clear
+                match read_code(n_bits, &mut buf, &mut buflen, &mut input_pos) {
+                    Some(c) => {
+                        if c > 255 {
+                            return Err(crate::error::ArchiveError::DecompressionFailed {
+                                entry: String::new(),
+                                reason: "Code after CLEAR > 255".to_string(),
+                            });
+                        }
+                        finchar = c as u8;
+                        oldcode = c;
+                        output.push(finchar);
+                        free_ent = 257;
+                        continue;
+                    }
+                    None => break,
                 }
             }
-            let incode = code;
-            if code >= self.free_ent as u16 {
-                self.stack.push(self.finchar);
-                code = self.oldcode;
-            }
-            while code >= 256 {
-                self.stack.push(self.suffix[code as usize]);
-                code = self.prefix[code as usize];
-            }
-            self.finchar = self.suffix[code as usize];
-            self.stack.push(self.finchar);
-            result.extend(self.stack.drain(..).rev());
 
-            code = self.free_ent as u16;
-            if (code as u32) < self.maxcodemax {
-                self.prefix[code as usize] = self.oldcode;
-                self.suffix[code as usize] = self.finchar;
-                self.free_ent = code as u32 + 1;
+            let mut code = incode;
+
+            // Special case: code == free_ent (KwKwK)
+            if code >= free_ent {
+                if code > free_ent {
+                    return Err(crate::error::ArchiveError::DecompressionFailed {
+                        entry: String::new(),
+                        reason: format!("Invalid code {} > free_ent {}", code, free_ent),
+                    });
+                }
+                // Push finchar and use oldcode
+                stack.push(finchar);
+                code = oldcode;
             }
-            self.oldcode = incode;
+
+            // Decode the string by following the chain
+            while code >= 256 {
+                stack.push(codetab[code]);
+                code = htab[code] as usize;
+            }
+
+            // First character of the string
+            finchar = code as u8;
+
+            // Output the decoded string (in correct order)
+            output.push(finchar);
+            while let Some(c) = stack.pop() {
+                output.push(c);
+            }
+
+            // Add new entry to dictionary
+            if free_ent < (1 << BITS) {
+                htab[free_ent] = oldcode as u16;
+                codetab[free_ent] = finchar;
+                free_ent += 1;
+
+                // Increase code size if needed
+                if free_ent > maxcode_val && n_bits < max_bits {
+                    n_bits += 1;
+                    maxcode_val = maxcode(n_bits);
+                }
+            }
+
+            oldcode = incode;
         }
-        Ok(result)
+
+        Ok(output)
     }
 }
