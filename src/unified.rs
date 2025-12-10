@@ -28,8 +28,10 @@ use crate::arc::arc_archive::ArcArchive;
 use crate::arc::local_file_header::LocalFileHeader as ArcHeader;
 use crate::arj::arj_archive::ArjArchive;
 use crate::arj::local_file_header::LocalFileHeader as ArjHeader;
+use crate::bz2::Bz2Archive;
 use crate::date_time::DosDateTime;
 use crate::error::{ArchiveError, Result};
+use crate::gz::GzArchive;
 use crate::ha::ha_archive::HaArchive;
 use crate::ha::header::FileHeader as HaHeader;
 use crate::hyp::header::Header as HypHeader;
@@ -68,6 +70,10 @@ pub enum ArchiveFormat {
     Sqz,
     /// Unix compress format (.Z)
     Z,
+    /// Gzip single file format (.gz)
+    Gz,
+    /// Bzip2 single file format (.bz2)
+    Bz2,
     /// Hyper archive format (.hyp)
     Hyp,
     /// HA (Harri Archiver) format (.ha)
@@ -102,6 +108,8 @@ impl ArchiveFormat {
         ArchiveFormat::Sq,
         ArchiveFormat::Sqz,
         ArchiveFormat::Z,
+        ArchiveFormat::Gz,
+        ArchiveFormat::Bz2,
         ArchiveFormat::Hyp,
         ArchiveFormat::Ha,
         ArchiveFormat::Uc2,
@@ -115,17 +123,8 @@ impl ArchiveFormat {
         ArchiveFormat::TarZ,
     ];
 
-    /// Try to detect the archive format from a file extension
-    ///
-    /// # Example
-    /// ```
-    /// use unarc_rs::unified::ArchiveFormat;
-    ///
-    /// assert_eq!(ArchiveFormat::from_extension("arj"), Some(ArchiveFormat::Arj));
-    /// assert_eq!(ArchiveFormat::from_extension("ARJ"), Some(ArchiveFormat::Arj));
-    /// assert_eq!(ArchiveFormat::from_extension("txt"), None);
-    /// ```
-    pub fn from_extension(ext: &str) -> Option<Self> {
+    /// Try to detect the archive format from a file extension (internal use only)
+    fn from_extension(ext: &str) -> Option<Self> {
         let ext_lower = ext.to_lowercase();
         match ext_lower.as_str() {
             "ace" => Some(ArchiveFormat::Ace),
@@ -135,6 +134,8 @@ impl ArchiveFormat {
             "sq" | "sq2" | "qqq" => Some(ArchiveFormat::Sq),
             "sqz" => Some(ArchiveFormat::Sqz),
             "z" => Some(ArchiveFormat::Z),
+            "gz" => Some(ArchiveFormat::Gz),
+            "bz2" => Some(ArchiveFormat::Bz2),
             "uc2" => Some(ArchiveFormat::Uc2),
             "hyp" => Some(ArchiveFormat::Hyp),
             "ha" => Some(ArchiveFormat::Ha),
@@ -143,8 +144,8 @@ impl ArchiveFormat {
             "rar" => Some(ArchiveFormat::Rar),
             "7z" => Some(ArchiveFormat::SevenZ),
             "tar" => Some(ArchiveFormat::Tar),
-            "tgz" | "gz" => Some(ArchiveFormat::Tgz),
-            "tbz" | "tbz2" | "bz2" => Some(ArchiveFormat::Tbz),
+            "tgz" => Some(ArchiveFormat::Tgz),
+            "tbz" | "tbz2" => Some(ArchiveFormat::Tbz),
             _ => {
                 // Check for ?Q? pattern (e.g., .BQK, .CQM, .DQC)
                 let bytes = ext_lower.as_bytes();
@@ -196,6 +197,8 @@ impl ArchiveFormat {
             ArchiveFormat::Sq => "sq",
             ArchiveFormat::Sqz => "sqz",
             ArchiveFormat::Z => "Z",
+            ArchiveFormat::Gz => "gz",
+            ArchiveFormat::Bz2 => "bz2",
             ArchiveFormat::Hyp => "hyp",
             ArchiveFormat::Ha => "ha",
             ArchiveFormat::Uc2 => "uc2",
@@ -220,6 +223,8 @@ impl ArchiveFormat {
             ArchiveFormat::Sq => "SQ (Squeezed)",
             ArchiveFormat::Sqz => "SQZ (Squeeze It)",
             ArchiveFormat::Z => "Z (Unix compress)",
+            ArchiveFormat::Gz => "GZ (gzip)",
+            ArchiveFormat::Bz2 => "BZ2 (bzip2)",
             ArchiveFormat::Hyp => "HYP (Hyper)",
             ArchiveFormat::Ha => "HA (Harri Archiver)",
             ArchiveFormat::Uc2 => "UC2 (Ultra Compressor II)",
@@ -244,6 +249,8 @@ impl ArchiveFormat {
             ArchiveFormat::Sq => &["sq", "sq2", "qqq"],
             ArchiveFormat::Sqz => &["sqz"],
             ArchiveFormat::Z => &["Z"],
+            ArchiveFormat::Gz => &["gz"],
+            ArchiveFormat::Bz2 => &["bz2"],
             ArchiveFormat::Hyp => &["hyp"],
             ArchiveFormat::Ha => &["ha"],
             ArchiveFormat::Uc2 => &["uc2"],
@@ -304,10 +311,13 @@ impl ArchiveFormat {
         let reader = BufReader::new(file);
         let mut archive = format.open(reader)?;
 
-        // For .Z files, derive the output filename from the archive name
-        if format == ArchiveFormat::Z {
+        // For single-file formats (.Z, .gz, .bz2), derive the output filename from the archive name
+        if matches!(
+            format,
+            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
+        ) {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                archive.set_z_filename(stem.to_string());
+                archive.set_single_file_name(stem.to_string());
             }
         }
 
@@ -345,6 +355,10 @@ enum EntryIndex {
     Sqz(SqzFileHeader),
     /// Z format has no header per file, just one file
     Z,
+    /// GZ format has no header per file, just one file
+    Gz,
+    /// BZ2 format has no header per file, just one file
+    Bz2,
     Hyp(HypHeader),
     Ha(HaHeader),
     Uc2(Uc2Header),
@@ -447,7 +461,9 @@ enum ArchiveInner<T: Read + Seek> {
     Zoo(ZooArchive<T>),
     Sq(SqArchive<T>),
     Sqz(SqzArchive<T>),
-    Z(ZArchive<T>, bool), // bool = already read
+    Z(ZArchive<T>, bool),     // bool = already read
+    Gz(GzArchive<T>, bool),   // bool = already read
+    Bz2(Bz2Archive<T>, bool), // bool = already read
     Hyp(HypArchive<T>),
     Ha(HaArchive<T>),
     Uc2(Uc2Archive<T>),
@@ -468,8 +484,8 @@ enum ArchiveInner<T: Read + Seek> {
 pub struct UnifiedArchive<T: Read + Seek> {
     inner: ArchiveInner<T>,
     format: ArchiveFormat,
-    /// For Z format: store the original filename if known
-    z_filename: Option<String>,
+    /// For single-file formats (.Z, .gz, .bz2): store the original filename if known
+    single_file_name: Option<String>,
 }
 
 impl<T: Read + Seek> UnifiedArchive<T> {
@@ -492,6 +508,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Sq => ArchiveInner::Sq(SqArchive::new(reader)?),
             ArchiveFormat::Sqz => ArchiveInner::Sqz(SqzArchive::new(reader)?),
             ArchiveFormat::Z => ArchiveInner::Z(ZArchive::new(reader)?, false),
+            ArchiveFormat::Gz => ArchiveInner::Gz(GzArchive::new(reader)?, false),
+            ArchiveFormat::Bz2 => ArchiveInner::Bz2(Bz2Archive::new(reader)?, false),
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
             ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
             ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
@@ -508,7 +526,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
         Ok(Self {
             inner,
             format,
-            z_filename: None,
+            single_file_name: None,
         })
     }
 
@@ -517,11 +535,11 @@ impl<T: Read + Seek> UnifiedArchive<T> {
         self.format
     }
 
-    /// Set the filename for Z format archives (since .Z files don't contain the filename)
+    /// Set the filename for single-file formats (.Z, .gz, .bz2) since they don't contain the filename
     ///
-    /// This is typically derived from the archive filename by removing the .Z extension.
-    pub fn set_z_filename(&mut self, name: String) {
-        self.z_filename = Some(name);
+    /// This is typically derived from the archive filename by removing the extension.
+    pub fn set_single_file_name(&mut self, name: String) {
+        self.single_file_name = Some(name);
     }
 
     /// Get the next entry in the archive
@@ -626,7 +644,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                 } else {
                     *read = true;
                     let name = self
-                        .z_filename
+                        .single_file_name
                         .clone()
                         .unwrap_or_else(|| "compressed".to_string());
                     Ok(Some(ArchiveEntry {
@@ -637,6 +655,46 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         modified_time: None,
                         crc: 0,
                         index: EntryIndex::Z,
+                    }))
+                }
+            }
+            ArchiveInner::Gz(_, ref mut read) => {
+                if *read {
+                    Ok(None)
+                } else {
+                    *read = true;
+                    let name = self
+                        .single_file_name
+                        .clone()
+                        .unwrap_or_else(|| "compressed".to_string());
+                    Ok(Some(ArchiveEntry {
+                        name,
+                        compressed_size: 0, // Would need to seek to get this
+                        original_size: 0,   // Unknown until decompressed
+                        compression_method: "Deflate".to_string(),
+                        modified_time: None,
+                        crc: 0,
+                        index: EntryIndex::Gz,
+                    }))
+                }
+            }
+            ArchiveInner::Bz2(_, ref mut read) => {
+                if *read {
+                    Ok(None)
+                } else {
+                    *read = true;
+                    let name = self
+                        .single_file_name
+                        .clone()
+                        .unwrap_or_else(|| "compressed".to_string());
+                    Ok(Some(ArchiveEntry {
+                        name,
+                        compressed_size: 0, // Would need to seek to get this
+                        original_size: 0,   // Unknown until decompressed
+                        compression_method: "Bzip2".to_string(),
+                        modified_time: None,
+                        crc: 0,
+                        index: EntryIndex::Bz2,
                     }))
                 }
             }
@@ -832,6 +890,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Sq(archive), EntryIndex::Sq(header)) => archive.read(header),
             (ArchiveInner::Sqz(archive), EntryIndex::Sqz(header)) => archive.read(header),
             (ArchiveInner::Z(archive, _), EntryIndex::Z) => archive.read(),
+            (ArchiveInner::Gz(archive, _), EntryIndex::Gz) => archive.read(),
+            (ArchiveInner::Bz2(archive, _), EntryIndex::Bz2) => archive.read(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.read(header),
             (ArchiveInner::Ha(archive), EntryIndex::Ha(header)) => archive.read(header),
             (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.read(header),
@@ -890,6 +950,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Sq(archive), EntryIndex::Sq(header)) => archive.skip(header),
             (ArchiveInner::Sqz(archive), EntryIndex::Sqz(header)) => archive.skip(header),
             (ArchiveInner::Z(archive, _), EntryIndex::Z) => archive.skip(),
+            (ArchiveInner::Gz(archive, _), EntryIndex::Gz) => archive.skip(),
+            (ArchiveInner::Bz2(archive, _), EntryIndex::Bz2) => archive.skip(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.skip(header),
             (ArchiveInner::Ha(archive), EntryIndex::Ha(header)) => archive.skip(header),
             (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.skip(header),
@@ -1069,9 +1131,48 @@ mod tests {
         assert!(exts.contains(&"sq"));
         assert!(exts.contains(&"sqz"));
         assert!(exts.contains(&"Z"));
+        assert!(exts.contains(&"gz"));
+        assert!(exts.contains(&"bz2"));
         assert!(exts.contains(&"hyp"));
         assert!(exts.contains(&"rar"));
         assert!(exts.contains(&"7z"));
+    }
+
+    #[test]
+    fn test_gz_bz2_format_detection() {
+        // Test .gz as single file format
+        assert_eq!(ArchiveFormat::from_extension("gz"), Some(ArchiveFormat::Gz));
+        assert_eq!(ArchiveFormat::from_extension("GZ"), Some(ArchiveFormat::Gz));
+
+        // Test .bz2 as single file format
+        assert_eq!(
+            ArchiveFormat::from_extension("bz2"),
+            Some(ArchiveFormat::Bz2)
+        );
+        assert_eq!(
+            ArchiveFormat::from_extension("BZ2"),
+            Some(ArchiveFormat::Bz2)
+        );
+
+        // Test path detection
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("file.gz")),
+            Some(ArchiveFormat::Gz)
+        );
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("file.bz2")),
+            Some(ArchiveFormat::Bz2)
+        );
+
+        // Test .tar.gz still detects as Tgz (tar archive)
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("file.tar.gz")),
+            Some(ArchiveFormat::Tgz)
+        );
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("file.tar.bz2")),
+            Some(ArchiveFormat::Tbz)
+        );
     }
 
     #[test]

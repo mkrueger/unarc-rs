@@ -22,10 +22,13 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support |
 | **SQZ** | `.sqz` | Store only |
 | **HYP** | `.hyp` | Store only |
-| **Z** | `.Z` | LZW (Unix compress) |
+| **Z** | `.Z` | LZW (single file) |
+| **GZ** | `.gz` | Gzip (single file) |
+| **BZ2** | `.bz2` | Bzip2 (single file) |
 | **TAR** | `.tar` | Full support via tar crate (uncompressed) |
 | **TGZ** | `.tgz`, `.tar.gz` | Full support (gzip-compressed TAR) |
 | **TBZ** | `.tbz`, `.tbz2`, `.tar.bz2` | Full support (bzip2-compressed TAR) |
+| **TAR.Z** | `.tar.Z` | Full support (LZW-compressed TAR) |
 
 ## Installation
 
@@ -107,7 +110,7 @@ if let Some(format) = ArchiveFormat::from_path(Path::new("archive.zoo")) {
 
 - `open_path(path)` - Open archive from file path (auto-detects format)
 - `open(reader)` - Open archive from any `Read + Seek`
-- `from_path(path)` / `from_extension(ext)` - Detect format
+- `from_path(path)` - Detect format from path
 - `name()` / `extension()` / `extensions()` - Format metadata
 
 ### `UnifiedArchive`

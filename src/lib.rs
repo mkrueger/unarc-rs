@@ -8,6 +8,8 @@ pub use error::{ArchiveError, Result};
 pub mod ace;
 pub mod arc;
 pub mod arj;
+pub mod bz2;
+pub mod gz;
 pub mod ha;
 pub mod hyp;
 pub mod lha;

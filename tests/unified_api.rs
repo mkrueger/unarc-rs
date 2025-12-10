@@ -168,7 +168,7 @@ fn test_sqz_stored_via_unified() {
 fn test_z_via_unified() {
     let file = File::open("tests/Z/LICENSE.Z").unwrap();
     let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Z).unwrap();
-    archive.set_z_filename("LICENSE".to_string());
+    archive.set_single_file_name("LICENSE".to_string());
 
     assert_eq!(archive.format(), ArchiveFormat::Z);
 

@@ -49,10 +49,13 @@ fn main() -> Result<(), ArchiveError> {
     let file = File::open(archive_path)?;
     let mut archive = UnifiedArchive::open_with_format(file, format)?;
 
-    // For .Z files, derive the output filename from the archive name
-    if format == ArchiveFormat::Z {
+    // For single-file formats (.Z, .gz, .bz2), derive the output filename from the archive name
+    if matches!(
+        format,
+        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
+    ) {
         if let Some(stem) = archive_path.file_stem() {
-            archive.set_z_filename(stem.to_string_lossy().to_string());
+            archive.set_single_file_name(stem.to_string_lossy().to_string());
         }
     }
 
