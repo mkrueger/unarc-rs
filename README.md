@@ -7,28 +7,42 @@ A Rust library for reading and extracting various archive formats, with a focus 
 
 ## Supported Formats
 
+### Archive Formats
+
 | Format | Extensions | Compression Support |
 |--------|------------|---------------------|
 | **7z** | `.7z` | Full support via sevenz-rust2 |
 | **ZIP** | `.zip` | Full support via zip crate (including legacy methods) |
 | **RAR** | `.rar` | Full support via unrar (RAR4 & RAR5) |
 | **LHA/LZH** | `.lha`, `.lzh` | Full support via delharc |
+| **TAR** | `.tar` | Full support via tar crate |
 | **ACE** | `.ace` | ACE 1.0 (LZ77) and ACE 2.0 (Blocked) |
 | **ARJ** | `.arj` | Store, Method 1-4 (full support) |
 | **ARC** | `.arc` | Unpacked, Packed, Squeezed, Crunched, Squashed |
 | **ZOO** | `.zoo` | Store, LZW, LH5 (full support) |
 | **HA** | `.ha` | Store, ASC, HSC (full support) |
-| **UC2** | `.uc2` | Full support  |
+| **UC2** | `.uc2` | Full support |
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support |
 | **SQZ** | `.sqz` | Store only |
 | **HYP** | `.hyp` | Store only |
-| **Z** | `.Z` | LZW (single file) |
-| **GZ** | `.gz` | Gzip (single file) |
-| **BZ2** | `.bz2` | Bzip2 (single file) |
-| **TAR** | `.tar` | Full support via tar crate (uncompressed) |
-| **TGZ** | `.tgz`, `.tar.gz` | Full support (gzip-compressed TAR) |
-| **TBZ** | `.tbz`, `.tbz2`, `.tar.bz2` | Full support (bzip2-compressed TAR) |
-| **TAR.Z** | `.tar.Z` | Full support (LZW-compressed TAR) |
+
+### Single-File Compression
+
+| Format | Extensions | Notes |
+|--------|------------|-------|
+| **Z** | `.Z` | Unix compress (LZW) |
+| **GZ** | `.gz` | Gzip (Deflate) |
+| **BZ2** | `.bz2` | Bzip2 |
+
+### Compressed Archives
+
+| Format | Extensions | Notes |
+|--------|------------|-------|
+| **TGZ** | `.tgz`, `.tar.gz` | Gzip-compressed TAR |
+| **TBZ** | `.tbz`, `.tbz2`, `.tar.bz2` | Bzip2-compressed TAR |
+| **TAR.Z** | `.tar.Z` | LZW-compressed TAR |
+
+> **Note:** Single-file formats (`.Z`, `.gz`, `.bz2`) compress one file only. When a path like `file.tar.gz` is opened, the library detects it as a compressed TAR archive, returning all entries from the inner TAR.
 
 ## Installation
 
@@ -163,6 +177,22 @@ Popular in the BBS scene in the 90s. Multi-volume and encrypted archives are not
 ### UC2
 
 UltraCompressor II archive format. Supports decompression with SuperMaster dictionary and custom master entries.
+
+### ZOO
+
+Classic DOS/Amiga archiver from 1986. Native implementation supporting all compression methods.
+
+### HA
+
+Harri Hirvola's archiver (1993). Native implementation with ASC (arithmetic coding) and HSC (static Huffman) support.
+
+### SQ/SQ2
+
+CP/M and DOS "squeeze" format. Huffman-based compression used for single files, commonly seen as `?Q?` patterns (e.g., `.BQK` for `.BAS`).
+
+### TAR Variants
+
+TAR archives can be wrapped with compression. The library auto-detects `.tar.gz`, `.tar.bz2`, and `.tar.Z` from the file path and handles decompression transparently.
 
 ## Background
 
