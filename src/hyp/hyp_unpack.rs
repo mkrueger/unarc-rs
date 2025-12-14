@@ -29,10 +29,6 @@ fn word_index(offset: u16) -> usize {
 const READ_BITS_MSB: bool = false;
 const UPDATE_DYNA_HUFFMAN: bool = true;
 
-fn hyp_debug_enabled() -> bool {
-    std::env::var_os("UNARC_HYP_DEBUG").is_some()
-}
-
 struct BitReader<'a> {
     buffer: &'a [u8],
     byte_pos: usize,
@@ -85,30 +81,6 @@ impl<'a> BitReader<'a> {
         }
         bit
     }
-/* 
-    /// Port of HYPER.EXE `fcn.000043e1` ("readsmart_max").
-    /// Builds a variable-length value in the range `[0, max]`.
-    fn read_smart_max(&mut self, max: u16) -> u16 {
-        let dx = max;
-        let mut cx = 1u16;
-        let mut ax = cx;
-
-        loop {
-            if !self.read_bit() {
-                ax ^= cx;
-            }
-
-            cx <<= 1;
-            ax |= cx;
-
-            if ax <= dx {
-                continue;
-            }
-
-            ax ^= cx;
-            return ax;
-        }
-    }*/
 
     fn is_exhausted(&self) -> bool {
         self.byte_pos >= self.buffer.len()
@@ -622,21 +594,10 @@ impl HuffmanState {
 }
 
 fn read_smart(state: &mut HuffmanState, reader: &mut BitReader) -> Result<()> {
-    // UNPACK.ASM: `CX=13; rBits; teststrings_index := AX`
     let tsi = reader.read_bits(13) & 0x1fff;
     state.teststrings_index = tsi;
     state.set_vars();
     state.init_huff_tables();
-
-    let debug = hyp_debug_enabled();
-    let mut debug_lines_main = 0usize;
-    let mut debug_lines_window = 0usize;
-    if debug {
-        eprintln!(
-            "[read_smart] tsi={}, char_offset={}, pos_offset={}, local_offset={}",
-            tsi, state.char_offset, state.pos_offset, state.local_offset
-        );
-    }
 
     state.teststrings_index <<= 1;
     let mut di = state.low_tsi.wrapping_sub(2);
@@ -660,28 +621,10 @@ fn read_smart(state: &mut HuffmanState, reader: &mut BitReader) -> Result<()> {
             break;
         };
 
-        let in_window = (0x03a0..=0x03e0).contains(&di);
-        if debug
-            && (di < 600 || in_window)
-            && ((in_window && debug_lines_window < 256) || (!in_window && debug_lines_main < 128))
-        {
-            eprintln!(
-                "[read_smart] di={}, symbol={} (0x{:04x}), lastpos={}",
-                di, symbol, symbol, state.lastposition
-            );
-            if in_window {
-                debug_lines_window += 1;
-            } else {
-                debug_lines_main += 1;
-            }
-        }
-
         if symbol == 2 * LSEQUENCE_KEY {
             let mut pos = state.lastposition.wrapping_add(4);
             state.write_str(di, pos);
 
-            // UNPACK.ASM: schreibe den nächsten Wert unconditionally,
-            // dann entscheidet das folgende Bit, ob weitere folgen.
             di = di.wrapping_add(2);
             loop {
                 pos = pos.wrapping_add(4);
@@ -702,118 +645,26 @@ fn read_smart(state: &mut HuffmanState, reader: &mut BitReader) -> Result<()> {
             let new_pos = state.lastposition.wrapping_add(symbol).wrapping_sub(adjust);
             state.write_str(di, new_pos);
             state.lastposition = new_pos;
-            if debug
-                && (di < 600 || in_window)
-                && ((in_window && debug_lines_window < 256) || (!in_window && debug_lines_main < 128))
-            {
-                eprintln!("  -> @@dec_diff: wrote {} to [{}]", new_pos, di);
-                if in_window {
-                    debug_lines_window += 1;
-                } else {
-                    debug_lines_main += 1;
-                }
-            }
         } else if symbol < state.pos_offset {
             let offset = symbol.wrapping_sub(state.local_offset);
             let new_pos = di.wrapping_sub(offset);
             state.write_str(di, new_pos);
             state.lastposition = new_pos;
-            if debug
-                && (di < 600 || in_window)
-                && ((in_window && debug_lines_window < 256) || (!in_window && debug_lines_main < 128))
-            {
-                eprintln!(
-                    "  -> @@dec_local: offset={}, wrote {} to [{}]",
-                    offset, new_pos, di
-                );
-                if in_window {
-                    debug_lines_window += 1;
-                } else {
-                    debug_lines_main += 1;
-                }
-            }
         } else if symbol < state.char_offset {
             let value = state.tab_decode(reader, symbol);
             if value >= 512 {
                 state.write_str(di, value);
                 state.lastposition = value;
-                if debug
-                    && (di < 600 || in_window)
-                    && ((in_window && debug_lines_window < 256)
-                        || (!in_window && debug_lines_main < 128))
-                {
-                    eprintln!("  -> @@dec_table (pos): wrote {} to [{}]", value, di);
-                    if in_window {
-                        debug_lines_window += 1;
-                    } else {
-                        debug_lines_main += 1;
-                    }
-                }
             } else {
-                let ch = value >> 1;
-                state.write_str(di, ch);
-                if debug
-                    && (di < 600 || in_window)
-                    && ((in_window && debug_lines_window < 256)
-                        || (!in_window && debug_lines_main < 128))
-                {
-                    eprintln!(
-                        "  -> @@dec_table (char): value={}, wrote {} to [{}]",
-                        value,
-                        ch,
-                        di
-                    );
-                    if in_window {
-                        debug_lines_window += 1;
-                    } else {
-                        debug_lines_main += 1;
-                    }
-                }
-                if debug && ch >= 0x80 {
-                    eprintln!(
-                        "  -> @@dec_table WARN high char: value={}, char={}, si_base={}",
-                        value,
-                        ch,
-                        symbol
-                    );
-                }
+                state.write_str(di, value >> 1);
             }
         } else {
             let value = state.get_nvalue(symbol);
             if value >= 512 {
                 state.write_str(di, value);
                 state.lastposition = value;
-                if debug
-                    && (di < 600 || in_window)
-                    && ((in_window && debug_lines_window < 256)
-                        || (!in_window && debug_lines_main < 128))
-                {
-                    eprintln!("  -> @@char (pos): wrote {} to [{}]", value, di);
-                    if in_window {
-                        debug_lines_window += 1;
-                    } else {
-                        debug_lines_main += 1;
-                    }
-                }
             } else {
                 state.write_str(di, value >> 1);
-                if debug
-                    && (di < 600 || in_window)
-                    && ((in_window && debug_lines_window < 256)
-                        || (!in_window && debug_lines_main < 128))
-                {
-                    eprintln!(
-                        "  -> @@char (char): value={}, wrote {} to [{}]",
-                        value,
-                        value >> 1,
-                        di
-                    );
-                    if in_window {
-                        debug_lines_window += 1;
-                    } else {
-                        debug_lines_main += 1;
-                    }
-                }
             }
         }
     }
@@ -827,81 +678,16 @@ fn decode_data(state: &mut HuffmanState, output: &mut Vec<u8>, target_len: usize
     let mut si = state.low_tsi;
     let tsi_bytes = state.teststrings_index << 1;
     let mut stack: Vec<u16> = Vec::with_capacity(64);
-    let mut trace: Vec<u16> = Vec::with_capacity(64);
-    let mut debug_emit_count = 0usize;
-    let debug = hyp_debug_enabled();
 
     while si < tsi_bytes && output.len() < target_len {
         let mut ax = state.read_str(si);
         si = si.wrapping_add(2);
 
-        trace.clear();
-
-        let mut steps = 0usize;
         loop {
-            steps += 1;
-            if steps > 65_536 {
-                let mut trace_unique: Vec<u16> = Vec::with_capacity(32);
-                for &bx in &trace {
-                    if trace_unique.len() >= 32 {
-                        break;
-                    }
-                    if !trace_unique.contains(&bx) {
-                        trace_unique.push(bx);
-                    }
-                }
-
-                let mut trace_dump: Vec<String> = Vec::with_capacity(trace_unique.len());
-                for &bx in &trace_unique {
-                    let prefix = state.read_str(bx.wrapping_sub(2));
-                    let tail = state.read_str(bx);
-                    trace_dump.push(format!(
-                        "(bx=0x{bx:04x} pre=0x{prefix:04x} tail=0x{tail:04x})"
-                    ));
-                }
-
-                return Err(crate::error::ArchiveError::DecompressionFailed {
-                    entry: String::new(),
-                    reason: format!(
-                        "HYP decode_data: step limit exceeded (si={}, ax=0x{:04x}, out_len={}, target_len={}, stack_len={}, trace={:?}, trace_unique={:?}, dump=[{}])",
-                        si,
-                        ax,
-                        output.len(),
-                        target_len,
-                        stack.len(),
-                        trace,
-                        trace_unique,
-                        trace_dump.join(", ")
-                    ),
-                });
-            }
-
             if (ax & 0xFF00) == 0 {
-                let byte = (ax & 0x00FF) as u8;
-                let out_pos = output.len();
-                output.push(byte);
+                output.push((ax & 0x00FF) as u8);
                 if output.len() >= target_len {
                     return Ok(());
-                }
-                if debug && (70..=90).contains(&out_pos) {
-                    eprintln!(
-                        "[decode_data] out[{}]=0x{:02x} ax=0x{:04x} si=0x{:04x} stack_len={} steps={}",
-                        out_pos,
-                        byte,
-                        ax,
-                        si,
-                        stack.len(),
-                        steps
-                    );
-                }
-                if debug && debug_emit_count < 16 {
-                    eprintln!(
-                        "[decode_data] emit literal ax={} byte={} stack_remain={}",
-                        ax,
-                        byte,
-                        stack.len()
-                    );
-                    debug_emit_count += 1;
                 }
 
                 if let Some(next) = stack.pop() {
@@ -912,27 +698,11 @@ fn decode_data(state: &mut HuffmanState, output: &mut Vec<u8>, target_len: usize
             } else {
                 let bx = ax;
 
-                if trace.len() < 64 {
-                    trace.push(bx);
-                }
-
                 let mut tail = state.read_str(bx);
                 if tail == bx {
                     tail = state.read_str(bx.wrapping_sub(2));
                 }
                 stack.push(tail);
-                if debug && debug_emit_count < 16 {
-                    eprintln!(
-                        "[decode_data] push tail={} prefix={} stack_size={} src=[bx]={} [bx-2]={} [bx-4]={}",
-                        tail,
-                        state.read_str(bx.wrapping_sub(2)),
-                        stack.len(),
-                        state.read_str(bx),
-                        state.read_str(bx.wrapping_sub(2)),
-                        state.read_str(bx.wrapping_sub(4))
-                    );
-                    debug_emit_count += 1;
-                }
                 ax = state.read_str(bx.wrapping_sub(2));
             }
         }
@@ -952,22 +722,14 @@ pub(crate) fn unpack_hyp(
     let mut output = Vec::with_capacity(original_size.max(1));
 
     loop {
+        // Per the original EXE (fcn.00004f26), reset low_tsi to 0x1fe at the
+        // START of each block, THEN run clear_when_full which may adjust it.
+        state.low_tsi = 2 * 255; // 0x1fe
         state.clear_when_full();
+
         read_smart(&mut state, &mut reader)?;
 
         decode_data(&mut state, &mut output, original_size)?;
-
-        // Advance start offset for the next block.
-        // HYPER.EXE uses a moving low_tsi (cs:[0x4334]) so that each block appends
-        // new entries instead of overwriting from 2*255.
-        let block_end = state.teststrings_index << 1;
-        if block_end >= 2 * 255 {
-            if state.low_tsi > block_end {
-                state.low_tsi = 2 * 255;
-            } else {
-                state.low_tsi = block_end;
-            }
-        }
 
         // Exit when teststrings_index signals end (255) or we have enough output
         if state.teststrings_index == 255 || output.len() >= original_size {

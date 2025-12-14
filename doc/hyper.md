@@ -126,8 +126,10 @@ Bits are read LSB-first (least significant bit first) within each byte.
 
 Each compressed block begins with a 13-bit `teststrings_index` (tsi) value:
 
-- Values 256-8191: Number of string table entries to read
-- Value 255: End-of-stream marker
+- Values 256-8191: Number of string table entries in this block
+- Value 255: End-of-stream marker (signals no more data)
+
+After reading, the tsi is multiplied by 2 (`tsi <<= 1`) to convert to byte offsets for the 16-bit word-addressed string table.
 
 ### Version-Dependent Parameters
 
@@ -135,11 +137,11 @@ The version affects compression parameters:
 
 #### Version 3.x (mode 3)
 
-| Parameter   | Value |
-|-------------|-------|
-| mindiff     | -8    |
-| maxdiff     | 8     |
-| maxlocal    | 0x96 (150) |
+| Parameter   | Value       |
+|-------------|-------------|
+| mindiff     | -8          |
+| maxdiff     | 8           |
+| maxlocal    | 0x96 (150 decimal) |
 
 #### Version 4.x (mode 4)
 
@@ -183,21 +185,24 @@ Decoded symbols are interpreted based on their value relative to the offsets:
 
 The decompressor maintains dynamic Huffman trees that are updated as symbols are decoded. Key data structures:
 
-| Array       | Size            | Purpose                            |
-|-------------|-----------------|-------------------------------------|
-| vater       | 2 × HUFF_SIZE   | Parent pointers in Huffman tree    |
-| sohn        | 2 × HUFF_SIZE   | Child pointers in Huffman tree     |
-| the_freq    | 2 × HUFF_SIZE   | Frequency values for tree nodes    |
-| nindex      | 8191            | Symbol to tree position mapping    |
-| nvalue      | ~8400           | Tree position to symbol mapping    |
-| frequencys  | ~8400           | Per-symbol frequency tracking      |
-| nfreq       | 4               | Frequency offset table             |
-| nfreqmax    | 4097            | Frequency maximum tracking         |
+| Array       | Size                | Purpose                            |
+|-------------|---------------------|-------------------------------------|
+| vater       | 2 × HUFF_SIZE + 2   | Parent pointers in Huffman tree    |
+| sohn        | 2 × HUFF_SIZE + 2   | Child pointers in Huffman tree     |
+| the_freq    | 2 × HUFF_SIZE + 2   | Frequency values for tree nodes    |
+| nindex      | STR_IND_BUF_LEN + 2 | Symbol to tree position mapping    |
+| nvalue      | TAB_SIZE + 2        | Tree position to symbol mapping    |
+| frequencys  | TAB_SIZE + 2        | Per-symbol frequency tracking      |
+| nfreq       | 4                   | Frequency offset table             |
+| nfreqmax    | MAX_REC_FREQUENCY+1 | Frequency maximum tracking         |
+| str_ind_buf | STR_IND_BUF_LEN + 1 | String table for back-references   |
+| new_index   | STR_IND_BUF_LEN + 1 | Temporary array for garbage collection |
 
 Constants:
 
 - `HUFF_SIZE = 3200`
 - `STR_IND_BUF_LEN = 8191`
+- `TAB_SIZE = STR_IND_BUF_LEN + 200 = 8391`
 - `MAX_REC_FREQUENCY = 4096`
 
 ### Huffman Decoding
@@ -211,43 +216,59 @@ The Huffman tree is traversed bit-by-bit:
 
 ### Tab Decode (Variable-Length Position Coding)
 
-Position references use a special variable-length coding:
+Position references use a special variable-length coding scheme (adaptive Rice-like encoding):
 
 ```text
-1. Calculate base = freq - pos_offset
-2. Get range: dx = (nfreq[base] - nfreq[base+2]) >> 1
-3. Build value using adaptive bit reading:
-   - Read bits until value > dx
-   - XOR to extract final value
-4. Look up actual position in nvalue table
-5. Update frequency tables (adaptive)
+1. Calculate base = symbol - pos_offset
+2. Get range bounds from nfreq table:
+   dx = (nfreq[base] - nfreq[base+2]) >> 1
+3. Read variable-length value using adaptive bit reading:
+   - Start with cx=1, ax=1
+   - For each bit: if bit=0, XOR ax with cx
+   - Shift cx left, OR into ax
+   - Continue while ax ≤ dx
+   - Final XOR to extract value
+4. Look up actual position in nvalue table using the decoded index
+5. Update frequency tables (adaptive probability model)
 ```
+
+This encoding adapts to the distribution of position references, giving shorter codes to more frequent positions.
 
 ### String Table (str_ind_buf)
 
 The string table stores back-references for LZ77-style decompression:
 
-- Size: 8191 entries
-- Each entry is a 16-bit word
-- Entries encode character/string relationships
+- Size: 8191 entries (word-addressed, 16-bit values)
+- Each entry encodes either a literal byte (value < 256) or a back-reference (value ≥ 512)
+- Entries with value 256-511 represent raw bytes after right-shift by 1
 
 ### Output Generation
 
 The `decode_data` phase traverses the string table to produce output:
 
-1. Start from the last entry
-2. Follow references backward
-3. Push partial results onto a stack
-4. Emit literal bytes when lowest bit is set
-5. Continue until stack is empty
+1. Start from `low_tsi` and iterate through entries up to `teststrings_index × 2`
+2. For each entry, follow references backward using a stack:
+   - If value < 256: emit as literal byte
+   - If value ≥ 512: push tail reference and follow head reference
+3. **Self-reference handling**: When an entry references itself (`tail == current_offset`), use the previous entry instead to avoid infinite loops
+4. Continue until target output size is reached
 
 ### Block Continuation
 
 Multiple blocks may be present in the stream:
 
-- After each block, `low_tsi` advances to continue from where the previous block ended
-- Decompression continues until `tsi == 255` or all output bytes are produced
-- The string table may be cleared when approaching capacity (`clear_when_full`)
+- At the start of each block, `low_tsi` is reset to `2 × 255` (0x1FE)
+- The `clear_when_full` routine checks if the string table is at capacity and performs garbage collection if needed
+- Decompression continues until `tsi == 255` (end marker) or all output bytes are produced
+- The stream naturally terminates when the target output size is reached
+
+### Termination Guarantee
+
+The algorithm is guaranteed to terminate because:
+1. Each literal output produces exactly one byte
+2. Back-references eventually resolve to literals
+3. Output is bounded by `original_size` from the header
+4. Self-references are handled specially to prevent infinite loops
 
 ## Implementation Notes
 
@@ -255,12 +276,12 @@ Multiple blocks may be present in the stream:
 
 The decompressor requires approximately:
 
-- ~64 KB for Huffman tree arrays
-- ~32 KB for string index buffer
-- ~32 KB for nvalue/frequencys tables
-- ~8 KB for other state
+- ~38 KB for Huffman tree arrays (vater, sohn, the_freq: 3 × 6402 words)
+- ~33 KB for nvalue/frequencys/nindex tables
+- ~33 KB for string index buffer and new_index (2 × 8192 words)
+- ~8 KB for nfreqmax table (4097 words)
 
-Total: ~140 KB working memory
+Total: ~112 KB working memory
 
 ### Original Implementation
 
