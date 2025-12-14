@@ -11,21 +11,26 @@ const HUFF_SIZE: usize = 3200;
 const MAX_REC_FREQUENCY: usize = 4096;
 const MAX_FREQ: usize = 2;
 const MAXMCOUNT: usize = 1350;
-const NFREQ_TABLE_LEN: usize = 8;
+// EXE initializes only 4 words at 0xC320 (freq offsets 0,2,4,6).
+const NFREQ_TABLE_LEN: usize = 4;
 
-const MINDIFF: i16 = -4;
-const MAXDIFF: i16 = 8;
+const DEFAULT_MINDIFF: i16 = -4;
+const DEFAULT_MAXDIFF: i16 = 8;
 const DIFF_OFFSET: i16 = 1;
 const LSEQUENCE_KEY: u16 = 0;
 const BASE_LASTPOSITION: u16 = 2 * 256;
 const MARKED: u16 = 1;
 
-const MAXLOCAL_40: usize = 2;
-const MAXLOCAL_41: usize = 80;
-
 #[inline]
 fn word_index(offset: u16) -> usize {
     (offset as usize) >> 1
+}
+
+const READ_BITS_MSB: bool = false;
+const UPDATE_DYNA_HUFFMAN: bool = true;
+
+fn hyp_debug_enabled() -> bool {
+    std::env::var_os("UNARC_HYP_DEBUG").is_some()
 }
 
 struct BitReader<'a> {
@@ -45,10 +50,33 @@ impl<'a> BitReader<'a> {
         }
     }
 
+    /// Read `count` bits (LSB-first) into the low bits of the return value.
+    /// This matches UNPACK.ASM `rBits` usage (e.g. `CX=13` for `teststrings_index`).
+    #[inline]
+    fn read_bits(&mut self, count: u8) -> u16 {
+        let mut value = 0u16;
+        for bit_index in 0..count {
+            if self.read_bit() {
+                value |= 1u16 << bit_index;
+            }
+        }
+        value
+    }
+
     #[inline]
     fn read_bit(&mut self) -> bool {
-        let bit = (self.puffer_byte & 1) != 0;
-        self.puffer_byte >>= 1;
+        let bit = if READ_BITS_MSB {
+            (self.puffer_byte & 0x80) != 0
+        } else {
+            (self.puffer_byte & 1) != 0
+        };
+
+        if READ_BITS_MSB {
+            self.puffer_byte <<= 1;
+        } else {
+            self.puffer_byte >>= 1;
+        }
+
         self.bit_cnt -= 1;
         if self.bit_cnt == 0 {
             self.byte_pos += 1;
@@ -57,17 +85,33 @@ impl<'a> BitReader<'a> {
         }
         bit
     }
+/* 
+    /// Port of HYPER.EXE `fcn.000043e1` ("readsmart_max").
+    /// Builds a variable-length value in the range `[0, max]`.
+    fn read_smart_max(&mut self, max: u16) -> u16 {
+        let dx = max;
+        let mut cx = 1u16;
+        let mut ax = cx;
 
-    fn read_bits(&mut self, count: usize) -> u16 {
-        let mut value = 0u16;
-        let mut mask = 1u16;
-        for _ in 0..count {
-            if self.read_bit() {
-                value |= mask;
+        loop {
+            if !self.read_bit() {
+                ax ^= cx;
             }
-            mask <<= 1;
+
+            cx <<= 1;
+            ax |= cx;
+
+            if ax <= dx {
+                continue;
+            }
+
+            ax ^= cx;
+            return ax;
         }
-        value
+    }*/
+
+    fn is_exhausted(&self) -> bool {
+        self.byte_pos >= self.buffer.len()
     }
 }
 
@@ -92,11 +136,14 @@ struct HuffmanState {
     local_offset: u16,
     pos_offset: u16,
     char_offset: u16,
+    version: u8,
+    mindiff: i16,
+    maxdiff: i16,
 }
 
 impl HuffmanState {
     fn new() -> Self {
-        let mut state = Self {
+        Self {
             vater: vec![0; 2 * HUFF_SIZE + 2],
             sohn: vec![0; 2 * HUFF_SIZE + 2],
             the_freq: vec![0; 2 * HUFF_SIZE + 2],
@@ -117,15 +164,10 @@ impl HuffmanState {
             local_offset: 0,
             pos_offset: 0,
             char_offset: 0,
-        };
-
-        for i in 0..=255 {
-            if let Some(slot) = state.str_ind_buf.get_mut(i) {
-                *slot = i as u16;
-            }
+            version: 0,
+            mindiff: DEFAULT_MINDIFF,
+            maxdiff: DEFAULT_MAXDIFF,
         }
-
-        state
     }
 
     fn read_str(&self, offset: u16) -> u16 {
@@ -137,16 +179,6 @@ impl HuffmanState {
 
     fn write_str(&mut self, offset: u16, value: u16) {
         if let Some(slot) = self.str_ind_buf.get_mut(word_index(offset)) {
-            *slot = value;
-        }
-    }
-
-    fn get_new_index(&self, offset: u16) -> u16 {
-        self.new_index.get(word_index(offset)).copied().unwrap_or(0)
-    }
-
-    fn set_new_index(&mut self, offset: u16, value: u16) {
-        if let Some(slot) = self.new_index.get_mut(word_index(offset)) {
             *slot = value;
         }
     }
@@ -259,7 +291,6 @@ impl HuffmanState {
     }
 
     fn clear_when_full(&mut self) {
-        self.low_tsi = 2 * 255;
         if self.teststrings_index != STR_IND_BUF_LEN as u16 {
             return;
         }
@@ -307,23 +338,40 @@ impl HuffmanState {
     }
 
     fn set_vars(&mut self) {
-        let numerator = 2 * (MAXLOCAL_41 - MAXLOCAL_40) as i32;
-        let mut cx = self.teststrings_index as i32 - 255;
-        if cx < 0 {
-            cx = 0;
+        // Port of HYPER.EXE `fcn.00004696` (see `hyper_exe/disasm/4696_set_vars.txt`).
+        // The EXE selects between two modes (3/4). We approximate that selection
+        // via the header BCD major version nibble.
+        let major = self.version >> 4;
+
+        if major == 3 {
+            // mode 3
+            self.mindiff = -8;
+            self.maxdiff = 8;
+            self.maxlocal = 0x0096;
+        } else {
+            // mode 4
+            self.mindiff = -4;
+            self.maxdiff = 8;
+
+            // ax = (((0x009c * (teststrings_index - 0x00ff)) / 0x1f00) & 0xfffe) + 4
+            // 16-bit semantics: subtraction wraps, multiply/divide are signed.
+            let bx_u16 = self.teststrings_index.wrapping_sub(0x00ff);
+            let bx_i32 = (bx_u16 as i16) as i32;
+            let prod = 0x009c_i32 * bx_i32;
+            let quot = prod / 0x1f00_i32;
+
+            let mut ax_u16 = ((quot as i16) as u16) & 0xfffe;
+            ax_u16 = ax_u16.wrapping_add(4);
+            self.maxlocal = ax_u16;
         }
 
-        let divisor = (STR_IND_BUF_LEN as i32 - 255).max(1);
-        let mut ax = (numerator * cx) / divisor;
-        ax &= !1;
-        ax += 2 * MAXLOCAL_40 as i32;
-        let maxlocal = ax as u16;
-
-        self.maxlocal = maxlocal;
-        self.maxlocal255 = maxlocal + 2 * 255;
-        self.local_offset = (2 * (DIFF_OFFSET + 1) + (MAXDIFF - MINDIFF)) as u16;
-        self.pos_offset = self.local_offset + maxlocal + 2;
-        self.char_offset = self.pos_offset + 2 * (MAX_FREQ as u16 + 1);
+        self.maxlocal255 = self.maxlocal.wrapping_add(0x01fe);
+        self.local_offset = (4i16 + self.maxdiff - self.mindiff) as u16;
+        self.pos_offset = self
+            .local_offset
+            .wrapping_add(self.maxlocal)
+            .wrapping_add(2);
+        self.char_offset = self.pos_offset.wrapping_add(2 * (MAX_FREQ as u16 + 1));
     }
 
     fn init_huff_tables(&mut self) {
@@ -352,10 +400,10 @@ impl HuffmanState {
             *slot = self.char_offset;
         }
 
-        self.sohn.fill(0);
-        self.the_freq.fill(0);
-        self.vater.fill(0);
-
+        // EXE sets only the root/anchor values here (no full memset of the tables).
+        // The EXE explicitly sets nfreq[3] = 2 after the char_offset fill.
+        // This corresponds to the `mov word es:[0xc326], 2` instruction at 0x4847.
+        self.nfreq[3] = 2;
         self.sohn[0] = 1;
         self.the_freq[0] = 2;
         self.vater[0] = 0;
@@ -378,7 +426,7 @@ impl HuffmanState {
         self.set_vater(di.wrapping_add(2), parent);
         self.set_the_freq(di.wrapping_add(2), 2);
 
-        let leaf_marker = self.huff_max_index.wrapping_add(1);
+        let leaf_marker = self.nfreq[3].wrapping_add(1);
         self.set_sohn(di.wrapping_add(2), leaf_marker);
 
         let old_child = self.get_sohn(parent);
@@ -393,135 +441,129 @@ impl HuffmanState {
         self.set_the_freq(di, parent_freq);
 
         let leaf_slot = di.wrapping_add(2);
-        self.set_freq(self.huff_max_index, leaf_slot);
+        self.set_freq(self.nfreq[3], leaf_slot);
 
-        self.huff_max_index = self.huff_max_index.wrapping_add(2);
+        self.nfreq[3] = self.nfreq[3].wrapping_add(2);
         self.huff_max = leaf_slot.wrapping_add(2);
 
-        self.inc_frequency_internal(parent);
+        // COMM.ASM `ninsert` ends with `jmp ientry` (internal path) using di=HuffMax-3,
+        // which is the current `parent` here.
+        self.inc_frequency_ientry(parent);
     }
 
-    fn inc_frequency(&mut self, di: u16) {
-        let freq = self.get_the_freq(di);
-        if freq == 0 || freq >= (2 * MAX_REC_FREQUENCY) as u16 {
-            return;
-        }
-
-        let mut si = self.get_nfreqmax(freq);
-        self.set_nfreqmax(freq, si.wrapping_add(2));
-
-        if di != si {
-            let sohn_di = self.get_sohn(di);
-            if sohn_di != 0 {
-                if (sohn_di & 1) != 0 {
-                    self.set_freq(sohn_di.wrapping_sub(1), si);
-                } else {
-                    self.set_vater(sohn_di, si);
-                    self.set_vater(sohn_di.wrapping_add(2), si);
-                }
-            }
-
-            let sohn_si = self.get_sohn(si);
-            self.set_sohn(si, sohn_di);
-
-            if sohn_si != 0 {
-                if (sohn_si & 1) != 0 {
-                    self.set_freq(sohn_si.wrapping_sub(1), di);
-                } else {
-                    self.set_vater(sohn_si, di);
-                    self.set_vater(sohn_si.wrapping_add(2), di);
-                }
-            }
-
-            self.set_sohn(di, sohn_si);
-        }
-
-        let new_freq = self.get_the_freq(si).wrapping_add(2);
-        self.set_the_freq(si, new_freq);
-
-        if si != 0 {
-            let parent = self.get_vater(si);
-            if parent != 0 {
-                self.inc_frequency_internal(parent);
-            }
-        }
-    }
-
-    fn inc_frequency_internal(&mut self, mut di: u16) {
-        if di == 0 {
-            return;
-        }
+    fn inc_frequency_ientry(&mut self, mut di: u16) {
+        // Internal entry of COMM.ASM `inc_frequency` (label `ientry`).
+        let limit = (2 * MAX_REC_FREQUENCY) as u16;
 
         loop {
             let freq = self.get_the_freq(di);
-            if freq == 0 || freq >= (2 * MAX_REC_FREQUENCY) as u16 {
+            if freq >= limit {
                 return;
             }
 
-            let mut si = self.get_nfreqmax(freq);
+            let si = self.get_nfreqmax(freq);
             self.set_nfreqmax(freq, si.wrapping_add(2));
 
             if di != si {
-                let sohn_di = self.get_sohn(di);
-                if sohn_di != 0 {
-                    self.set_vater(sohn_di, si);
-                    self.set_vater(sohn_di.wrapping_add(2), si);
-                }
-
-                let sohn_si = self.get_sohn(si);
-                self.set_sohn(si, sohn_di);
-
-                if sohn_si != 0 {
-                    if (sohn_si & 1) != 0 {
-                        self.set_freq(sohn_si.wrapping_sub(1), di);
-                    } else {
-                        self.set_vater(sohn_si, di);
-                        self.set_vater(sohn_si.wrapping_add(2), di);
-                    }
-                }
-
-                self.set_sohn(di, sohn_si);
+                let bx_child = self.get_sohn(di);
+                self.set_vater(bx_child, si);
+                self.set_vater(bx_child.wrapping_add(2), si);
+                self.inc_frequency_entry_swap(di, si, bx_child);
             }
 
-            let new_freq = self.get_the_freq(si).wrapping_add(2);
-            self.set_the_freq(si, new_freq);
-
-            if si == 0 {
-                return;
-            }
-
+            self.set_the_freq(si, self.get_the_freq(si).wrapping_add(2));
             di = self.get_vater(si);
-            if di == 0 {
+            if si == 0 {
                 return;
             }
         }
     }
 
     fn inc_posfreq(&mut self, si: u16) {
-        let freq = self.get_freq(si);
-        let di = self.get_nfreq(freq.wrapping_add(2));
-        let item = self.get_nvalue(si);
+        // Literal port of COMM.ASM `inc_posfreq`.
+        let mut bx = self.get_freq(si); // frequencys[si]
+        let mut di = self.get_nfreq(bx.wrapping_add(2)); // nfreq[freq+2]
 
+        let mut item = self.get_nvalue(si);
         self.set_nindex(item, di);
 
+        // xchg item, nvalue[di]
         let swapped = self.get_nvalue(di);
         self.set_nvalue(di, item);
-        self.set_nindex(swapped, si);
-        self.set_nvalue(si, swapped);
+        item = swapped;
 
-        let current = self.get_freq(di);
-        if current == (2 * MAX_FREQ as u16) {
+        self.set_nindex(item, si);
+        self.set_nvalue(si, item);
+
+        bx = self.get_freq(di);
+        if bx == (2 * MAX_FREQ as u16) {
             self.ninsert();
-            let parent = self.huff_max.wrapping_sub(2);
-            self.inc_frequency(parent);
+            let di_next = self.huff_max.wrapping_sub(2);
+            self.inc_frequency(di_next);
+            return;
+        }
+
+        bx = bx.wrapping_add(2);
+        self.set_freq(di, bx);
+        di = di.wrapping_add(2);
+        self.set_nfreq(bx, di);
+    }
+
+    fn inc_frequency_entry_swap(&mut self, di: u16, si: u16, mut bx: u16) {
+        // @@entry: xchg bx, sohn[si]
+        let old = self.get_sohn(si);
+        self.set_sohn(si, bx);
+        bx = old;
+
+        // Update back-links for the swapped-out child.
+        if (bx & 1) != 0 {
+            // leaf: frequencys[leaf-1] = di
+            self.set_freq(bx.wrapping_sub(1), di);
         } else {
-            let updated = current.wrapping_add(2);
-            self.set_freq(di, updated);
-            self.set_nfreq(updated, di.wrapping_add(2));
+            // internal: vater[child] = di; vater[child+2] = di
+            self.set_vater(bx, di);
+            self.set_vater(bx.wrapping_add(2), di);
+        }
+
+        self.set_sohn(di, bx);
+    }
+
+    fn inc_frequency(&mut self, mut di: u16) {
+        // Port of HYPER.EXE / COMM.ASM `inc_frequency` with the EXE's effective
+        // entry selection: leaf vs internal handling depends on `sohn[di] & 1`.
+        let limit = (2 * MAX_REC_FREQUENCY) as u16;
+
+        loop {
+            let freq = self.get_the_freq(di);
+            if freq >= limit {
+                return;
+            }
+
+            let si = self.get_nfreqmax(freq);
+            self.set_nfreqmax(freq, si.wrapping_add(2));
+
+            if di != si {
+                let bx_child = self.get_sohn(di);
+                if (bx_child & 1) != 0 {
+                    // leaf child: update leaf->parent index.
+                    self.set_freq(bx_child.wrapping_sub(1), si);
+                } else {
+                    // internal child: update vater links.
+                    self.set_vater(bx_child, si);
+                    self.set_vater(bx_child.wrapping_add(2), si);
+                }
+                self.inc_frequency_entry_swap(di, si, bx_child);
+            }
+
+            self.set_the_freq(si, self.get_the_freq(si).wrapping_add(2));
+            di = self.get_vater(si);
+            if si == 0 {
+                return;
+            }
         }
     }
 
-    fn decode_huff_entry(&mut self, reader: &mut BitReader) -> u16 {
+    fn decode_huff_entry(&mut self, reader: &mut BitReader) -> Option<u16> {
         let mut si = 0u16;
 
         loop {
@@ -529,52 +571,72 @@ impl HuffmanState {
             if (child & 1) != 0 {
                 let leaf = child.wrapping_sub(1);
                 let freq_ptr = self.get_freq(leaf);
-                if freq_ptr != 0 {
+                if UPDATE_DYNA_HUFFMAN {
                     self.inc_frequency(freq_ptr);
                 }
-                return leaf;
+                return Some(leaf);
             }
 
-            let next = if reader.read_bit() {
-                child.wrapping_add(2)
-            } else {
-                child
-            };
-            si = next;
+            let bit = reader.read_bit();
+            si = if bit { child.wrapping_add(2) } else { child };
         }
     }
 
     fn tab_decode(&mut self, reader: &mut BitReader, freq: u16) -> u16 {
+        // Literal port of UNPACK.ASM TabDecode macro.
         let base = freq.wrapping_sub(self.pos_offset);
-        let start = self.get_nfreq(base);
-        let end = self.get_nfreq(base.wrapping_add(2));
-        let mut span = start.wrapping_sub(end) >> 1;
 
-        let mut mask = 1u16;
-        let mut code = 1u16;
+        // AX = nfreq[base] - nfreq[base+2]; AX >>= 1; DX = AX
+        let mut ax = self.get_nfreq(base);
+        let mut si = self.get_nfreq(base.wrapping_add(2));
+        ax = ax.wrapping_sub(si);
+        ax >>= 1;
+        let dx = ax;
 
-        while {
+        // CX = 1; AX = 1
+        let mut cx = 1u16;
+        ax = 1;
+
+        loop {
+            // rBit: carry set => bit=1
             if !reader.read_bit() {
-                code ^= mask;
+                ax ^= cx;
             }
-            mask <<= 1;
-            code |= mask;
-            code <= span
-        } {}
+            cx <<= 1;
+            ax |= cx;
+            if ax <= dx {
+                continue;
+            }
+            ax ^= cx;
+            break;
+        }
 
-        code ^= mask;
-        let offset = end.wrapping_add(code << 1);
-        let value = self.get_nvalue(offset);
-        self.inc_posfreq(offset);
+        ax <<= 1;
+        si = si.wrapping_add(ax);
+        let value = self.get_nvalue(si);
+        if UPDATE_DYNA_HUFFMAN {
+            self.inc_posfreq(si);
+        }
         value
     }
 }
 
 fn read_smart(state: &mut HuffmanState, reader: &mut BitReader) -> Result<()> {
-    let tsi = reader.read_bits(13);
+    // UNPACK.ASM: `CX=13; rBits; teststrings_index := AX`
+    let tsi = reader.read_bits(13) & 0x1fff;
     state.teststrings_index = tsi;
     state.set_vars();
     state.init_huff_tables();
+
+    let debug = hyp_debug_enabled();
+    let mut debug_lines_main = 0usize;
+    let mut debug_lines_window = 0usize;
+    if debug {
+        eprintln!(
+            "[read_smart] tsi={}, char_offset={}, pos_offset={}, local_offset={}",
+            tsi, state.char_offset, state.pos_offset, state.local_offset
+        );
+    }
 
     state.teststrings_index <<= 1;
     let mut di = state.low_tsi.wrapping_sub(2);
@@ -594,54 +656,164 @@ fn read_smart(state: &mut HuffmanState, reader: &mut BitReader) -> Result<()> {
             state.nfreq[0] = value;
         }
 
-        let symbol = state.decode_huff_entry(reader);
+        let Some(symbol) = state.decode_huff_entry(reader) else {
+            break;
+        };
+
+        let in_window = (0x03a0..=0x03e0).contains(&di);
+        if debug
+            && (di < 600 || in_window)
+            && ((in_window && debug_lines_window < 256) || (!in_window && debug_lines_main < 128))
+        {
+            eprintln!(
+                "[read_smart] di={}, symbol={} (0x{:04x}), lastpos={}",
+                di, symbol, symbol, state.lastposition
+            );
+            if in_window {
+                debug_lines_window += 1;
+            } else {
+                debug_lines_main += 1;
+            }
+        }
 
         if symbol == 2 * LSEQUENCE_KEY {
             let mut pos = state.lastposition.wrapping_add(4);
             state.write_str(di, pos);
 
+            // UNPACK.ASM: schreibe den nächsten Wert unconditionally,
+            // dann entscheidet das folgende Bit, ob weitere folgen.
+            di = di.wrapping_add(2);
             loop {
+                pos = pos.wrapping_add(4);
+                state.write_str(di, pos);
                 di = di.wrapping_add(2);
+
                 if reader.read_bit() {
-                    pos = pos.wrapping_add(4);
-                    state.write_str(di, pos);
-                } else {
-                    di = di.wrapping_sub(2);
-                    break;
+                    continue;
                 }
+
+                di = di.wrapping_sub(2);
+                break;
             }
 
             state.lastposition = pos;
         } else if symbol < state.local_offset {
-            let adjust = (2 * DIFF_OFFSET - MINDIFF) as i32;
-            let new_pos = (state.lastposition as i32 + symbol as i32 - adjust)
-                .max(0)
-                .min(u16::MAX as i32) as u16;
+            let adjust = (2 * DIFF_OFFSET - state.mindiff) as u16;
+            let new_pos = state.lastposition.wrapping_add(symbol).wrapping_sub(adjust);
             state.write_str(di, new_pos);
             state.lastposition = new_pos;
+            if debug
+                && (di < 600 || in_window)
+                && ((in_window && debug_lines_window < 256) || (!in_window && debug_lines_main < 128))
+            {
+                eprintln!("  -> @@dec_diff: wrote {} to [{}]", new_pos, di);
+                if in_window {
+                    debug_lines_window += 1;
+                } else {
+                    debug_lines_main += 1;
+                }
+            }
         } else if symbol < state.pos_offset {
-            let offset = symbol.wrapping_sub(state.local_offset) as i32;
-            let base = (di as i32 - offset)
-                .max(0)
-                .min(u16::MAX as i32) as u16;
-            let new_pos = base.wrapping_add(2);
+            let offset = symbol.wrapping_sub(state.local_offset);
+            let new_pos = di.wrapping_sub(offset);
             state.write_str(di, new_pos);
             state.lastposition = new_pos;
+            if debug
+                && (di < 600 || in_window)
+                && ((in_window && debug_lines_window < 256) || (!in_window && debug_lines_main < 128))
+            {
+                eprintln!(
+                    "  -> @@dec_local: offset={}, wrote {} to [{}]",
+                    offset, new_pos, di
+                );
+                if in_window {
+                    debug_lines_window += 1;
+                } else {
+                    debug_lines_main += 1;
+                }
+            }
         } else if symbol < state.char_offset {
             let value = state.tab_decode(reader, symbol);
             if value >= 512 {
                 state.write_str(di, value);
                 state.lastposition = value;
+                if debug
+                    && (di < 600 || in_window)
+                    && ((in_window && debug_lines_window < 256)
+                        || (!in_window && debug_lines_main < 128))
+                {
+                    eprintln!("  -> @@dec_table (pos): wrote {} to [{}]", value, di);
+                    if in_window {
+                        debug_lines_window += 1;
+                    } else {
+                        debug_lines_main += 1;
+                    }
+                }
             } else {
-                state.write_str(di, value >> 1);
+                let ch = value >> 1;
+                state.write_str(di, ch);
+                if debug
+                    && (di < 600 || in_window)
+                    && ((in_window && debug_lines_window < 256)
+                        || (!in_window && debug_lines_main < 128))
+                {
+                    eprintln!(
+                        "  -> @@dec_table (char): value={}, wrote {} to [{}]",
+                        value,
+                        ch,
+                        di
+                    );
+                    if in_window {
+                        debug_lines_window += 1;
+                    } else {
+                        debug_lines_main += 1;
+                    }
+                }
+                if debug && ch >= 0x80 {
+                    eprintln!(
+                        "  -> @@dec_table WARN high char: value={}, char={}, si_base={}",
+                        value,
+                        ch,
+                        symbol
+                    );
+                }
             }
         } else {
             let value = state.get_nvalue(symbol);
             if value >= 512 {
                 state.write_str(di, value);
                 state.lastposition = value;
+                if debug
+                    && (di < 600 || in_window)
+                    && ((in_window && debug_lines_window < 256)
+                        || (!in_window && debug_lines_main < 128))
+                {
+                    eprintln!("  -> @@char (pos): wrote {} to [{}]", value, di);
+                    if in_window {
+                        debug_lines_window += 1;
+                    } else {
+                        debug_lines_main += 1;
+                    }
+                }
             } else {
                 state.write_str(di, value >> 1);
+                if debug
+                    && (di < 600 || in_window)
+                    && ((in_window && debug_lines_window < 256)
+                        || (!in_window && debug_lines_main < 128))
+                {
+                    eprintln!(
+                        "  -> @@char (char): value={}, wrote {} to [{}]",
+                        value,
+                        value >> 1,
+                        di
+                    );
+                    if in_window {
+                        debug_lines_window += 1;
+                    } else {
+                        debug_lines_main += 1;
+                    }
+                }
             }
         }
     }
@@ -651,82 +823,164 @@ fn read_smart(state: &mut HuffmanState, reader: &mut BitReader) -> Result<()> {
     Ok(())
 }
 
-fn decode_data(state: &mut HuffmanState, output: &mut Vec<u8>) {
+fn decode_data(state: &mut HuffmanState, output: &mut Vec<u8>, target_len: usize) -> Result<()> {
     let mut si = state.low_tsi;
     let tsi_bytes = state.teststrings_index << 1;
-    let start_len = output.len();
-    while si < tsi_bytes {
-        let value = state.read_str(si);
+    let mut stack: Vec<u16> = Vec::with_capacity(64);
+    let mut trace: Vec<u16> = Vec::with_capacity(64);
+    let mut debug_emit_count = 0usize;
+    let debug = hyp_debug_enabled();
+
+    while si < tsi_bytes && output.len() < target_len {
+        let mut ax = state.read_str(si);
         si = si.wrapping_add(2);
-        let mut visited = Vec::with_capacity(32);
-        if !emit_value(state, value, output, &mut visited) {
-            break;
+
+        trace.clear();
+
+        let mut steps = 0usize;
+        loop {
+            steps += 1;
+            if steps > 65_536 {
+                let mut trace_unique: Vec<u16> = Vec::with_capacity(32);
+                for &bx in &trace {
+                    if trace_unique.len() >= 32 {
+                        break;
+                    }
+                    if !trace_unique.contains(&bx) {
+                        trace_unique.push(bx);
+                    }
+                }
+
+                let mut trace_dump: Vec<String> = Vec::with_capacity(trace_unique.len());
+                for &bx in &trace_unique {
+                    let prefix = state.read_str(bx.wrapping_sub(2));
+                    let tail = state.read_str(bx);
+                    trace_dump.push(format!(
+                        "(bx=0x{bx:04x} pre=0x{prefix:04x} tail=0x{tail:04x})"
+                    ));
+                }
+
+                return Err(crate::error::ArchiveError::DecompressionFailed {
+                    entry: String::new(),
+                    reason: format!(
+                        "HYP decode_data: step limit exceeded (si={}, ax=0x{:04x}, out_len={}, target_len={}, stack_len={}, trace={:?}, trace_unique={:?}, dump=[{}])",
+                        si,
+                        ax,
+                        output.len(),
+                        target_len,
+                        stack.len(),
+                        trace,
+                        trace_unique,
+                        trace_dump.join(", ")
+                    ),
+                });
+            }
+
+            if (ax & 0xFF00) == 0 {
+                let byte = (ax & 0x00FF) as u8;
+                let out_pos = output.len();
+                output.push(byte);
+                if output.len() >= target_len {
+                    return Ok(());
+                }
+                if debug && (70..=90).contains(&out_pos) {
+                    eprintln!(
+                        "[decode_data] out[{}]=0x{:02x} ax=0x{:04x} si=0x{:04x} stack_len={} steps={}",
+                        out_pos,
+                        byte,
+                        ax,
+                        si,
+                        stack.len(),
+                        steps
+                    );
+                }
+                if debug && debug_emit_count < 16 {
+                    eprintln!(
+                        "[decode_data] emit literal ax={} byte={} stack_remain={}",
+                        ax,
+                        byte,
+                        stack.len()
+                    );
+                    debug_emit_count += 1;
+                }
+
+                if let Some(next) = stack.pop() {
+                    ax = next;
+                    continue;
+                }
+                break;
+            } else {
+                let bx = ax;
+
+                if trace.len() < 64 {
+                    trace.push(bx);
+                }
+
+                let mut tail = state.read_str(bx);
+                if tail == bx {
+                    tail = state.read_str(bx.wrapping_sub(2));
+                }
+                stack.push(tail);
+                if debug && debug_emit_count < 16 {
+                    eprintln!(
+                        "[decode_data] push tail={} prefix={} stack_size={} src=[bx]={} [bx-2]={} [bx-4]={}",
+                        tail,
+                        state.read_str(bx.wrapping_sub(2)),
+                        stack.len(),
+                        state.read_str(bx),
+                        state.read_str(bx.wrapping_sub(2)),
+                        state.read_str(bx.wrapping_sub(4))
+                    );
+                    debug_emit_count += 1;
+                }
+                ax = state.read_str(bx.wrapping_sub(2));
+            }
         }
     }
 
-    if cfg!(debug_assertions) {
-        eprintln!("[decode] produced {} new bytes", output.len() - start_len);
-    }
+    Ok(())
 }
 
-fn emit_value(
-    state: &HuffmanState,
-    value: u16,
-    output: &mut Vec<u8>,
-    visited: &mut Vec<u16>,
-) -> bool {
-    if value < 256 {
-        output.push(value as u8);
-        return true;
-    }
-
-    if visited.contains(&value) {
-        return false;
-    }
-    visited.push(value);
-
-    let idx = word_index(value);
-    if idx == 0 || idx >= state.str_ind_buf.len() {
-        visited.pop();
-        return false;
-    }
-
-    let predecessor = state
-        .str_ind_buf
-        .get(idx.saturating_sub(1))
-        .copied()
-        .unwrap_or_default();
-
-    let mut tail = state
-        .str_ind_buf
-        .get(idx)
-        .copied()
-        .unwrap_or(predecessor);
-
-    if tail == value {
-        tail = predecessor;
-    }
-
-    let ok = emit_value(state, predecessor, output, visited)
-        && emit_value(state, tail, output, visited);
-
-    visited.pop();
-    ok
-}
-
-pub(crate) fn unpack_hyp(compressed_buffer: &[u8], original_size: usize) -> Result<Vec<u8>> {
+pub(crate) fn unpack_hyp(
+    compressed_buffer: &[u8],
+    original_size: usize,
+    version: u8,
+) -> Result<Vec<u8>> {
     let mut reader = BitReader::new(compressed_buffer);
     let mut state = HuffmanState::new();
+    state.version = version;
     let mut output = Vec::with_capacity(original_size.max(1));
 
     loop {
         state.clear_when_full();
         read_smart(&mut state, &mut reader)?;
-        decode_data(&mut state, &mut output);
-        if state.teststrings_index == 255 {
+
+        decode_data(&mut state, &mut output, original_size)?;
+
+        // Advance start offset for the next block.
+        // HYPER.EXE uses a moving low_tsi (cs:[0x4334]) so that each block appends
+        // new entries instead of overwriting from 2*255.
+        let block_end = state.teststrings_index << 1;
+        if block_end >= 2 * 255 {
+            if state.low_tsi > block_end {
+                state.low_tsi = 2 * 255;
+            } else {
+                state.low_tsi = block_end;
+            }
+        }
+
+        // Exit when teststrings_index signals end (255) or we have enough output
+        if state.teststrings_index == 255 || output.len() >= original_size {
+            break;
+        }
+
+        // Also exit if we've consumed all input
+        if reader.is_exhausted() {
             break;
         }
     }
 
+    // Truncate to expected size if we overproduced
+    output.truncate(original_size);
     Ok(output)
 }

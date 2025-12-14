@@ -53,6 +53,31 @@ fn test_zoo_via_unified() {
 }
 
 #[test]
+fn test_ice_via_unified() {
+    let file = File::open("tests/ice/license_lha.ice").unwrap();
+    let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Ice).unwrap();
+
+    assert_eq!(archive.format(), ArchiveFormat::Ice);
+
+    let entry = archive.next_entry().unwrap().unwrap();
+    // ICE is a single-file format, the name is derived from filename or default
+    assert!(!entry.file_name().is_empty());
+    assert_eq!(entry.compression_method(), "LH1");
+    assert_eq!(entry.original_size(), 11357); // Known size of license file
+
+    let data = archive.read(&entry).unwrap();
+    assert!(!data.is_empty());
+    assert_eq!(data.len(), 11357);
+
+    // Check for MIT license text
+    let text = String::from_utf8_lossy(&data);
+    assert!(text.contains("MIT") || text.contains("License"));
+
+    // Second call should return None (single-file format)
+    assert!(archive.next_entry().unwrap().is_none());
+}
+
+#[test]
 fn test_hyp_via_unified() {
     let file = File::open("tests/hyp/stored.hyp").unwrap();
     let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Hyp).unwrap();
@@ -265,6 +290,7 @@ fn test_is_supported() {
     assert!(is_supported_archive(Path::new("file.tar.gz")));
     assert!(is_supported_archive(Path::new("file.tbz2")));
     assert!(is_supported_archive(Path::new("file.tar.bz2")));
+    assert!(is_supported_archive(Path::new("file.ice")));
     assert!(!is_supported_archive(Path::new("file.txt")));
 }
 
@@ -289,6 +315,7 @@ fn test_supported_extensions_list() {
     assert!(exts.contains(&"tbz"));
     assert!(exts.contains(&"tbz2"));
     assert!(exts.contains(&"tar.bz2"));
+    assert!(exts.contains(&"ice"));
 }
 
 #[test]

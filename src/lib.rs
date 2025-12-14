@@ -12,6 +12,7 @@ pub mod bz2;
 pub mod gz;
 pub mod ha;
 pub mod hyp;
+pub mod ice;
 pub mod lha;
 pub mod rar;
 pub mod sevenz;

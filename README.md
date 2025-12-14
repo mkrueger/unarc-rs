@@ -200,6 +200,10 @@ This library was written for my [icy_board](https://github.com/mkrueger/icy_boar
 
 Contributions welcome! Contact me on the icy_board repo or via email if I miss issues/PRs here.
 
+## Related projects
+
+https://github.com/temisu/ancient
+
 ## License
 
 MIT OR Apache-2.0

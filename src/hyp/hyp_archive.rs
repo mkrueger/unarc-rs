@@ -1,6 +1,7 @@
 use std::io::{Read, Seek, SeekFrom};
 
 use super::header::{CompressionMethod, Header, HEADER_SIZE};
+use super::hyp_unpack;
 use crate::error::{ArchiveError, Result};
 
 const HYP_ID: u8 = 0x1a;
@@ -23,28 +24,23 @@ impl<T: Read + Seek> HypArchive<T> {
         let mut compressed_buffer = vec![0; header.compressed_size as usize];
         self.reader.read_exact(&mut compressed_buffer)?;
 
+        // Checksum is calculated on compressed data
+        let checksum = calculate_checksum(&compressed_buffer);
+        if checksum != header.checksum {
+            return Err(ArchiveError::crc_mismatch("HYP", header.checksum, checksum));
+        }
+
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
             CompressionMethod::Compressed => {
-                return Err(ArchiveError::UnsupportedMethod {
-                    format: "HYP".to_string(),
-                    method: "HYP decompression is not yet implemented".to_string(),
-                })
-            } /*crate::hyp::hyp_unpack::unpack_hyp(
-                  &compressed_buffer,
-                  header.original_size as usize,
-              )?,*/
+                hyp_unpack::unpack_hyp(
+                    &compressed_buffer,
+                    header.original_size as usize,
+                    header.version,
+                )?
+            }
         };
-        /*        let checksum = calculate_checksum(&uncompressed);
-        if checksum != header.checksum {
-                    Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "checksum mismatch",
-                    ))
-                } else */
-        {
-            Ok(uncompressed)
-        }
+        Ok(uncompressed)
     }
 
     pub fn get_next_entry(&mut self) -> Result<Option<Header>> {
@@ -63,11 +59,12 @@ impl<T: Read + Seek> HypArchive<T> {
     }
 }
 
-/// Hyper uses a non standard checksum algorithm.
-pub fn calculate_checksum(data: &[u8]) -> u32 {
+/// Hyper checksum algorithm: add-then-rotate-left.
+/// Applied to the compressed data (not the uncompressed content).
+fn calculate_checksum(data: &[u8]) -> u32 {
     let mut checksum: u32 = 0;
-    for byte in data {
-        checksum = checksum.wrapping_add(*byte as u32).rotate_left(1);
+    for &byte in data {
+        checksum = checksum.wrapping_add(byte as u32).rotate_left(1);
     }
     checksum
 }
