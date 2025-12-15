@@ -1,8 +1,8 @@
+use super::unsqz;
 use super::{
     file_header::{CompressionMethod, FileHeader},
     sqz_header::{SqzHeader, SQZ_HEADER_SIZE},
 };
-use super::unsqz;
 use crate::error::{ArchiveError, Result};
 use std::io::{Read, Seek};
 
@@ -37,14 +37,12 @@ impl<T: Read + Seek> SqzArchive<T> {
 
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
-            CompressionMethod::Compressed => {
-                unsqz::unsqz(
-                    &compressed_buffer,
-                    header.original_size as usize,
-                    header.method,
-                    header.crc32,
-                )?
-            }
+            CompressionMethod::Compressed => super::unsqz::unsqz_compressed(
+                &compressed_buffer,
+                header.original_size as usize,
+                header.method,
+                header.crc32,
+            )?,
 
             CompressionMethod::Unknown(m) => {
                 return Err(ArchiveError::unsupported_method(
@@ -53,6 +51,11 @@ impl<T: Read + Seek> SqzArchive<T> {
                 ));
             }
         };
+
+        let actual_crc = crc32fast::hash(&uncompressed);
+        if actual_crc != header.crc32 {
+            return Err(ArchiveError::crc_mismatch("SQZ", header.crc32, actual_crc));
+        }
 
         Ok(uncompressed)
     }
@@ -64,11 +67,16 @@ impl<T: Read + Seek> SqzArchive<T> {
             0 => Ok(None),
             1 => {
                 // comment block
-                let mut size = [0; 2];
-                self.reader.read_exact(&mut size)?;
-                let size = u16::from_le_bytes(size);
+                // Format: uncompressed_size(2) + compressed_size(2) + flags(1) + crc32(4) + data(compressed_size)
+                let mut uncompressed_size = [0; 2];
+                self.reader.read_exact(&mut uncompressed_size)?;
+                let _uncompressed_size = u16::from_le_bytes(uncompressed_size);
+                let mut compressed_size = [0; 2];
+                self.reader.read_exact(&mut compressed_size)?;
+                let compressed_size = u16::from_le_bytes(compressed_size);
+                // Skip: flags(1) + crc32(4) + compressed_data(compressed_size)
                 self.reader
-                    .seek(std::io::SeekFrom::Current(size as i64 + 2 + 1 + 4))?;
+                    .seek(std::io::SeekFrom::Current(1 + 4 + compressed_size as i64))?;
                 self.get_next_entry()
             }
             2 => {

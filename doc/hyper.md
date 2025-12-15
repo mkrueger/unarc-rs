@@ -298,6 +298,13 @@ Special thanks to Peter Sawatzki, one of the original authors, who kindly provid
 
 ## References
 
-- Original source code provided by Peter Sawatzki
-- HYPER.EXE disassembly
 - unarc-rs implementation: `src/hyp/hyp_unpack.rs`
+
+## Implementation Notes
+
+This implementation was created using:
+
+1. **Container format:** Analyzed from .hyper archive files (used the DOS command line client)
+2. Original source code provided by Peter Sawatzki
+3. Reverse-engineered from HYPER.EXE - original code was missing pieces and unfortunately contained
+   errors because it was a work in progress snapshot - all that was left :(

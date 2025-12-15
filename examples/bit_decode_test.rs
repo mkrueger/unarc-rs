@@ -26,7 +26,6 @@ fn main() {
     let mut word_buf = word0;
     let mut bits_left = 16u8;
     let mut preview = 0u16;
-    let mut pos = 2;
 
     // skip(13)
     {
@@ -57,11 +56,9 @@ fn main() {
         if bits_left == 0 {
             word_buf = word1;
             bits_left = 16;
-            pos += 2;
         }
         let new_bit = (word_buf >> 15) & 1;
         preview |= new_bit;
-        word_buf <<= 1;
         bits_left -= 1;
 
         println!(

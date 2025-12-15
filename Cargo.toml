@@ -29,3 +29,7 @@ bzip2 = "0.6.1"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+
+[features]
+default = []
+sqz-debug = []

@@ -59,7 +59,7 @@ The `-lh1-` method was one of the earlier LHA compression methods, predating the
 | CRC checksum | No | Yes |
 | Compression methods | -lh1- only | Multiple (-lh0- to -lh7-) |
 
-## Implementation Notes
+## Notes
 
 ### Reading ICE Files
 
@@ -104,3 +104,9 @@ The author planned to add these features in future versions:
 
 - ICE.DOC - Original documentation by Michael Lamanuzzi (1995)
 - LHA compression algorithm documentation
+
+## Implementation Notes
+
+This implementation was created using:
+
+Reverse-engineered from SQZ.EXE - couldn't find anything about that format.
