@@ -21,6 +21,9 @@ impl From<u8> for CompressionMethod {
 #[derive(Debug, Clone)]
 pub struct FileHeader {
     pub checksum: u8,
+    pub flags: u8,
+    /// Low nibble of `flags` (0=stored, 1..=4=squeezed).
+    pub method: u8,
     pub compression_method: CompressionMethod,
 
     pub compressed_size: u32,
@@ -37,7 +40,9 @@ pub struct FileHeader {
 impl FileHeader {
     pub fn load_from(mut header_bytes: &[u8]) -> Result<Self> {
         convert_u8!(checksum, header_bytes);
-        convert_u8!(compression_method, header_bytes);
+        convert_u8!(flags, header_bytes);
+        let method = flags & 0x0F;
+        let compression_method: CompressionMethod = method.into();
         convert_u32!(compressed_size, header_bytes);
         convert_u32!(original_size, header_bytes);
         convert_u32!(date_time2, header_bytes);
@@ -48,7 +53,9 @@ impl FileHeader {
 
         Ok(FileHeader {
             checksum,
-            compression_method: compression_method.into(),
+            flags,
+            method,
+            compression_method,
             compressed_size,
             original_size,
             date_time: DosDateTime::new(date_time2),

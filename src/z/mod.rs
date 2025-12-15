@@ -2,7 +2,7 @@ use std::io::Read;
 
 use crate::error::{ArchiveError, Result};
 
-mod lzw;
+pub(crate) mod lzw;
 pub struct ZArchive<T: Read> {
     block_mode: bool,
     max_bits: u8,

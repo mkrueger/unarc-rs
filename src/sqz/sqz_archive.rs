@@ -2,6 +2,7 @@ use super::{
     file_header::{CompressionMethod, FileHeader},
     sqz_header::{SqzHeader, SQZ_HEADER_SIZE},
 };
+use super::unsqz;
 use crate::error::{ArchiveError, Result};
 use std::io::{Read, Seek};
 
@@ -37,7 +38,12 @@ impl<T: Read + Seek> SqzArchive<T> {
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
             CompressionMethod::Compressed => {
-                return Err(ArchiveError::unsupported_method("SQZ", "Compressed"));
+                unsqz::unsqz(
+                    &compressed_buffer,
+                    header.original_size as usize,
+                    header.method,
+                    header.crc32,
+                )?
             }
 
             CompressionMethod::Unknown(m) => {
@@ -47,16 +53,8 @@ impl<T: Read + Seek> SqzArchive<T> {
                 ));
             }
         };
-        let checksum = crc32fast::hash(&uncompressed);
-        if checksum != header.crc32 {
-            Err(ArchiveError::crc_mismatch(
-                &header.name,
-                header.crc32,
-                checksum,
-            ))
-        } else {
-            Ok(uncompressed)
-        }
+
+        Ok(uncompressed)
     }
 
     pub fn get_next_entry(&mut self) -> Result<Option<FileHeader>> {

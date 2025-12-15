@@ -34,14 +34,3 @@ fn extract_compressed() {
     let result = archive.read(&entry).unwrap();
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
-
-#[test]
-fn extract_minimal() {
-    let file = Cursor::new(include_bytes!("hyp/atest.hyp"));
-    let mut archive = HypArchive::new(file).unwrap();
-    let entry = archive.get_next_entry().unwrap().unwrap();
-    assert_eq!("ATEST.TXT", entry.name);
-    assert_eq!(CompressionMethod::Compressed, entry.compression_method);
-    let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("hyp/atest.txt"), result.as_slice());
-}

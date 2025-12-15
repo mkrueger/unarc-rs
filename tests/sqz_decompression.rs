@@ -13,13 +13,44 @@ fn extract_stored() {
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
 
-#[ignore = "implement me"]
 #[test]
-fn extract_default() {
-    let file = Cursor::new(include_bytes!("sqz/license.sqz"));
+fn extract_m1(){
+    let file = Cursor::new(include_bytes!("sqz/license_m1.sqz"));
     let mut archive = SqzArchive::new(file).unwrap();
     let entry = archive.get_next_entry().unwrap().unwrap();
 
     let result = archive.read(&entry).unwrap();
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
+
+
+#[test]
+fn extract_m2(){
+    let file = Cursor::new(include_bytes!("sqz/license_m2.sqz"));
+    let mut archive = SqzArchive::new(file).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+
+    let result = archive.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+}
+
+#[test]
+fn extract_m3() {
+    let file = Cursor::new(include_bytes!("sqz/license_m3.sqz"));
+    let mut archive = SqzArchive::new(file).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+
+    let result = archive.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+}
+
+#[test]
+fn extract_m4(){
+    let file = Cursor::new(include_bytes!("sqz/license_m4.sqz"));
+    let mut archive = SqzArchive::new(file).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+
+    let result = archive.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+}
+

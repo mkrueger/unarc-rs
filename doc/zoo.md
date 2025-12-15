@@ -266,4 +266,3 @@ All multi-byte values are stored in little-endian format.
 
 - Original ZOO source code by Rahul Dhesi
 - unarc-rs implementation: `src/zoo/`
-- 

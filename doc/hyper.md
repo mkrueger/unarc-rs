@@ -265,6 +265,7 @@ Multiple blocks may be present in the stream:
 ### Termination Guarantee
 
 The algorithm is guaranteed to terminate because:
+
 1. Each literal output produces exactly one byte
 2. Back-references eventually resolve to literals
 3. Output is bounded by `original_size` from the header
