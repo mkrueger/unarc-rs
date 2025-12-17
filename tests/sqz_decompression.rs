@@ -39,7 +39,20 @@ fn extract_m3() {
     let mut archive = SqzArchive::new(file).unwrap();
     let entry = archive.get_next_entry().unwrap().unwrap();
 
+    eprintln!(
+        "license_m3: original_size={}, compressed_size={}, method={}",
+        entry.original_size, entry.compressed_size, entry.method
+    );
     let result = archive.read(&entry).unwrap();
+    eprintln!(
+        "Decompressed {} bytes, expected {}",
+        result.len(),
+        entry.original_size
+    );
+    eprintln!(
+        "Expected LICENSE size: {}",
+        include_bytes!("../LICENSE").len()
+    );
     assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
 }
 
@@ -59,10 +72,28 @@ fn extract_m3_bug() {
     let mut archive = SqzArchive::new(file).unwrap();
     let entry = archive.get_next_entry().unwrap().unwrap();
 
+    eprintln!(
+        "T3.SQZ: original_size={}, compressed_size={}, method={}",
+        entry.original_size, entry.compressed_size, entry.method
+    );
+    archive.read(&entry).unwrap();
+}
+
+#[test]
+fn extract_m4_bug() {
+    let file = Cursor::new(include_bytes!("sqz/T4.SQZ"));
+    let mut archive = SqzArchive::new(file).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+
+    eprintln!(
+        "T3.SQZ: original_size={}, compressed_size={}, method={}",
+        entry.original_size, entry.compressed_size, entry.method
+    );
     archive.read(&entry).unwrap();
 }
 
 /*
+
 #[test]
 fn extract_bug() {
     let file = Cursor::new(include_bytes!("sqz/T3.SQZ"));
@@ -73,12 +104,11 @@ fn extract_bug() {
 }
 */
 
-
 #[test]
-fn extract_39b0aefdSQZ() {
+fn extract_39b0aefd_sqz() {
     let file = Cursor::new(include_bytes!("sqz/39b0aefd.SQZ"));
     let mut archive = SqzArchive::new(file).unwrap();
-    
+
     while let Ok(entry) = archive.get_next_entry() {
         if let Some(entry) = entry {
             archive.read(&entry).unwrap();
@@ -89,10 +119,10 @@ fn extract_39b0aefdSQZ() {
 }
 
 #[test]
-fn extract_f5f09v09SQZ() {
+fn extract_f5f09v09_sqz() {
     let file = Cursor::new(include_bytes!("sqz/f5f09v09.SQZ"));
     let mut archive = SqzArchive::new(file).unwrap();
-    
+
     while let Ok(entry) = archive.get_next_entry() {
         if let Some(entry) = entry {
             archive.read(&entry).unwrap();
@@ -102,12 +132,11 @@ fn extract_f5f09v09SQZ() {
     }
 }
 
-
 #[test]
-fn extract_TPLZH025SQZ() {
+fn extract_tplzh025_sqz() {
     let file = Cursor::new(include_bytes!("sqz/TPLZH025.SQZ"));
     let mut archive = SqzArchive::new(file).unwrap();
-    
+
     while let Ok(entry) = archive.get_next_entry() {
         if let Some(entry) = entry {
             archive.read(&entry).unwrap();

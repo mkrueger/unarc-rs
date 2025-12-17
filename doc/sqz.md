@@ -95,7 +95,8 @@ Offset | Size | Type | Meaning
 
 - `method = flags & 0x0F`
   - `0` = Stored
-  - `1..=5` = Compressed (SQZ “Squeeze” variants)
+  - `1..=4` = Compressed (SQZ “Squeeze” variants)
+  - other values: currently treated as unsupported
 - `compression_method`: derived from `method`
 
 Note: The leading `checksum` byte is currently read but not validated.
@@ -149,11 +150,26 @@ Offset | Size | Type | Meaning
 
 `unarc-rs` skips these blocks.
 
-## 7) Compression Methods (high-level)
+## 7) Compression Methods
 
 `method = flags & 0x0F`:
 
-- `0`: Stored (no compression)
-- `1..=4`: “Squeeze” / compressed (format depends on SQZ.EXE)
+The labels and mapping names below are the **internal naming** used by `unarc-rs` to describe the observed SQZ.EXE variants. Conceptually, all compressed methods are the same LZHUF-style bitstream with different length/distance codebooks.
 
-In `unarc-rs`, `method == 4` is the most important path (default compression). The concrete bitstream specification of the method-4 payload is not part of this container document; see the implementation in `src/sqz/unsqz.rs` and the historical notes in `doc/sqz.txt`.
+| Method | Name | Description |
+|--------|------|-------------|
+| 0 | Stored | No compression |
+| 1 | Squeeze | “SqzNative” length mapping + power-of-two distance coding |
+| 2 | Squeeze | “SqzNative” length mapping + distance tables from SQZ.EXE |
+| 3 | Squeeze | “DeflateLike29” length mapping + power-of-two distance coding |
+| 4 | Squeeze | “DeflateLike29” length mapping + distance tables from SQZ.EXE |
+
+All methods use a LZHUF-style algorithm with:
+- 32KB sliding window
+- 14-bit block size field
+- Huffman coding (NT=19, NC=511, NP=31)
+- PeekSkip-style PT length reading
+
+Methods 3 and 4 use SQZ.EXE-specific length tables (`SqzDeflateLenTables::SqzExe`).
+
+Implementation: `src/sqz/unsqz.rs`

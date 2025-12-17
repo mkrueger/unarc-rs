@@ -4,31 +4,6 @@ use std::sync::OnceLock;
 
 use crate::error::{ArchiveError, Result};
 
-static SQZ_TRACE_LEVEL: OnceLock<u8> = OnceLock::new();
-
-fn sqz_trace_level() -> u8 {
-    *SQZ_TRACE_LEVEL.get_or_init(|| match std::env::var("UNARC_SQZ_TRACE") {
-        Ok(v) => {
-            if let Ok(n) = v.parse::<u8>() {
-                n
-            } else if matches!(v.as_str(), "true" | "yes" | "on") {
-                1
-            } else {
-                0
-            }
-        }
-        Err(_) => 0,
-    })
-}
-
-macro_rules! sqz_trace {
-    ($level:expr, $($arg:tt)*) => {{
-        if sqz_trace_level() >= ($level) {
-            eprintln!($($arg)*);
-        }
-    }};
-}
-
 #[derive(Clone, Copy, Debug)]
 enum SqzLenMapping {
     /// Deflate-style length decoding using 29 codes mapped onto SQZ symbols
@@ -36,6 +11,12 @@ enum SqzLenMapping {
     DeflateLike29,
     /// SQZ native: symbols 256-447 are direct lengths, 448+ have 1 extra bit
     SqzNative,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SqzDeflateLenTables {
+    Standard,
+    SqzExe,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -58,72 +39,57 @@ struct SqzExeTables {
 static SQZ_EXE_TABLES: OnceLock<SqzExeTables> = OnceLock::new();
 
 fn sqz_exe_tables() -> Result<&'static SqzExeTables> {
-    if let Some(t) = SQZ_EXE_TABLES.get() {
-        return Ok(t);
-    }
+    Ok(SQZ_EXE_TABLES.get_or_init(|| {
+        // Hardcoded tables extracted from SQZ.EXE via xxd analysis.
+        // These are SQZ-specific (not Deflate) length/distance encoding tables.
 
-    // Hardcoded tables extracted from SQZ.EXE via xxd analysis.
-    // These are SQZ-specific (not Deflate) length/distance encoding tables.
+        // Method>=3 length mapping tables used by SQZ.EXE's decoder at 0x7FAE.
+        // After Huffman decoding a symbol in 0x100..=0x11F, it does:
+        //   extra = len_extra[idx]
+        //   base  = len_base[idx]
+        //   c = 0x100 + base + getbits(extra)
+        // so later `len = c - 0xFD` yields `len = base + getbits(extra) + 3`.
+        //
+        // These values are extracted by interpreting SQZ.EXE as DS-based tables:
+        //   extra byte table address: DS:0x0AF4 + sym
+        //   base  word table address: DS:0x09B2 + sym*2
+        // for sym=0x100..0x11F.
+        let len_extra: [u8; 32] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6,
+            6, 6, 6,
+        ];
 
-    // Length extra bits (28 entries for length codes 256-283)
-    // Extracted from SQZ.EXE offset 0x10cd8
-    // Note: Only first 28 entries are valid (for symbols 256-283)
-    // Pattern: 4 entries per group with increasing extra bits: 0,0,0,0, 1,1,1,1, 2,2,2,2, ...
-    let len_extra: [u8; 32] = [
-        0, 0, 0, 0, // codes 0-3 (sym 256-259): 0 extra bits -> len 3-6
-        1, 1, 1, 1, // codes 4-7 (sym 260-263): 1 extra bit
-        2, 2, 2, 2, // codes 8-11 (sym 264-267): 2 extra bits
-        3, 3, 3, 3, // codes 12-15 (sym 268-271): 3 extra bits
-        4, 4, 4, 4, // codes 16-19 (sym 272-275): 4 extra bits
-        5, 5, 5, 5, // codes 20-23 (sym 276-279): 5 extra bits
-        6, 6, 6, 6, // codes 24-27 (sym 280-283): 6 extra bits
-        0, 0, 0, 0, // codes 28-31: unused/padding
-    ];
+        let len_base: [u16; 32] = [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112,
+            128, 160, 192, 224, 256, 320, 384, 448,
+        ];
 
-    // Length base values - SQZ uses different progression than Deflate
-    // Extracted from SQZ.EXE offset 0x10c98 (28 words = 56 bytes)
-    // These are the base lengths before adding extra bits
-    let len_base: [u16; 32] = [
-        3, 4, 5, 6, // with 0 extra bits: lengths 3-6
-        7, 8, 10, 12, // with 1 extra bit: lengths 7-8, 10-11, 12-13
-        14, 16, 20, 24, // with 2 extra bits
-        28, 32, 40, 48, // with 3 extra bits
-        56, 64, 80, 96, // with 4 extra bits
-        112, 128, 160, 192, // with 5 extra bits
-        224, 256, 320, 384, // with 6 extra bits
-        0, 0, 0, 0, // unused/padding
-    ];
+        // Distance extra bits (32 entries) - SQZ variant
+        // Extracted from SQZ.EXE offset 0x10d34 (32 bytes)
+        // Note: First 5 entries (codes 0-4) have 0 extra bits, then progression starts
+        let dist_extra: [u8; 0x20] = [
+            0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11,
+            12, 12, 13, 13, 0,
+        ];
 
-    // Distance extra bits (32 entries) - SQZ variant
-    // Extracted from SQZ.EXE offset 0x10d34 (32 bytes)
-    // Note: First 5 entries (codes 0-4) have 0 extra bits, then progression starts
-    let dist_extra: [u8; 0x20] = [
-        0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12,
-        12, 13, 13, 0,
-    ];
+        // Distance base values - SQZ uses different progression than Deflate
+        // Extracted from SQZ.EXE offset 0x10cf4 (32 words = 64 bytes)
+        // Note: These differ from Deflate! E.g. code 5 → base 5, not 7
+        let dist_base: [u16; 0x20] = [
+            0, 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025,
+            1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 32768,
+        ];
 
-    // Distance base values - SQZ uses different progression than Deflate
-    // Extracted from SQZ.EXE offset 0x10cf4 (32 words = 64 bytes)
-    // Note: These differ from Deflate! E.g. code 5 → base 5, not 7
-    let dist_base: [u16; 0x20] = [
-        0, 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025,
-        1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 32768,
-    ];
-
-    let t = SqzExeTables {
-        len_extra,
-        len_base,
-        dist_extra,
-        dist_base,
-    };
-
-    SQZ_EXE_TABLES
-        .set(t)
-        .map_err(|_| ArchiveError::decompression_failed("SQZ", "SQZ.EXE tables init failed"))?;
-    Ok(SQZ_EXE_TABLES.get().expect("tables set"))
+        SqzExeTables {
+            len_extra,
+            len_base,
+            dist_extra,
+            dist_base,
+        }
+    }))
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SqzPtLenMode {
     PeekSkip,
     Sequential,
@@ -134,11 +100,10 @@ trait SqzBitRead {
     fn get_bits_u16(&mut self, n: u8) -> Result<u16>;
     fn peek_bits(&mut self, n: u8) -> Result<u16>;
     fn skip_bits(&mut self, n: u8) -> Result<()>;
+    fn align_to_byte(&mut self);
     fn get_bit(&mut self) -> Result<u16> {
         self.get_bits_u16(1)
     }
-    fn debug_position(&self) -> String;
-    fn debug_bitbuf(&self) -> u32;
 }
 
 #[derive(Clone, Debug)]
@@ -164,11 +129,6 @@ impl<'a> BitReaderMsb<'a> {
             let byte = *self.data.get(self.pos).ok_or_else(|| {
                 ArchiveError::decompression_failed("SQZ", "Unexpected EOF in bitstream")
             })?;
-            // Ultra-verbose debug for block boundary analysis
-            if self.pos >= 16566 && self.pos <= 16572 {
-                sqz_trace!(2, "[DEBUG] ensure_bits: loading byte at pos={}: 0x{:02x}, bitbuf before=0x{:08x}, bits={}", 
-                    self.pos, byte, self.bitbuf, self.bits);
-            }
             self.pos += 1;
             self.bitbuf = (self.bitbuf << 8) | (byte as u32);
             self.bits = self.bits.saturating_add(8);
@@ -231,16 +191,17 @@ impl SqzBitRead for BitReaderMsb<'_> {
         Ok(())
     }
 
-    fn debug_position(&self) -> String {
-        let bit_offset = self.pos * 8 - self.bits as usize;
-        format!(
-            "pos={}, bits_in_buf={}, bit_offset={}",
-            self.pos, self.bits, bit_offset
-        )
-    }
-
-    fn debug_bitbuf(&self) -> u32 {
-        self.bitbuf
+    fn align_to_byte(&mut self) {
+        let rem = self.bits % 8;
+        if rem == 0 {
+            return;
+        }
+        self.bits -= rem;
+        self.bitbuf &= if self.bits == 0 {
+            0
+        } else {
+            (1u32 << self.bits) - 1
+        };
     }
 }
 
@@ -263,9 +224,10 @@ impl HuffmanDecoder {
             max_len = max_len.max(len);
         }
 
-        // All symbols unused. The original implementation can still run with a
-        // constant table (symbol returned with 0 bits consumed). We represent
-        // that explicitly when callers request it.
+        // All symbols unused.
+        // Treat this as an error: in practice this indicates a malformed or
+        // misaligned block header, and callers rely on the error to retry with
+        // alternate parsing strategies.
         if max_len == 0 {
             return Err(ArchiveError::decompression_failed(
                 "SQZ",
@@ -299,24 +261,11 @@ impl HuffmanDecoder {
             let sym_code = next_code[len_usize];
             next_code[len_usize] += 1;
 
-            // Debug: show codes for key symbols
-            if sym == 32
-                || sym == 98
-                || sym == 271
-                || sym == 286
-                || (sym >= 256 && sym <= 260)
-                || (sym >= 20 && sym <= 30)
-            {
-                sqz_trace!(
-                    2,
-                    "[DEBUG] Huffman code: sym={} len={} code=0x{:x} binary={:0width$b}",
-                    sym,
-                    len,
-                    sym_code,
-                    sym_code,
-                    width = len_usize
-                );
-            }
+            // SQZ streams seen in the wild (and SQZ.EXE's table-based decoder)
+            // can tolerate oversubscribed/"shadowed" codes. If a shorter code
+            // already forms a leaf on this path, any longer codes under it are
+            // unreachable and can be ignored.
+            let mut skip_symbol = false;
 
             // Normal order: iterate MSB-first (bit_idx from len-1 down to 0)
             let mut node_idx = 0usize;
@@ -328,12 +277,8 @@ impl HuffmanDecoder {
                 let (left, right) = match nodes[node_idx] {
                     HuffNode::Branch { left, right } => (left, right),
                     HuffNode::Leaf(_) => {
-                        return Err(ArchiveError::decompression_failed(
-                            "SQZ",
-                            format!(
-                                "Invalid Huffman tree (leaf on path; sym={sym} len={len} code=0x{sym_code:x})"
-                            ),
-                        ));
+                        skip_symbol = true;
+                        break;
                     }
                 };
 
@@ -362,16 +307,16 @@ impl HuffmanDecoder {
                     if is_last {
                         // Leaf already exists; reject duplicates.
                         if matches!(nodes[node_idx], HuffNode::Leaf(_)) {
-                            return Err(ArchiveError::decompression_failed(
-                                "SQZ",
-                                format!(
-                                    "Invalid Huffman tree (duplicate code; sym={sym} len={len} code=0x{sym_code:x})"
-                                ),
-                            ));
+                            skip_symbol = true;
+                        } else {
+                            nodes[node_idx] = HuffNode::Leaf(sym as u16);
                         }
-                        nodes[node_idx] = HuffNode::Leaf(sym as u16);
                     }
                 }
+            }
+
+            if skip_symbol {
+                continue;
             }
         }
 
@@ -383,21 +328,15 @@ impl HuffmanDecoder {
             HuffmanDecoder::Constant(sym) => Ok(*sym),
             HuffmanDecoder::Tree { nodes } => {
                 let mut idx = 0usize;
-                let mut bits_read = Vec::new();
                 loop {
                     match nodes.get(idx).ok_or_else(|| {
                         ArchiveError::decompression_failed("SQZ", "Bad Huffman node")
                     })? {
                         HuffNode::Leaf(sym) => {
-                            if bits_read.len() <= 12 && *sym <= 300 {
-                                // Only log for short codes that might be relevant
-                                // eprintln!("[DEBUG] Huffman decode: bits={:?} → sym={}", bits_read, sym);
-                            }
                             return Ok(*sym);
                         }
                         HuffNode::Branch { left, right } => {
                             let bit = br.get_bit()? as usize;
-                            bits_read.push(bit as u8);
                             idx = if bit == 0 { *left } else { *right };
                             if idx == 0 {
                                 // SQZ.EXE uses table-based decoding where unused prefixes
@@ -412,96 +351,52 @@ impl HuffmanDecoder {
     }
 }
 
-fn read_pt_len<R: SqzBitRead>(
+fn read_pt_len<R: SqzBitRead + Clone>(
     br: &mut R,
     n_symbols: usize,
     nbit: u8,
     special: Option<usize>,
-    mode: SqzPtLenMode,
+    _mode: SqzPtLenMode,
 ) -> Result<HuffmanDecoder> {
+    // Note: SQZ.EXE (see src/sqz/exe/SQZ.EXE.ndisasm16.asm @ 0x7CE8)
+    // uses the PeekSkip-style algorithm, including the special-run behavior.
+
     let n = br.get_bits_u16(nbit)? as usize;
-    sqz_trace!(
-        2,
-        "[DEBUG] read_pt_len: n={}, n_symbols={}, special={:?}",
-        n,
-        n_symbols,
-        special
-    );
     if n == 0 {
         let c = br.get_bits_u16(nbit)?;
-        sqz_trace!(2, "[DEBUG] read_pt_len: constant={}", c);
         return Ok(HuffmanDecoder::Constant(c));
     }
 
+    // SQZ.EXE (function at 0x7CE8) reads PT lengths as:
+    // - c = top3bits(bitbuf16)
+    // - if c==7: extend by counting consecutive 1 bits starting at mask 0x1000
+    // - fillbuf( (c<7)?3:(c-3) )
+    // - special handling at index `special`: read 2 bits and write (zeros+1) zero lengths.
     let mut pt_len = vec![0u8; n_symbols];
-
     let mut i = 0usize;
     while i < n {
-        let mut c: u8;
-        // Debug first few PT length reads for block 2
-        let debug_this = i < 5;
-        if debug_this {
-            let peek16 = br.peek_bits(16)?;
-            sqz_trace!(
-                2,
-                "[DEBUG] read_pt_len i={}: before read, next 16 bits = 0x{:04x} = {:016b}",
-                i,
-                peek16,
-                peek16
-            );
-        }
-        match mode {
-            SqzPtLenMode::PeekSkip => {
-                // SQZ.EXE at 0x7D47-0x7D77:
-                // Peek top 3 bits. If all are 1 (c==7), then continue to peek additional bits.
-                // Each additional 1-bit increments c; stop at the first 0-bit.
-                // Consume: 3 bits if c < 7, else (3 + num_extra + 1) bits.
-                let peek3 = br.peek_bits(3)? as u8;
-                if peek3 == 7 {
-                    c = 7;
-                    let mut extra = 0u8;
-                    loop {
-                        // Peek (4 + extra) bits total, extract the last bit
-                        let peek_extended = br.peek_bits(4 + extra)?;
-                        let bit = (peek_extended & 1) as u8;
-                        if bit == 0 {
-                            // Terminating 0 bit found
-                            br.skip_bits(3 + extra + 1)?;
-                            break;
-                        }
-                        c = c.saturating_add(1);
-                        extra += 1;
-                        if c >= 16 || extra > 12 {
-                            br.skip_bits(3 + extra)?;
-                            break;
-                        }
-                    }
-                } else {
-                    c = peek3;
-                    br.skip_bits(3)?;
+        let bitbuf16 = br.peek_bits(16)?;
+        let mut c = (bitbuf16 >> 13) as u8;
+        if c == 7 {
+            // SQZ.EXE at 0x7D56-0x7D64:
+            // mask starts at 0x1000 (bit 12), tests bit, if set: shift mask right and inc c
+            // Loop: test → if set → shift mask → inc c → repeat
+            let mut mask = 0x1000u16;
+            loop {
+                if (bitbuf16 & mask) == 0 {
+                    break; // Bit not set, stop extending
                 }
-                if debug_this {
-                    sqz_trace!(2, "[DEBUG] read_pt_len i={}: peek3={}, c={}", i, peek3, c);
-                }
-            }
-            SqzPtLenMode::Sequential => {
-                // Alternative, reference-style decoding (LHA/LZHUF-like):
-                // c = getbits(3); if c==7 { while(getbit()==1) c++; getbit()==0 terminates }
-                c = br.get_bits_u16(3)? as u8;
-                if c == 7 {
-                    loop {
-                        let b = br.get_bit()? as u8;
-                        if b == 0 {
-                            break;
-                        }
-                        c = c.saturating_add(1);
-                        if c >= 16 {
-                            break;
-                        }
-                    }
+                mask >>= 1;
+                c = c.saturating_add(1);
+                if mask == 0 || c >= 16 {
+                    break;
                 }
             }
         }
+
+        let skip = if c < 7 { 3 } else { c.saturating_sub(3) };
+        br.skip_bits(skip)?;
+
         if i < pt_len.len() {
             pt_len[i] = c;
         }
@@ -509,39 +404,18 @@ fn read_pt_len<R: SqzBitRead>(
 
         if let Some(special) = special {
             if i == special {
-                let peek_before_zerorun = br.peek_bits(16)?;
-                sqz_trace!(2,
-                    "[DEBUG] read_pt_len: at i={}, special found, reading zero-run. Next 16 bits = 0x{:04x} = {:016b}",
-                    i - 1, peek_before_zerorun, peek_before_zerorun
-                );
-                // SQZ.EXE: getbits(2) gives zeros count (0-3), NOT zeros+1
-                // The loop is: while (--zeros >= 0) { write zero; }
                 let zeros = br.get_bits_u16(2)? as usize;
-                sqz_trace!(2, "[DEBUG] read_pt_len: zeros={}, i={}, n={}", zeros, i, n);
-                for _ in 0..zeros {
-                    if i >= n {
-                        sqz_trace!(2, "[DEBUG] read_pt_len: breaking early at i={}, n={}", i, n);
-                        break;
-                    }
+                // Special-run: insert `zeros` zero-length entries.
+                let run = zeros;
+                for _ in 0..run {
                     if i < pt_len.len() {
                         pt_len[i] = 0;
                     }
                     i += 1;
                 }
-                sqz_trace!(2, "[DEBUG] read_pt_len: after zero-run, i={}", i);
             }
         }
     }
-
-    // Remaining lengths are already 0.
-    // Debug: show PT lengths
-    let nonzero_pt: Vec<(usize, u8)> = pt_len
-        .iter()
-        .enumerate()
-        .filter(|(_, &len)| len > 0)
-        .map(|(i, &len)| (i, len))
-        .collect();
-    sqz_trace!(2, "[DEBUG] read_pt_len: non-zero pt_len={:?}", nonzero_pt);
 
     HuffmanDecoder::from_bit_lengths(&pt_len).map_err(|e| {
         ArchiveError::decompression_failed(
@@ -553,20 +427,21 @@ fn read_pt_len<R: SqzBitRead>(
     })
 }
 
-fn read_c_len<R: SqzBitRead>(br: &mut R, pt: &HuffmanDecoder) -> Result<HuffmanDecoder> {
+fn read_c_len<R: SqzBitRead>(
+    br: &mut R,
+    pt: &HuffmanDecoder,
+    allow_empty: bool,
+) -> Result<HuffmanDecoder> {
     const NC: usize = 0x1ff;
 
     let n = br.get_bits_u16(9)? as usize;
-    sqz_trace!(2, "[DEBUG] read_c_len: n={}", n);
     if n == 0 {
         let c = br.get_bits_u16(9)?;
-        sqz_trace!(2, "[DEBUG] read_c_len: constant c={}", c);
         return Ok(HuffmanDecoder::Constant(c));
     }
 
     let mut c_len = vec![0u8; NC];
     let mut i = 0usize;
-    let mut sym_count = 0;
     while i < n {
         let sym = pt.decode(br).map_err(|e| {
             ArchiveError::decompression_failed(
@@ -575,11 +450,6 @@ fn read_c_len<R: SqzBitRead>(br: &mut R, pt: &HuffmanDecoder) -> Result<HuffmanD
             )
         })? as u16;
         if sym <= 2 {
-            // SQZ.EXE at 0x7E7A-0x7ED4:
-            // sym == 0: count = 1
-            // sym == 1: count = getbits(4) + 3
-            // sym == 2: count = 0x14, then loop adding getbits(7) until not 0x7f
-            // Loop at 0x7EC9: while (--count >= 0) write zero → writes 'count' zeros
             let run = match sym {
                 0 => 1usize,
                 1 => (br.get_bits_u16(4)? as usize) + 3,
@@ -596,17 +466,6 @@ fn read_c_len<R: SqzBitRead>(br: &mut R, pt: &HuffmanDecoder) -> Result<HuffmanD
                 }
                 _ => unreachable!(),
             };
-            if sym_count < 10 {
-                sqz_trace!(
-                    2,
-                    "[DEBUG] read_c_len sym {}: PT sym={} → run {} zeros at i={}",
-                    sym_count,
-                    sym,
-                    run,
-                    i
-                );
-            }
-            sym_count += 1;
             for _ in 0..run {
                 if i >= n {
                     break;
@@ -615,48 +474,27 @@ fn read_c_len<R: SqzBitRead>(br: &mut R, pt: &HuffmanDecoder) -> Result<HuffmanD
                 i += 1;
             }
         } else {
-            if sym_count < 10 {
-                sqz_trace!(
-                    2,
-                    "[DEBUG] read_c_len sym {}: PT sym={} → c_len[{}]={}",
-                    sym_count,
-                    sym,
-                    i,
-                    sym - 2
-                );
-            }
-            sym_count += 1;
             c_len[i] = (sym - 2) as u8;
             i += 1;
         }
     }
 
-    // Show first non-zero c_len entries
-    let nonzero_entries: Vec<(usize, u8)> = c_len
-        .iter()
-        .enumerate()
-        .filter(|(_, &len)| len > 0)
-        .take(20)
-        .map(|(i, &len)| (i, len))
-        .collect();
-    sqz_trace!(
-        2,
-        "[DEBUG] read_c_len: first 20 non-zero c_len entries: {:?}",
-        nonzero_entries
-    );
-
-    // Show ALL c_len entries for codes >= 256
-    let all_match_entries: Vec<(usize, u8)> = c_len
-        .iter()
-        .enumerate()
-        .filter(|(i, &len)| *i >= 256 && len > 0)
-        .map(|(i, &len)| (i, len))
-        .collect();
-    sqz_trace!(
-        2,
-        "[DEBUG] read_c_len: ALL match length c_len entries (>=256): {:?}",
-        all_match_entries
-    );
+    // If all lengths are zero, the Huffman table would be empty.
+    // Usually this means a malformed/misaligned block header, but SQZ.EXE's
+    // table builder tolerates this and effectively decodes to 0.
+    let has_nonzero = c_len.iter().any(|&len| len != 0);
+    if !has_nonzero {
+        if allow_empty {
+            // SQZ.EXE's table-based decoder effectively returns 0 for unused prefixes.
+            // If the tree is fully empty, treating it as a constant-0 decoder matches
+            // that permissive behavior.
+            return Ok(HuffmanDecoder::Constant(0));
+        }
+        return Err(ArchiveError::decompression_failed(
+            "SQZ",
+            "Empty Huffman tree (all lengths zero)",
+        ));
+    }
 
     HuffmanDecoder::from_bit_lengths(&c_len)
 }
@@ -665,10 +503,11 @@ fn decode_len_code<R: SqzBitRead>(
     br: &mut R,
     c_dec: &HuffmanDecoder,
     mapping: SqzLenMapping,
+    deflate_len_tables: SqzDeflateLenTables,
 ) -> Result<u16> {
-    let sym = c_dec
-        .decode(br)
-        .map_err(|_| ArchiveError::decompression_failed("SQZ", "C decode failed"))?;
+    let sym = c_dec.decode(br).map_err(|e| {
+        ArchiveError::decompression_failed("SQZ", format!("C decode failed: {}", e))
+    })?;
     if sym <= 0xff {
         return Ok(sym);
     }
@@ -677,25 +516,41 @@ fn decode_len_code<R: SqzBitRead>(
             // Interpret SQZ symbols 256..=284 as Deflate length codes 257..=285.
             // Return value must stay in the SQZ "C space" where caller computes
             // length as (c - 0xFD).
-            if !(256..=284).contains(&sym) {
-                return Ok(sym);
+            // SQZ.EXE's method>=3 decoder (0x7FAE) uses a 32-entry table for
+            // codes 256..=287. Standard Deflate uses 29 entries 256..=284.
+            match deflate_len_tables {
+                SqzDeflateLenTables::Standard => {
+                    if !(256..=284).contains(&sym) {
+                        return Ok(sym);
+                    }
+                    let idx = (sym - 256) as usize;
+                    const LEN_BASE: [u16; 29] = [
+                        3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59,
+                        67, 83, 99, 115, 131, 163, 195, 227, 258,
+                    ];
+                    const LEN_EXTRA: [u8; 29] = [
+                        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5,
+                        5, 5, 5, 0,
+                    ];
+                    let base = LEN_BASE[idx];
+                    let extra = LEN_EXTRA[idx];
+                    let add = br.get_bits_u16(extra)?;
+                    Ok(base.saturating_add(add).saturating_add(0xFD))
+                }
+                SqzDeflateLenTables::SqzExe => {
+                    // Match SQZ.EXE 0x7FAE mapping: for sym 0x100..=0x11F,
+                    // c = 0x100 + base + getbits(extra).
+                    if !(0x100..=0x11F).contains(&sym) {
+                        return Ok(sym);
+                    }
+                    let t = sqz_exe_tables()?;
+                    let idx = (sym - 0x100) as usize;
+                    let extra = t.len_extra[idx];
+                    let base = t.len_base[idx];
+                    let add = br.get_bits_u16(extra)?;
+                    Ok(0x100u16.saturating_add(base).saturating_add(add))
+                }
             }
-
-            const LEN_BASE: [u16; 29] = [
-                3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83,
-                99, 115, 131, 163, 195, 227, 258,
-            ];
-            const LEN_EXTRA: [u8; 29] = [
-                0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5,
-                0,
-            ];
-
-            let idx = (sym - 256) as usize;
-            let base = LEN_BASE[idx];
-            let extra = LEN_EXTRA[idx];
-            let add = br.get_bits_u16(extra)?;
-            let length = base.saturating_add(add);
-            Ok(length.saturating_add(0xFD))
         }
         SqzLenMapping::SqzNative => {
             // SQZ.EXE decode_c at 0x7F8A-0x7FA9:
@@ -717,24 +572,29 @@ fn decode_len_code<R: SqzBitRead>(
     }
 }
 
-fn unsqz_method4_impl_with_reader<R: SqzBitRead>(
+fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
     mut br: R,
     original_size: usize,
     len_mapping: SqzLenMapping,
     dist_mapping: SqzDistMapping,
     pt_len_mode: SqzPtLenMode,
+    deflate_len_tables: SqzDeflateLenTables,
     win_pos_init: usize,
     length_bias: u16,
     dist_bias: usize,
+    blocksize_bits: u8,
+    blocksize_offset: i8,
+    allow_empty_c_tree: bool,
 ) -> Result<Vec<u8>> {
-    sqz_trace!(2, "[DEBUG] VARIANT: len={:?}, dist={:?}, pt_len={:?}, win_pos=0x{:x}, len_bias=0x{:x}, dist_bias={}",
-        len_mapping, dist_mapping, pt_len_mode, win_pos_init, length_bias, dist_bias);
+    let mut pt_len_mode = pt_len_mode;
+
     // Parameters observed from SQZ.EXE (Squeeze It 1.08.3):
     // - 32KiB ring buffer
     // - blocks with 14-bit symbol count
     // - Huffman length coding with (NT=19, NC=511, NP=31)
-    const NT: usize = 0x20;
-    const NP: usize = 0x1f;
+    // Note: NP=31 (0x1F) is confirmed from SQZ.EXE disassembly at 0x7F3D
+    const NT: usize = 19;
+    const NP: usize = 31;
 
     // Initialize bit-buffer (SQZ.EXE does an initial fillbuf(16)).
     br.ensure_bits(16)?;
@@ -759,118 +619,124 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead>(
     let mut block_index: usize = 0;
     let mut c_dec = HuffmanDecoder::Constant(0);
     let mut p_dec = HuffmanDecoder::Constant(0);
-    let mut symbols_decoded_in_block: usize = 0;
 
     while out.len() < original_size {
         // Decrement first, then check (matching SQZ.EXE's dec-then-test pattern)
         block_remaining -= 1;
         if block_remaining < 0 {
-            if block_index > 0 {
-                sqz_trace!(
-                    2,
-                    "[DEBUG] Block {} completed: decoded {} symbols, expected {}",
-                    block_index,
-                    symbols_decoded_in_block,
-                    block_remaining + symbols_decoded_in_block as i32 + 1
-                );
+            let next_block_index = block_index.saturating_add(1);
+            let block_start = br.clone();
+
+            let parse_block = |br: &mut R,
+                               pt_len_mode: SqzPtLenMode|
+             -> Result<(u16, HuffmanDecoder, HuffmanDecoder)> {
+                let raw_n = br.get_bits_u16(blocksize_bits)?;
+                // Block size is stored as a bit-field. SQZ.EXE does `dec ax` after
+                // reading, meaning `n = raw_n - 1`. However, different streams
+                // may have different conventions, so we try multiple offsets.
+                // Note: Not sure if it's needed - works with raw_n but I leave it in - just in case…
+                let n = match blocksize_offset {
+                    -1 => raw_n.saturating_sub(1),
+                    0 => raw_n,
+                    1 => raw_n.wrapping_add(1),
+                    _ => raw_n,
+                };
+                if n == 0 {
+                    return Err(ArchiveError::decompression_failed(
+                        "SQZ",
+                        "Invalid block size (0)",
+                    ));
+                }
+
+                let pt_for_c = read_pt_len(br, NT, 5, Some(3), pt_len_mode).map_err(|e| {
+                    ArchiveError::decompression_failed(
+                        "SQZ",
+                        format!("block#{next_block_index} read_pt_len(CT): {e}"),
+                    )
+                })?;
+
+                let c_dec = read_c_len(br, &pt_for_c, allow_empty_c_tree).map_err(|e| {
+                    ArchiveError::decompression_failed(
+                        "SQZ",
+                        format!("block#{next_block_index} read_c_len: {e}"),
+                    )
+                })?;
+
+                let p_dec = read_pt_len(br, NP, 5, None, pt_len_mode).map_err(|e| {
+                    ArchiveError::decompression_failed(
+                        "SQZ",
+                        format!("block#{next_block_index} read_pt_len(P): {e}"),
+                    )
+                })?;
+
+                Ok((n, c_dec, p_dec))
+            };
+
+            let mut br_try = block_start.clone();
+
+            // Try parsing the block header/tables without and with byte-alignment.
+            // If that fails, allow a one-way switch from PeekSkip -> Sequential (method-3
+            // streams in the wild appear inconsistent here).
+            let mut last_err: Option<ArchiveError> = None;
+
+            let try_once = |candidate: R, align: bool, mode: SqzPtLenMode| {
+                let mut br_local = candidate;
+                if align {
+                    br_local.align_to_byte();
+                }
+                let res = parse_block(&mut br_local, mode);
+                (br_local, res)
+            };
+
+            // Attempt order:
+            // 1) no byte-alignment + current PT mode
+            // 2) byte-alignment + current PT mode
+            // 3) no byte-alignment + alternate PT mode (PeekSkip -> Sequential only)
+            // 4) byte-alignment + alternate PT mode
+            let mut attempts: Vec<(bool, SqzPtLenMode)> =
+                vec![(false, pt_len_mode), (true, pt_len_mode)];
+            if pt_len_mode == SqzPtLenMode::PeekSkip {
+                attempts.push((false, SqzPtLenMode::Sequential));
+                attempts.push((true, SqzPtLenMode::Sequential));
             }
-            symbols_decoded_in_block = 0;
-            // Debug: show exact bitbuf state before block header read
-            sqz_trace!(
-                2,
-                "[DEBUG] Before block header read: {} bitbuf=0x{:08x}",
-                br.debug_position(),
-                br.debug_bitbuf()
-            );
-            // SQZ.EXE at 0x7F13-0x7F1D: blocksize = getbits(14) - 1
-            let n = br.get_bits_u16(14)?;
-            sqz_trace!(
-                2,
-                "[DEBUG] Read block size n={} (0x{:04x}), now: {} bitbuf=0x{:08x}",
-                n,
-                n,
-                br.debug_position(),
-                br.debug_bitbuf()
-            );
+
+            let mut parsed: Option<(R, u16, HuffmanDecoder, HuffmanDecoder)> = None;
+            for (align, mode) in attempts {
+                let (candidate_reader, res) = try_once(block_start.clone(), align, mode);
+                match res {
+                    Ok((n, c, p)) => {
+                        if mode != pt_len_mode {
+                            pt_len_mode = mode;
+                        }
+                        br_try = candidate_reader;
+                        parsed = Some((br_try.clone(), n, c, p));
+                        break;
+                    }
+                    Err(e) => {
+                        last_err = Some(e);
+                    }
+                }
+            }
+
+            let Some((_, n, new_c_dec, new_p_dec)) = parsed else {
+                return Err(last_err.unwrap_or_else(|| {
+                    ArchiveError::decompression_failed("SQZ", "Block parse failed")
+                }));
+            };
+
+            br = br_try;
+            block_index = next_block_index;
             block_remaining = (n as i32) - 1;
-            if n == 0 {
-                return Err(ArchiveError::decompression_failed(
-                    "SQZ",
-                    "Invalid block size (0)",
-                ));
-            }
-            block_index = block_index.saturating_add(1);
-            sqz_trace!(2, "[DEBUG] Block {block_index}: n={n}, block_remaining={block_remaining}, out.len()={}, {}", out.len(), br.debug_position());
-
-            let pt_for_c = read_pt_len(&mut br, NT, 5, Some(3), pt_len_mode).map_err(|e| {
-                ArchiveError::decompression_failed(
-                    "SQZ",
-                    format!("block#{block_index} read_pt_len(CT): {e}"),
-                )
-            })?;
-            sqz_trace!(2, "[DEBUG] After PT(C) read: {}", br.debug_position());
-            c_dec = read_c_len(&mut br, &pt_for_c).map_err(|e| {
-                ArchiveError::decompression_failed(
-                    "SQZ",
-                    format!("block#{block_index} read_c_len: {e}"),
-                )
-            })?;
-            sqz_trace!(2, "[DEBUG] After C read: {}", br.debug_position());
-            p_dec = read_pt_len(&mut br, NP, 5, None, pt_len_mode).map_err(|e| {
-                ArchiveError::decompression_failed(
-                    "SQZ",
-                    format!("block#{block_index} read_pt_len(P): {e}"),
-                )
-            })?; // special=-1
-            sqz_trace!(2, "[DEBUG] After P read: {}", br.debug_position());
-
-            // Show next 16 bits after P read (before first decode)
-            let peek16 = br.peek_bits(16)?;
-            sqz_trace!(
-                2,
-                "[DEBUG] Next 16 bits after P read: 0x{:04x} = {:016b}",
-                peek16,
-                peek16
-            );
+            c_dec = new_c_dec;
+            p_dec = new_p_dec;
         }
 
-        symbols_decoded_in_block += 1;
-
-        // Show bits before first few decodes
-        if out.len() < 3 {
-            let peek16 = br.peek_bits(16)?;
-            sqz_trace!(
-                2,
-                "[DEBUG] Before decode[{}]: next 16 bits = 0x{:04x} = {:016b}",
-                out.len(),
-                peek16,
-                peek16
-            );
-        }
-
-        let c = match decode_len_code(&mut br, &c_dec, len_mapping) {
+        let c = match decode_len_code(&mut br, &c_dec, len_mapping, deflate_len_tables) {
             Ok(c) => c,
             Err(e) => {
-                sqz_trace!(1, "[DEBUG] decode_len_code FAILED at block {block_index}, out.len()={}, symbols_decoded={}, {}: {e}", out.len(), symbols_decoded_in_block, br.debug_position());
                 return Err(e);
             }
         };
-
-        // Track the last few symbols of block 1
-        if block_index == 1 && block_remaining <= 5 {
-            sqz_trace!(
-                2,
-                "[DEBUG] Block 1, remaining={}, c={}, {}",
-                block_remaining,
-                c,
-                br.debug_position()
-            );
-        }
-
-        // Track first few symbols
-        if out.len() < 50 {
-            sqz_trace!(2, "[DEBUG] DECODE[{}]: c={}", out.len(), c);
-        }
 
         if c <= 0xff {
             let b = c as u8;
@@ -880,21 +746,9 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead>(
         } else {
             let length = (c as usize).saturating_sub(length_bias as usize);
 
-            // Debug: show bits before P decode
-            if out.len() < 50 {
-                let peek16 = br.peek_bits(16)?;
-                sqz_trace!(
-                    2,
-                    "[DEBUG] Before P decode: next 16 bits = 0x{:04x} = {:016b}",
-                    peek16,
-                    peek16
-                );
-            }
-
             let p_sym = match p_dec.decode(&mut br) {
                 Ok(s) => s as usize,
                 Err(e) => {
-                    sqz_trace!(1, "[DEBUG] p_dec.decode FAILED at block {block_index}, out.len()={}, symbols_decoded={}, {}: {e}", out.len(), symbols_decoded_in_block, br.debug_position());
                     return Err(e);
                 }
             };
@@ -936,30 +790,6 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead>(
                 }
             } as usize;
 
-            // Debug for first few matches
-            if out.len() < 100 || (block_index == 1 && block_remaining <= 10) {
-                sqz_trace!(
-                    2,
-                    "[DEBUG] MATCH: c={}, length={}, p_sym={}, dist={}, out.len()={}",
-                    c,
-                    length,
-                    p_sym,
-                    dist,
-                    out.len()
-                );
-            }
-
-            // Show bits after match decode for first few matches
-            if out.len() < 50 {
-                let peek16 = br.peek_bits(16)?;
-                sqz_trace!(
-                    2,
-                    "[DEBUG] After match (before next decode): next 16 bits = 0x{:04x} = {:016b}",
-                    peek16,
-                    peek16
-                );
-            }
-
             let mut src = win_pos.wrapping_sub(dist + dist_bias) & window_mask;
             for _ in 0..length {
                 if out.len() >= original_size {
@@ -977,28 +807,6 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead>(
     Ok(out)
 }
 
-fn unsqz_method4_impl(
-    buf: &[u8],
-    original_size: usize,
-    len_mapping: SqzLenMapping,
-    dist_mapping: SqzDistMapping,
-    pt_len_mode: SqzPtLenMode,
-    win_pos_init: usize,
-    length_bias: u16,
-    dist_bias: usize,
-) -> Result<Vec<u8>> {
-    unsqz_method4_impl_with_reader(
-        BitReaderMsb::new(buf),
-        original_size,
-        len_mapping,
-        dist_mapping,
-        pt_len_mode,
-        win_pos_init,
-        length_bias,
-        dist_bias,
-    )
-}
-
 /// Decode SQZ-native LZHUF-like streams using the tables embedded in `SQZ.EXE`.
 ///
 /// Each compression method (1-4) uses a specific combination of length/distance
@@ -1014,10 +822,12 @@ pub(crate) fn unsqz_compressed(
     }
 
     // Each method uses specific, known mappings (determined by testing):
-    // Method 1: SqzNative + PowerOfTwo, PeekSkip
-    // Method 2: SqzNative + ExeTables, PeekSkip
-    // Method 3: DeflateLike29 + PowerOfTwo, Sequential
-    // Method 4: DeflateLike29 + ExeTables, Sequential
+    // Method 1: SqzNative + PowerOfTwo
+    // Method 2: SqzNative + ExeTables
+    // Method 3: DeflateLike29 + PowerOfTwo
+    // Method 4: DeflateLike29 + ExeTables
+    //
+    // SQZ.EXE reads PT lengths using the PeekSkip-style algorithm for all methods.
     let (len_mapping, dist_mapping, pt_len_mode) = match method {
         1 => (
             SqzLenMapping::SqzNative,
@@ -1031,13 +841,15 @@ pub(crate) fn unsqz_compressed(
         ),
         3 => (
             SqzLenMapping::DeflateLike29,
+            // Method-3 distance mapping is ambiguous in the wild; we try both below.
             SqzDistMapping::PowerOfTwo,
-            SqzPtLenMode::Sequential,
+            // SQZ.EXE reads PT lengths using the PeekSkip-style algorithm.
+            SqzPtLenMode::PeekSkip,
         ),
         4 => (
             SqzLenMapping::DeflateLike29,
             SqzDistMapping::ExeTables,
-            SqzPtLenMode::Sequential,
+            SqzPtLenMode::PeekSkip,
         ),
         _ => {
             return Err(ArchiveError::unsupported_method(
@@ -1051,16 +863,29 @@ pub(crate) fn unsqz_compressed(
     let win_pos_init = 0usize;
     let length_bias = 0xFDu16;
     let dist_bias = 1usize;
+    let blocksize_bits = 14u8;
+    let blocksize_offset = 0i8;
+    let allow_empty_c_tree = false;
 
-    let mut out = unsqz_method4_impl(
-        buf,
+    // Method 3/4 use SqzExe length tables, others use Standard
+    let deflate_len_tables = match method {
+        3 | 4 => SqzDeflateLenTables::SqzExe,
+        _ => SqzDeflateLenTables::Standard,
+    };
+
+    let mut out = unsqz_method4_impl_with_reader(
+        BitReaderMsb::new(buf),
         original_size,
         len_mapping,
         dist_mapping,
         pt_len_mode,
+        deflate_len_tables,
         win_pos_init,
         length_bias,
         dist_bias,
+        blocksize_bits,
+        blocksize_offset,
+        allow_empty_c_tree,
     )?;
 
     if out.len() < original_size {

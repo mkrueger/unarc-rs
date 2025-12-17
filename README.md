@@ -23,8 +23,8 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **HA** | `.ha` | Store, ASC, HSC (full support) |
 | **UC2** | `.uc2` | Full support |
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support |
-| **SQZ** | `.sqz` | Store only |
-| **HYP** | `.hyp` | Store only |
+| **SQZ** | `.sqz` | Full support (stored + “Squeeze” methods 1–4) |
+| **HYP** | `.hyp` | Full support |
 
 ### Single-File Compression
 
@@ -33,6 +33,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **Z** | `.Z` | Unix compress (LZW) |
 | **GZ** | `.gz` | Gzip (Deflate) |
 | **BZ2** | `.bz2` | Bzip2 |
+| **ICE** | `.ice` | Ice |
 
 ### Compressed Archives
 

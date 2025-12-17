@@ -1,4 +1,3 @@
-use super::unsqz;
 use super::{
     file_header::{CompressionMethod, FileHeader},
     sqz_header::{SqzHeader, SQZ_HEADER_SIZE},
