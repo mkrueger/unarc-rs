@@ -39,6 +39,9 @@ pub struct Uc2Archive<T: Read + Seek> {
 const HEADER_SIZE: usize = 4 + 8 + 1;
 const ID: u32 = 0x1A324355; // UC2\x1A
 const AMAG: u32 = 0x01B2C3D4;
+// UltraCrypt-encrypted UC2 archives start with "UE2" followed by a version byte.
+// In little-endian u32 this matches: (id & 0x00FF_FFFF) == 0x00324555.
+const UE2_LABEL: u32 = 0x00324555;
 
 impl<T: Read + Seek> Uc2Archive<T> {
     pub fn new(mut reader: T) -> Result<Self> {
@@ -333,6 +336,14 @@ fn read_header<T: Read + Seek>(reader: &mut T) -> Result<(u32, bool)> {
     reader.read_exact(&mut header_bytes)?;
     let mut header_bytes = header_bytes.as_slice();
     convert_u32!(id, header_bytes);
+
+    // Detect UltraCrypt / UE2 early and return a clear error.
+    if (id & 0x00FF_FFFF) == UE2_LABEL {
+        return Err(ArchiveError::unsupported_method(
+            "UC2",
+            "UltraCrypt (UE2) encrypted archive (decrypt with UCRYPT first)",
+        ));
+    }
     if id != ID {
         return Err(ArchiveError::invalid_header("UC2"));
     }

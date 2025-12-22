@@ -215,6 +215,7 @@ impl ArchiveFormat {
             "bz2" => Some(ArchiveFormat::Bz2),
             "ice" => Some(ArchiveFormat::Ice),
             "uc2" => Some(ArchiveFormat::Uc2),
+            "ue2" => Some(ArchiveFormat::Uc2),
             "hyp" => Some(ArchiveFormat::Hyp),
             "ha" => Some(ArchiveFormat::Ha),
             "lha" | "lzh" => Some(ArchiveFormat::Lha),
@@ -334,7 +335,8 @@ impl ArchiveFormat {
             ArchiveFormat::Ice => &["ice"],
             ArchiveFormat::Hyp => &["hyp"],
             ArchiveFormat::Ha => &["ha"],
-            ArchiveFormat::Uc2 => &["uc2"],
+            // UE2 is UltraCrypt-encrypted UC2 (detected, but not decrypted).
+            ArchiveFormat::Uc2 => &["uc2", "ue2"],
             ArchiveFormat::Lha => &["lha", "lzh"],
             ArchiveFormat::Zip => &["zip"],
             ArchiveFormat::Rar => &["rar"],
@@ -384,8 +386,8 @@ impl ArchiveFormat {
             ArchiveFormat::Hyp => Some(&[b"HP", b"ST"]),
             // HA: "HA"
             ArchiveFormat::Ha => Some(&[b"HA"]),
-            // UC2: "UC2\x1A"
-            ArchiveFormat::Uc2 => Some(&[b"UC2\x1a"]),
+            // UC2: "UC2\x1A" (normal) or "UE2" (UltraCrypt-encrypted)
+            ArchiveFormat::Uc2 => Some(&[b"UC2\x1a", b"UE2"]),
             // LHA: "-lh" or "-lz" at offset 2
             ArchiveFormat::Lha => Some(&[b"-lh", b"-lz"]),
             // ZIP: "PK\x03\x04" or "PK\x05\x06" (empty)
@@ -464,6 +466,11 @@ impl ArchiveFormat {
 
         // UC2: "UC2\x1A"
         if data.len() >= 4 && data.starts_with(b"UC2\x1a") {
+            return Some(ArchiveFormat::Uc2);
+        }
+
+        // UE2: UltraCrypt-encrypted UC2 wrapper
+        if data.len() >= 3 && data.starts_with(b"UE2") {
             return Some(ArchiveFormat::Uc2);
         }
 
@@ -1991,6 +1998,18 @@ mod tests {
         assert_eq!(
             ArchiveFormat::detect_from_bytes(b"\x00\x00-lh5-rest"),
             Some(ArchiveFormat::Lha)
+        );
+
+        // Test UC2 detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"UC2\x1arest"),
+            Some(ArchiveFormat::Uc2)
+        );
+
+        // Test UE2 (UltraCrypt) detection as UC2
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"UE2\x01rest"),
+            Some(ArchiveFormat::Uc2)
         );
 
         // Test unknown format
