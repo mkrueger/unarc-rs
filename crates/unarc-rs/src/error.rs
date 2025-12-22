@@ -74,6 +74,24 @@ pub enum ArchiveError {
         path: PathBuf,
     },
 
+    /// Encryption requires password for specific entry
+    #[error("Entry '{entry}' in {format} archive is encrypted and requires a password")]
+    EncryptionRequired {
+        /// Name of the encrypted entry
+        entry: String,
+        /// Archive format name
+        format: String,
+    },
+
+    /// Invalid password provided
+    #[error("Invalid password for '{entry}' in {format} archive")]
+    InvalidPassword {
+        /// Name of the entry
+        entry: String,
+        /// Archive format name
+        format: String,
+    },
+
     /// External library error (e.g., from zip, unrar, sevenz-rust2)
     #[error("{library} error: {message}")]
     ExternalLibrary {
@@ -187,6 +205,22 @@ impl ArchiveError {
         Self::ExternalLibrary {
             library: library.into(),
             message: message.into(),
+        }
+    }
+
+    /// Create an encryption required error
+    pub fn encryption_required(entry: impl Into<String>, format: impl Into<String>) -> Self {
+        Self::EncryptionRequired {
+            entry: entry.into(),
+            format: format.into(),
+        }
+    }
+
+    /// Create an invalid password error
+    pub fn invalid_password(entry: impl Into<String>, format: impl Into<String>) -> Self {
+        Self::InvalidPassword {
+            entry: entry.into(),
+            format: format.into(),
         }
     }
 }

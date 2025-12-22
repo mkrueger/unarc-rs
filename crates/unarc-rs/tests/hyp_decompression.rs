@@ -32,5 +32,5 @@ fn extract_compressed() {
     assert_eq!("LICENSE", entry.name);
     assert_eq!(CompressionMethod::Compressed, entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }

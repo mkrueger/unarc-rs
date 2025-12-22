@@ -1,6 +1,6 @@
 [package]
 name = "unarc-rs"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 description = "Universal archive extraction & decompression library for retro + modern formats (7z, ZIP, RAR, LHA/LZH, TAR, ARJ, ARC, ZOO, HA, UC2, SQ/SQ2, SQZ, HYP, gz, bz2, Z)."
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
@@ -16,17 +16,19 @@ chrono = "0.4.42"
 delharc = "0.6.1"
 salzweg = "0.1.4"
 bitstream-io = "4.9.0"
-zip = { version = "6.0.0", features = ["legacy-zip"] }
+zip = { version = "6.0.0", features = ["legacy-zip", "aes-crypto"] }
 unrar = "0.5.8"
 sevenz-rust2 = "0.20.0"
 thiserror = "2.0.17"
 tar = "0.4"
 flate2 = "1.1.5"
 bzip2 = "0.6.1"
+blowfish = "0.9"
+byteorder = "1.5"
+sha-1 = "0.10"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
 
 [features]
 default = []
-sqz-debug = []

@@ -4,7 +4,7 @@ use std::io::BufReader;
 use unarc_rs::tgz::TgzArchive;
 use unarc_rs::unified::ArchiveFormat;
 
-const LICENSE_CONTENT: &[u8] = include_bytes!("../LICENSE");
+const LICENSE_CONTENT: &[u8] = include_bytes!("../../../LICENSE");
 
 #[test]
 fn extract_tgz() {

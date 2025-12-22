@@ -18,6 +18,19 @@
 //!     println!("File: {} ({} bytes)", entry.name(), entry.original_size());
 //! }
 //! ```
+//!
+//! # Opening with Options
+//!
+//! ```no_run
+//! use unarc_rs::unified::{ArchiveFormat, ArchiveOptions};
+//!
+//! // Open a password-protected archive with CRC verification
+//! let options = ArchiveOptions::new()
+//!     .with_password("secret")
+//!     .with_verify_crc(true);
+//!
+//! let mut archive = ArchiveFormat::open_path_with_options("encrypted.zip", options).unwrap();
+//! ```
 
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, Write};
@@ -30,6 +43,7 @@ use crate::arj::arj_archive::ArjArchive;
 use crate::arj::local_file_header::LocalFileHeader as ArjHeader;
 use crate::bz2::Bz2Archive;
 use crate::date_time::DosDateTime;
+use crate::encryption::{EncryptionMethod, RarEncryption, ZipEncryption};
 use crate::error::{ArchiveError, Result};
 use crate::gz::GzArchive;
 use crate::ha::ha_archive::HaArchive;
@@ -53,6 +67,65 @@ use crate::z::ZArchive;
 use crate::zip::zip_archive::{ZipArchive, ZipFileHeader};
 use crate::zoo::dirent::DirectoryEntry as ZooEntry;
 use crate::zoo::zoo_archive::ZooArchive;
+
+/// Options for opening and reading archives
+///
+/// `ArchiveOptions` provides a builder-style API for configuring archive operations,
+/// such as setting passwords for encrypted archives or enabling CRC verification.
+///
+/// # Example
+///
+/// ```
+/// use unarc_rs::unified::ArchiveOptions;
+///
+/// let options = ArchiveOptions::new()
+///     .with_password("secret")
+///     .with_verify_crc(true);
+///
+/// assert!(options.has_password());
+/// assert!(options.verify_crc());
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct ArchiveOptions {
+    /// Password for encrypted archives
+    password: Option<String>,
+    /// Whether to verify CRC checksums during extraction
+    verify_crc: bool,
+}
+
+impl ArchiveOptions {
+    /// Create new default options
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the password for encrypted archives
+    pub fn with_password<S: Into<String>>(mut self, password: S) -> Self {
+        self.password = Some(password.into());
+        self
+    }
+
+    /// Enable or disable CRC verification during extraction
+    pub fn with_verify_crc(mut self, verify: bool) -> Self {
+        self.verify_crc = verify;
+        self
+    }
+
+    /// Returns the password if set
+    pub fn password(&self) -> Option<&str> {
+        self.password.as_deref()
+    }
+
+    /// Returns whether a password is set
+    pub fn has_password(&self) -> bool {
+        self.password.is_some()
+    }
+
+    /// Returns whether CRC verification is enabled
+    pub fn verify_crc(&self) -> bool {
+        self.verify_crc
+    }
+}
 
 /// Supported archive formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -586,6 +659,65 @@ impl ArchiveFormat {
 
         Ok(archive)
     }
+
+    /// Open an archive with this format and options
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::fs::File;
+    /// use unarc_rs::unified::{ArchiveFormat, ArchiveOptions};
+    ///
+    /// let file = File::open("encrypted.zip").unwrap();
+    /// let options = ArchiveOptions::new().with_password("secret");
+    /// let mut archive = ArchiveFormat::Zip.open_with_options(file, options).unwrap();
+    /// ```
+    pub fn open_with_options<T: Read + Seek>(
+        self,
+        reader: T,
+        options: ArchiveOptions,
+    ) -> Result<UnifiedArchive<T>> {
+        UnifiedArchive::open_with_format_and_options(reader, self, options)
+    }
+
+    /// Open an archive file directly from a path with options
+    ///
+    /// # Example
+    /// ```no_run
+    /// use unarc_rs::unified::{ArchiveFormat, ArchiveOptions};
+    ///
+    /// let options = ArchiveOptions::new()
+    ///     .with_password("secret")
+    ///     .with_verify_crc(true);
+    ///
+    /// let mut archive = ArchiveFormat::open_path_with_options("encrypted.zip", options).unwrap();
+    /// ```
+    pub fn open_path_with_options<P: AsRef<Path>>(
+        path: P,
+        options: ArchiveOptions,
+    ) -> Result<UnifiedArchive<BufReader<File>>> {
+        let path = path.as_ref();
+        let format = Self::from_path(path).ok_or_else(|| {
+            ArchiveError::UnsupportedFormat(format!(
+                "Unsupported archive format: {}",
+                path.display()
+            ))
+        })?;
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let mut archive = format.open_with_options(reader, options)?;
+
+        // For single-file formats (.Z, .gz, .bz2), derive the output filename from the archive name
+        if matches!(
+            format,
+            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
+        ) {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                archive.set_single_file_name(stem.to_string());
+            }
+        }
+
+        Ok(archive)
+    }
 }
 
 /// Unified archive entry containing metadata about a file in an archive
@@ -603,6 +735,8 @@ pub struct ArchiveEntry {
     modified_time: Option<DosDateTime>,
     /// CRC checksum (CRC16 or CRC32, stored as u64)
     crc: u64,
+    /// Encryption method (if any)
+    encryption: EncryptionMethod,
     /// Internal index for reading the entry
     index: EntryIndex,
 }
@@ -690,6 +824,16 @@ impl ArchiveEntry {
         self.compression_method.to_lowercase().contains("stored")
             || self.compression_method.to_lowercase().contains("unpacked")
     }
+
+    /// Returns the encryption method used for this entry
+    pub fn encryption(&self) -> EncryptionMethod {
+        self.encryption
+    }
+
+    /// Returns true if this entry is encrypted
+    pub fn is_encrypted(&self) -> bool {
+        self.encryption.is_encrypted()
+    }
 }
 
 /// Iterator over archive entries
@@ -752,6 +896,8 @@ pub struct UnifiedArchive<T: Read + Seek> {
     format: ArchiveFormat,
     /// For single-file formats (.Z, .gz, .bz2): store the original filename if known
     single_file_name: Option<String>,
+    /// Options for archive operations (password, CRC verification, etc.)
+    options: ArchiveOptions,
 }
 
 impl<T: Read + Seek> UnifiedArchive<T> {
@@ -794,6 +940,84 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             inner,
             format,
             single_file_name: None,
+            options: ArchiveOptions::default(),
+        })
+    }
+
+    /// Open an archive with a specific format and options
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::fs::File;
+    /// use unarc_rs::unified::{UnifiedArchive, ArchiveFormat, ArchiveOptions};
+    ///
+    /// let file = File::open("encrypted.zip").unwrap();
+    /// let options = ArchiveOptions::new().with_password("secret");
+    /// let archive = UnifiedArchive::open_with_format_and_options(file, ArchiveFormat::Zip, options).unwrap();
+    /// ```
+    pub fn open_with_format_and_options(
+        reader: T,
+        format: ArchiveFormat,
+        options: ArchiveOptions,
+    ) -> Result<Self> {
+        let password = options.password().map(|s| s.to_string());
+
+        let inner = match format {
+            ArchiveFormat::Ace => {
+                let mut archive = AceArchive::new(reader)?;
+                if let Some(ref pwd) = password {
+                    archive.set_password(pwd);
+                }
+                ArchiveInner::Ace(archive)
+            }
+            ArchiveFormat::Arc => ArchiveInner::Arc(ArcArchive::new(reader)?),
+            ArchiveFormat::Arj => {
+                let mut archive = ArjArchive::new(reader)?;
+                if let Some(ref pwd) = password {
+                    archive.set_password(pwd);
+                }
+                ArchiveInner::Arj(archive)
+            }
+            ArchiveFormat::Zoo => ArchiveInner::Zoo(ZooArchive::new(reader)?),
+            ArchiveFormat::Sq => ArchiveInner::Sq(SqArchive::new(reader)?),
+            ArchiveFormat::Sqz => ArchiveInner::Sqz(SqzArchive::new(reader)?),
+            ArchiveFormat::Z => ArchiveInner::Z(ZArchive::new(reader)?, false),
+            ArchiveFormat::Gz => ArchiveInner::Gz(GzArchive::new(reader)?, false),
+            ArchiveFormat::Bz2 => ArchiveInner::Bz2(Bz2Archive::new(reader)?, false),
+            ArchiveFormat::Ice => ArchiveInner::Ice(IceArchive::new(reader)?, false),
+            ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
+            ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
+            ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
+            ArchiveFormat::Lha => ArchiveInner::Lha(LhaArchiveSeekable::new(reader)?),
+            ArchiveFormat::Zip => {
+                let mut archive = ZipArchive::new(reader)?;
+                if let Some(ref pwd) = password {
+                    archive.set_password(pwd.as_bytes());
+                }
+                ArchiveInner::Zip(archive)
+            }
+            ArchiveFormat::Rar => {
+                let mut archive = RarArchive::new(reader)?;
+                if let Some(ref pwd) = password {
+                    archive.set_password(pwd);
+                }
+                ArchiveInner::Rar(archive)
+            }
+            ArchiveFormat::SevenZ => {
+                // 7z needs password at open time for encrypted archives
+                ArchiveInner::SevenZ(SevenZArchive::new_with_password(reader, password)?)
+            }
+            ArchiveFormat::Tar => ArchiveInner::Tar(TarArchive::new(reader)?),
+            ArchiveFormat::Tgz => ArchiveInner::Tgz(TgzArchive::new(reader)?),
+            ArchiveFormat::Tbz => ArchiveInner::Tbz(TbzArchive::new(reader)?),
+            ArchiveFormat::TarZ => ArchiveInner::TarZ(TarZArchive::new(reader)?),
+        };
+
+        Ok(Self {
+            inner,
+            format,
+            single_file_name: None,
+            options,
         })
     }
 
@@ -807,6 +1031,31 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// This is typically derived from the archive filename by removing the extension.
     pub fn set_single_file_name(&mut self, name: String) {
         self.single_file_name = Some(name);
+    }
+
+    /// Returns a reference to the archive options
+    pub fn options(&self) -> &ArchiveOptions {
+        &self.options
+    }
+
+    /// Returns a mutable reference to the archive options
+    pub fn options_mut(&mut self) -> &mut ArchiveOptions {
+        &mut self.options
+    }
+
+    /// Set the archive options
+    pub fn set_options(&mut self, options: ArchiveOptions) {
+        self.options = options;
+    }
+
+    /// Set the password for encrypted entries
+    pub fn set_password<S: Into<String>>(&mut self, password: S) {
+        self.options = std::mem::take(&mut self.options).with_password(password);
+    }
+
+    /// Clear the password
+    pub fn clear_password(&mut self) {
+        self.options.password = None;
     }
 
     /// Get the next entry in the archive
@@ -823,6 +1072,11 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: format!("{}", header.compression_type),
                         modified_time: Some(header.datetime),
                         crc: header.crc32 as u64,
+                        encryption: if header.is_encrypted() {
+                            EncryptionMethod::Ace
+                        } else {
+                            EncryptionMethod::None
+                        },
                         index: EntryIndex::Ace(header),
                     }))
                 } else {
@@ -838,6 +1092,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: format!("{:?}", header.compression_method),
                         modified_time: Some(header.date_time),
                         crc: header.crc16 as u64,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Arc(header),
                     }))
                 } else {
@@ -853,6 +1108,10 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: format!("{:?}", header.compression_method),
                         modified_time: Some(header.date_time_modified),
                         crc: header.original_crc32 as u64,
+                        encryption: match archive.get_encryption_type() {
+                            Some(enc) => EncryptionMethod::Arj(enc),
+                            None => EncryptionMethod::None,
+                        },
                         index: EntryIndex::Arj(header),
                     }))
                 } else {
@@ -868,6 +1127,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: format!("{:?}", entry.compression_method),
                         modified_time: Some(entry.date_time),
                         crc: entry.file_crc16 as u64,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Zoo(entry),
                     };
                     Ok(Some(result))
@@ -884,6 +1144,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: "Squeezed".to_string(),
                         modified_time: None,
                         crc: header.checksum as u64,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Sq(header),
                     }))
                 } else {
@@ -899,6 +1160,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: format!("{:?}", header.compression_method),
                         modified_time: Some(header.date_time),
                         crc: header.crc32 as u64,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Sqz(header),
                     }))
                 } else {
@@ -921,6 +1183,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: "LZW".to_string(),
                         modified_time: None,
                         crc: 0,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Z,
                     }))
                 }
@@ -941,6 +1204,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: "Deflate".to_string(),
                         modified_time: None,
                         crc: 0,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Gz,
                     }))
                 }
@@ -961,6 +1225,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: "Bzip2".to_string(),
                         modified_time: None,
                         crc: 0,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Bz2,
                     }))
                 }
@@ -981,6 +1246,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: "LH1".to_string(),
                         modified_time: None,
                         crc: 0,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Ice,
                     }))
                 }
@@ -994,6 +1260,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: format!("{:?}", header.compression_method),
                         modified_time: Some(header.date_time),
                         crc: header.checksum as u64,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Hyp(header),
                     }))
                 } else {
@@ -1009,6 +1276,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: format!("{:?}", header.method),
                         modified_time: Some(header.timestamp),
                         crc: header.crc32 as u64,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Ha(header),
                     }))
                 } else {
@@ -1024,6 +1292,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: format!("{:?}", header.compress_info.method),
                         modified_time: Some(DosDateTime::new(header.dos_time)),
                         crc: header.crc as u64,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Uc2(header),
                     }))
                 } else {
@@ -1039,6 +1308,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: header.compression_method.clone(),
                         modified_time: header.date_time,
                         crc: header.crc16 as u64,
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Lha(header),
                     }))
                 } else {
@@ -1047,6 +1317,11 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             }
             ArchiveInner::Zip(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
+                    let encryption = if header.is_encrypted {
+                        EncryptionMethod::Zip(ZipEncryption::Unknown)
+                    } else {
+                        EncryptionMethod::None
+                    };
                     Ok(Some(ArchiveEntry {
                         name: header.name.clone(),
                         compressed_size: header.compressed_size,
@@ -1054,6 +1329,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: header.compression_method.clone(),
                         modified_time: header.date_time,
                         crc: header.crc32 as u64,
+                        encryption,
                         index: EntryIndex::Zip(header),
                     }))
                 } else {
@@ -1062,6 +1338,11 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             }
             ArchiveInner::Rar(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
+                    let encryption = if header.is_encrypted {
+                        EncryptionMethod::Rar(RarEncryption::Unknown)
+                    } else {
+                        EncryptionMethod::None
+                    };
                     Ok(Some(ArchiveEntry {
                         name: header.name.clone(),
                         compressed_size: header.compressed_size,
@@ -1069,6 +1350,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: header.compression_method.clone(),
                         modified_time: header.date_time,
                         crc: header.crc32 as u64,
+                        encryption,
                         index: EntryIndex::Rar(header),
                     }))
                 } else {
@@ -1077,6 +1359,12 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             }
             ArchiveInner::SevenZ(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
+                    // 7z encrypts at block level - check if this file's block is encrypted
+                    let encryption = if header.is_encrypted {
+                        EncryptionMethod::SevenZ(crate::encryption::SevenZEncryption::Aes256)
+                    } else {
+                        EncryptionMethod::None
+                    };
                     Ok(Some(ArchiveEntry {
                         name: header.name.clone(),
                         compressed_size: header.compressed_size,
@@ -1084,6 +1372,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: header.compression_method.clone(),
                         modified_time: header.date_time,
                         crc: header.crc32 as u64,
+                        encryption,
                         index: EntryIndex::SevenZ(header),
                     }))
                 } else {
@@ -1099,6 +1388,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: "Stored".to_string(),
                         modified_time: header.modified_time(),
                         crc: 0, // TAR doesn't use CRC
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Tar(header),
                     }))
                 } else {
@@ -1114,6 +1404,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: "Gzip + Stored".to_string(),
                         modified_time: header.modified_time(),
                         crc: 0, // TAR doesn't use CRC
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Tgz(header),
                     }))
                 } else {
@@ -1129,6 +1420,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: "Bzip2 + Stored".to_string(),
                         modified_time: header.modified_time(),
                         crc: 0, // TAR doesn't use CRC
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::Tbz(header),
                     }))
                 } else {
@@ -1144,6 +1436,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         compression_method: "LZW + Stored".to_string(),
                         modified_time: header.modified_time(),
                         crc: 0, // TAR doesn't use CRC
+                        encryption: EncryptionMethod::None,
                         index: EntryIndex::TarZ(header),
                     }))
                 } else {
@@ -1222,6 +1515,71 @@ impl<T: Read + Seek> UnifiedArchive<T> {
         // In the future, individual archive implementations could provide
         // streaming variants for better memory efficiency.
         let data = self.read(entry)?;
+        writer.write_all(&data)?;
+        Ok(data.len() as u64)
+    }
+
+    /// Read (decompress) an entry's data with specific options
+    ///
+    /// This allows passing a different password or CRC verification setting
+    /// for a specific read operation without changing the archive's default options.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::fs::File;
+    /// use unarc_rs::unified::{UnifiedArchive, ArchiveFormat, ArchiveOptions};
+    ///
+    /// let file = File::open("archive.zip").unwrap();
+    /// let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Zip).unwrap();
+    ///
+    /// while let Some(entry) = archive.next_entry().unwrap() {
+    ///     // Read with a specific password for this entry
+    ///     let options = ArchiveOptions::new()
+    ///         .with_password("file_specific_password")
+    ///         .with_verify_crc(true);
+    ///     let data = archive.read_with_options(&entry, &options).unwrap();
+    ///     println!("Read {} bytes from {}", data.len(), entry.name());
+    /// }
+    /// ```
+    pub fn read_with_options(
+        &mut self,
+        entry: &ArchiveEntry,
+        options: &ArchiveOptions,
+    ) -> Result<Vec<u8>> {
+        let password = options.password().map(|s| s.to_string());
+
+        match (&mut self.inner, &entry.index) {
+            (ArchiveInner::Ace(archive), EntryIndex::Ace(header)) => {
+                archive.read_with_password(header, password)
+            }
+            (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => {
+                archive.read_with_password(header, password.as_ref().map(|s| s.as_bytes()))
+            }
+            (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => {
+                archive.read_with_password(header, password)
+            }
+            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => {
+                archive.read_with_password(header, password)
+            }
+            (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => {
+                archive.read_with_password(header, password)
+            }
+            // Other formats don't support encryption, use normal read
+            _ => self.read(entry),
+        }
+    }
+
+    /// Read (decompress) an entry's data with options and write directly to a writer
+    ///
+    /// This combines the memory efficiency of `read_to` with the flexibility
+    /// of per-read options.
+    pub fn read_to_with_options<W: Write>(
+        &mut self,
+        entry: &ArchiveEntry,
+        writer: &mut W,
+        options: &ArchiveOptions,
+    ) -> Result<u64> {
+        let data = self.read_with_options(entry, options)?;
         writer.write_all(&data)?;
         Ok(data.len() as u64)
     }
@@ -1473,6 +1831,7 @@ mod tests {
             compression_method: "Stored".to_string(),
             modified_time: None,
             crc: 0,
+            encryption: EncryptionMethod::None,
             index: EntryIndex::Z,
         };
         assert_eq!(entry.file_name(), "file.txt");
@@ -1484,6 +1843,7 @@ mod tests {
             compression_method: "Stored".to_string(),
             modified_time: None,
             crc: 0,
+            encryption: EncryptionMethod::None,
             index: EntryIndex::Z,
         };
         assert_eq!(entry2.file_name(), "simple.txt");
@@ -1498,6 +1858,7 @@ mod tests {
             compression_method: "LZW".to_string(),
             modified_time: None,
             crc: 0,
+            encryption: EncryptionMethod::None,
             index: EntryIndex::Z,
         };
         assert!((entry.compression_ratio() - 0.5).abs() < 0.001);
@@ -1509,6 +1870,7 @@ mod tests {
             compression_method: "Stored".to_string(),
             modified_time: None,
             crc: 0,
+            encryption: EncryptionMethod::None,
             index: EntryIndex::Z,
         };
         assert!((empty.compression_ratio() - 1.0).abs() < 0.001);

@@ -10,7 +10,7 @@ fn extract_stored() {
     assert_eq!("license", entry.name);
     assert_eq!(CompressionMethod::Stored, entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -21,7 +21,7 @@ fn extract_default() {
     assert_eq!("license", entry.name);
     assert_eq!(CompressionMethod::Compressed, entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -32,5 +32,5 @@ fn extract_high_per() {
     assert_eq!("license", entry.name);
     assert_eq!(CompressionMethod::CompressedLh5, entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }

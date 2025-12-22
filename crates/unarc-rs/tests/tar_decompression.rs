@@ -9,7 +9,7 @@ fn extract_tar() {
     let entry = archive.get_next_entry().unwrap().unwrap();
     assert_eq!("LICENSE", entry.name);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]

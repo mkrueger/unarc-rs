@@ -7,6 +7,7 @@ use crate::error::{ArchiveError, Result};
 
 use super::bitstream::BitStream;
 use super::crc16::ace_crc16;
+use super::crypto::decrypt_ace_data;
 use super::header::{
     header_flags, header_type, CompressionQuality, CompressionType, FileHeader, HostOs, MainHeader,
     ACE_MAGIC,
@@ -18,6 +19,7 @@ pub struct AceArchive<R: Read + Seek> {
     reader: R,
     main_header: MainHeader,
     lz77: Lz77Decoder,
+    password: Option<String>,
 }
 
 impl<R: Read + Seek> AceArchive<R> {
@@ -29,7 +31,18 @@ impl<R: Read + Seek> AceArchive<R> {
             reader,
             main_header,
             lz77: Lz77Decoder::new(),
+            password: None,
         })
+    }
+
+    /// Set the password for encrypted entries
+    pub fn set_password<P: Into<String>>(&mut self, password: P) {
+        self.password = Some(password.into());
+    }
+
+    /// Clear the password
+    pub fn clear_password(&mut self) {
+        self.password = None;
     }
 
     /// Find the ACE magic and parse the main header
@@ -330,6 +343,15 @@ impl<R: Read + Seek> AceArchive<R> {
 
     /// Read and decompress a file entry
     pub fn read(&mut self, header: &FileHeader) -> Result<Vec<u8>> {
+        self.read_with_password(header, self.password.clone())
+    }
+
+    /// Read and decompress a file entry with a specific password
+    pub fn read_with_password(
+        &mut self,
+        header: &FileHeader,
+        password: Option<String>,
+    ) -> Result<Vec<u8>> {
         // Seek to data
         self.reader.seek(SeekFrom::Start(header.data_offset))?;
 
@@ -337,11 +359,20 @@ impl<R: Read + Seek> AceArchive<R> {
         let mut compressed = vec![0u8; header.packed_size as usize];
         self.reader.read_exact(&mut compressed)?;
 
+        // Decrypt if encrypted
+        let data = if header.is_encrypted() {
+            let pwd = password
+                .ok_or_else(|| ArchiveError::encryption_required(&header.filename, "ACE"))?;
+            decrypt_ace_data(&compressed, &pwd)
+        } else {
+            compressed
+        };
+
         // Decompress based on type
         let decompressed = match header.compression_type {
-            CompressionType::Stored => compressed,
+            CompressionType::Stored => data,
             CompressionType::Lz77 | CompressionType::Blocked => {
-                self.decompress_lz77(header, &compressed)?
+                self.decompress_lz77(header, &data)?
             }
             CompressionType::Unknown(n) => {
                 return Err(ArchiveError::unsupported_method(

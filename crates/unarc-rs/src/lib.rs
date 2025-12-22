@@ -1,8 +1,10 @@
 #[macro_use]
 pub(crate) mod macros;
 pub mod date_time;
+pub mod encryption;
 pub mod error;
 
+pub use encryption::{EncryptionMethod, RarEncryption, SevenZEncryption, ZipEncryption};
 pub use error::{ArchiveError, Result};
 
 pub mod ace;
@@ -28,3 +30,4 @@ pub mod zip;
 pub mod zoo;
 
 pub mod unified;
+pub use unified::ArchiveOptions;

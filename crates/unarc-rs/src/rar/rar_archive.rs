@@ -26,6 +26,8 @@ pub struct RarFileHeader {
     pub crc32: u32,
     /// Whether this entry is a directory
     pub is_directory: bool,
+    /// Whether this entry is encrypted
+    pub is_encrypted: bool,
 }
 
 /// RAR archive reader
@@ -41,6 +43,8 @@ pub struct RarArchive<T: Read + Seek> {
     archive_path: PathBuf,
     /// Whether we created a temp file
     is_temp_file: bool,
+    /// Password for encrypted entries
+    password: Option<String>,
 }
 
 impl<T: Read + Seek> RarArchive<T> {
@@ -70,6 +74,7 @@ impl<T: Read + Seek> RarArchive<T> {
             current_index: 0,
             archive_path: temp_path,
             is_temp_file: true,
+            password: None,
         })
     }
 
@@ -86,7 +91,18 @@ impl<T: Read + Seek> RarArchive<T> {
             current_index: 0,
             archive_path: path.to_path_buf(),
             is_temp_file: false,
+            password: None,
         })
+    }
+
+    /// Set the password for encrypted entries
+    pub fn set_password<P: Into<String>>(&mut self, password: P) {
+        self.password = Some(password.into());
+    }
+
+    /// Clear the password
+    pub fn clear_password(&mut self) {
+        self.password = None;
     }
 
     fn parse_entries_from_path(path: &std::path::Path) -> Result<Vec<RarFileHeader>> {
@@ -117,6 +133,7 @@ impl<T: Read + Seek> RarArchive<T> {
                         date_time,
                         crc32: entry.file_crc,
                         is_directory: entry.is_directory(),
+                        is_encrypted: entry.is_encrypted(),
                     });
                 }
                 Err(e) => {
@@ -149,8 +166,22 @@ impl<T: Read + Seek> RarArchive<T> {
 
     /// Read and decompress an entry's data
     pub fn read(&mut self, header: &RarFileHeader) -> Result<Vec<u8>> {
+        self.read_with_password(header, self.password.clone())
+    }
+
+    /// Read and decompress an entry's data with a specific password
+    pub fn read_with_password(
+        &mut self,
+        header: &RarFileHeader,
+        password: Option<String>,
+    ) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
+        }
+
+        // Check if entry needs a password
+        if header.is_encrypted && password.is_none() {
+            return Err(ArchiveError::encryption_required(&header.name, "RAR"));
         }
 
         // Create temp directory for extraction
@@ -158,15 +189,26 @@ impl<T: Read + Seek> RarArchive<T> {
             std::env::temp_dir().join(format!("unarc_rar_extract_{}", std::process::id()));
         std::fs::create_dir_all(&temp_dir)?;
 
-        // Open archive for processing
-        let archive = unrar::Archive::new(&self.archive_path)
-            .open_for_processing()
-            .map_err(|e| {
-                ArchiveError::external_library(
-                    "unrar",
-                    format!("Failed to open RAR for extraction: {:?}", e),
-                )
-            })?;
+        // Open archive for processing with optional password
+        let archive = if let Some(ref pwd) = password {
+            unrar::Archive::with_password(&self.archive_path, pwd)
+                .open_for_processing()
+                .map_err(|e| {
+                    ArchiveError::external_library(
+                        "unrar",
+                        format!("Failed to open RAR for extraction: {:?}", e),
+                    )
+                })?
+        } else {
+            unrar::Archive::new(&self.archive_path)
+                .open_for_processing()
+                .map_err(|e| {
+                    ArchiveError::external_library(
+                        "unrar",
+                        format!("Failed to open RAR for extraction: {:?}", e),
+                    )
+                })?
+        };
 
         // Find and extract the specific file
         let mut result_data = None;

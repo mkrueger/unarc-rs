@@ -3,9 +3,11 @@ use std::io::{Read, Seek};
 use delharc::decode::{Decoder, DecoderAny};
 
 use crate::date_time::DosDateTime;
+use crate::encryption::ArjEncryption;
 use crate::error::{ArchiveError, Result};
 
 use super::{
+    crypto::decrypt_arj_data,
     decode_fastest::decode_fastest,
     local_file_header::{CompressionMethod, LocalFileHeader},
     main_header::{HostOS, MainHeader},
@@ -14,6 +16,7 @@ use super::{
 pub struct ArjArchive<T: Read + Seek> {
     reader: T,
     header: MainHeader,
+    password: Option<String>,
 }
 
 impl<T: Read + Seek> ArjArchive<T> {
@@ -26,7 +29,26 @@ impl<T: Read + Seek> ArjArchive<T> {
         // Skip extended headers
         read_extended_headers(&mut reader)?;
 
-        Ok(Self { header, reader })
+        Ok(Self {
+            header,
+            reader,
+            password: None,
+        })
+    }
+
+    /// Set the password for decrypting garbled entries
+    pub fn set_password(&mut self, password: &str) {
+        self.password = Some(password.to_string());
+    }
+
+    /// Clear the password
+    pub fn clear_password(&mut self) {
+        self.password = None;
+    }
+
+    /// Get the encryption type for the archive
+    pub fn get_encryption_type(&self) -> Option<ArjEncryption> {
+        ArjEncryption::from_version(self.header.encryption_version, self.header.is_gabled())
     }
 
     pub fn skip(&mut self, header: &LocalFileHeader) -> Result<()> {
@@ -36,8 +58,32 @@ impl<T: Read + Seek> ArjArchive<T> {
     }
 
     pub fn read(&mut self, header: &LocalFileHeader) -> Result<Vec<u8>> {
+        // Check if file is encrypted and we have no password
+        if header.is_garbled() && self.password.is_none() {
+            // Skip the data and return error
+            self.skip(header)?;
+            return Err(ArchiveError::encryption_required(&header.name, "ARJ"));
+        }
+
         let mut compressed_buffer = vec![0; header.compressed_size as usize];
         self.reader.read_exact(&mut compressed_buffer)?;
+
+        // Decrypt if needed
+        if header.is_garbled() {
+            if let Some(ref password) = self.password {
+                let encryption_type = self.get_encryption_type();
+                // Use the password_modifier from the header
+                let ftime: u32 = header.date_time_modified.into();
+                decrypt_arj_data(
+                    &mut compressed_buffer,
+                    encryption_type,
+                    password,
+                    header.password_modifier,
+                    ftime,
+                );
+            }
+        }
+
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
             CompressionMethod::CompressedMost
@@ -98,6 +144,22 @@ impl<T: Read + Seek> ArjArchive<T> {
         }
         read_extended_headers(&mut self.reader)?;
         Ok(current_local_file_header)
+    }
+
+    /// Read an entry with a specific password (for per-entry decryption)
+    ///
+    /// This temporarily sets the password for this read operation only,
+    /// then restores the previous password state.
+    pub fn read_with_password(
+        &mut self,
+        header: &LocalFileHeader,
+        password: Option<String>,
+    ) -> Result<Vec<u8>> {
+        let old_password = self.password.take();
+        self.password = password;
+        let result = self.read(header);
+        self.password = old_password;
+        result
     }
 
     pub fn get_host_os(&self) -> HostOS {

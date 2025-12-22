@@ -11,7 +11,7 @@ fn extract_stored() {
     assert_eq!("LICENSE", entry.name);
     assert_eq!(CompressionMethod::Stored, entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -23,7 +23,7 @@ fn extract_method1() {
     assert_eq!("LICENSE", entry.name);
     assert_eq!(CompressionMethod::CompressedMost, entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -35,7 +35,7 @@ fn extract_method2() {
     assert_eq!("LICENSE", entry.name);
     assert_eq!(CompressionMethod::Compressed, entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -50,7 +50,7 @@ fn extract_method3() {
         entry.compression_method
     );
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -65,5 +65,5 @@ fn extract_method4() {
         entry.compression_method
     );
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }

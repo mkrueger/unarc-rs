@@ -7,7 +7,7 @@ use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
 use unarc_rs::error::ArchiveError;
-use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
+use unarc_rs::unified::{ArchiveFormat, ArchiveOptions, UnifiedArchive};
 
 #[derive(Parser)]
 #[command(name = "unarc")]
@@ -39,6 +39,10 @@ enum Commands {
         /// Overwrite existing files
         #[arg(short = 'f', long)]
         force: bool,
+
+        /// Password for encrypted archives
+        #[arg(short, long)]
+        password: Option<String>,
     },
 
     /// Show supported archive formats
@@ -54,7 +58,8 @@ fn main() {
             archive,
             output,
             force,
-        } => cmd_extract(&archive, &output, force),
+            password,
+        } => cmd_extract(&archive, &output, force, password.as_deref()),
         Commands::Formats => cmd_formats(),
     };
 
@@ -70,10 +75,10 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     println!("Archive: {} ({})", archive_path.display(), format.name());
     println!();
     println!(
-        "{:<40} {:>12} {:>12} {:>8} {}",
-        "Name", "Compressed", "Original", "Ratio", "Method"
+        "{:<40} {:>12} {:>12} {:>8} {:<12} {}",
+        "Name", "Compressed", "Original", "Ratio", "Method", "Encryption"
     );
-    println!("{}", "-".repeat(90));
+    println!("{}", "-".repeat(105));
 
     let file = File::open(archive_path)?;
     let mut archive = UnifiedArchive::open_with_format(file, format)?;
@@ -91,6 +96,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     let mut total_compressed = 0u64;
     let mut total_original = 0u64;
     let mut count = 0;
+    let mut encrypted_count = 0;
 
     loop {
         let entry = match archive.next_entry() {
@@ -106,13 +112,21 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
             "   N/A".to_string()
         };
 
+        let encryption = if entry.is_encrypted() {
+            encrypted_count += 1;
+            entry.encryption().to_string()
+        } else {
+            String::new()
+        };
+
         println!(
-            "{:<40} {:>12} {:>12} {:>8} {}",
+            "{:<40} {:>12} {:>12} {:>8} {:<12} {}",
             truncate(entry.name(), 40),
             entry.compressed_size(),
             entry.original_size(),
             ratio,
-            entry.compression_method()
+            entry.compression_method(),
+            encryption
         );
 
         total_compressed += entry.compressed_size();
@@ -129,7 +143,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
         }
     }
 
-    println!("{}", "-".repeat(90));
+    println!("{}", "-".repeat(105));
     let total_ratio = if total_original > 0 {
         format!(
             "{:>6.1}%",
@@ -138,18 +152,27 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     } else {
         "   N/A".to_string()
     };
+
+    let summary = if encrypted_count > 0 {
+        format!("{} file(s), {} encrypted", count, encrypted_count)
+    } else {
+        format!("{} file(s)", count)
+    };
+
     println!(
         "{:<40} {:>12} {:>12} {:>8}",
-        format!("{} file(s)", count),
-        total_compressed,
-        total_original,
-        total_ratio
+        summary, total_compressed, total_original, total_ratio
     );
 
     Ok(())
 }
 
-fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool) -> Result<(), ArchiveError> {
+fn cmd_extract(
+    archive_path: &Path,
+    output_dir: &Path,
+    force: bool,
+    password: Option<&str>,
+) -> Result<(), ArchiveError> {
     let format = detect_format(archive_path)?;
 
     println!(
@@ -160,6 +183,15 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool) -> Result<()
 
     let file = File::open(archive_path)?;
     let mut archive = UnifiedArchive::open_with_format(file, format)?;
+
+    // Set up options with password if provided
+    let options = match password {
+        Some(pwd) => {
+            println!("Using password for decryption");
+            ArchiveOptions::new().with_password(pwd)
+        }
+        None => ArchiveOptions::new(),
+    };
 
     // For single-file formats, derive the output filename from the archive name
     if matches!(
@@ -203,7 +235,7 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool) -> Result<()
 
         print!("  {} ({} bytes)... ", entry.name(), entry.original_size());
 
-        match archive.read(&entry) {
+        match archive.read_with_options(&entry, &options) {
             Ok(data) => {
                 fs::write(&output_path, &data)?;
                 println!("OK");

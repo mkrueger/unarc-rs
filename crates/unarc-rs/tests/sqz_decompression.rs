@@ -10,7 +10,7 @@ fn extract_stored() {
     //   assert_eq!("license", entry.name);
     assert_eq!(CompressionMethod::Stored, entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn extract_m1() {
     let entry = archive.get_next_entry().unwrap().unwrap();
 
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -30,7 +30,7 @@ fn extract_m2() {
     let entry = archive.get_next_entry().unwrap().unwrap();
 
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -51,9 +51,9 @@ fn extract_m3() {
     );
     eprintln!(
         "Expected LICENSE size: {}",
-        include_bytes!("../LICENSE").len()
+        include_bytes!("../../../LICENSE").len()
     );
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -63,9 +63,12 @@ fn extract_m4() {
     let entry = archive.get_next_entry().unwrap().unwrap();
 
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
+// Tests below require test files that are not available in the repository
+// Uncomment when test files are added to sqz/ directory
 
+/*
 #[test]
 fn extract_m3_bug() {
     let file = Cursor::new(include_bytes!("sqz/T3.SQZ"));
@@ -86,23 +89,11 @@ fn extract_m4_bug() {
     let entry = archive.get_next_entry().unwrap().unwrap();
 
     eprintln!(
-        "T3.SQZ: original_size={}, compressed_size={}, method={}",
+        "T4.SQZ: original_size={}, compressed_size={}, method={}",
         entry.original_size, entry.compressed_size, entry.method
     );
     archive.read(&entry).unwrap();
 }
-
-/*
-
-#[test]
-fn extract_bug() {
-    let file = Cursor::new(include_bytes!("sqz/T3.SQZ"));
-    let mut archive = SqzArchive::new(file).unwrap();
-    let entry = archive.get_next_entry().unwrap().unwrap();
-
-    archive.read(&entry).unwrap();
-}
-*/
 
 #[test]
 fn extract_39b0aefd_sqz() {
@@ -145,3 +136,4 @@ fn extract_tplzh025_sqz() {
         }
     }
 }
+*/

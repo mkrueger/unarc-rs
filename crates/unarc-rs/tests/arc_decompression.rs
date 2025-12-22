@@ -10,7 +10,7 @@ fn extract_stored() {
     assert_eq!("LICENSE", entry.name);
     assert_eq!(CompressionMethod::Unpacked(2), entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn extract_squashed() {
     let entry = archive.get_next_entry().unwrap().unwrap();
     assert_eq!(CompressionMethod::Squashed, entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -53,5 +53,5 @@ fn extract_crunch() {
     let entry = archive.get_next_entry().unwrap().unwrap();
     assert_eq!(CompressionMethod::Crunched(8), entry.compression_method);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }

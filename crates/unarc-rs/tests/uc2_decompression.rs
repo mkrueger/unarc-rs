@@ -12,7 +12,7 @@ fn extract_fast() {
     // UC2 uses method numbers, not a CompressionMethod enum
     // method 4 is typical for UC2
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -25,7 +25,7 @@ fn extract_normal() {
     // UC2 uses method numbers, not a CompressionMethod enum
     // method 4 is typical for UC2
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn extract_stight() {
     // UC2 uses method numbers, not a CompressionMethod enum
     // method 4 is typical for UC2
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -51,5 +51,5 @@ fn extract_tight() {
     // UC2 uses method numbers, not a CompressionMethod enum
     // method 4 is typical for UC2
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }

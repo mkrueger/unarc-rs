@@ -2,10 +2,14 @@
 //!
 //! Uses the `sevenz-rust2` crate for decompression.
 
+use std::collections::HashSet;
 use std::io::{Read, Seek};
 
 use crate::date_time::DosDateTime;
 use crate::error::{ArchiveError, Result};
+
+/// AES-256-SHA-256 encryption method ID (from sevenz-rust2)
+const AES_METHOD_ID: &[u8] = &[0x06, 0xF1, 0x07, 0x01];
 
 /// Header information for a 7z entry
 #[derive(Debug, Clone)]
@@ -24,6 +28,8 @@ pub struct SevenZFileHeader {
     pub crc32: u32,
     /// Whether this entry is a directory
     pub is_directory: bool,
+    /// Whether this entry is encrypted
+    pub is_encrypted: bool,
     /// Index of the file in the archive (for random access)
     pub index: usize,
 }
@@ -33,15 +39,45 @@ pub struct SevenZArchive<T: Read + Seek> {
     reader: T,
     entries: Vec<SevenZFileHeader>,
     current_index: usize,
+    password: Option<String>,
+    /// Whether the archive has any encrypted content
+    is_encrypted: bool,
 }
 
 impl<T: Read + Seek> SevenZArchive<T> {
     /// Create a new 7z archive reader
-    pub fn new(mut reader: T) -> Result<Self> {
+    pub fn new(reader: T) -> Result<Self> {
+        Self::new_with_password(reader, None)
+    }
+
+    /// Check which blocks use AES encryption
+    fn get_encrypted_blocks(archive: &sevenz_rust2::Archive) -> HashSet<usize> {
+        let mut encrypted = HashSet::new();
+        for (idx, block) in archive.blocks.iter().enumerate() {
+            for coder in &block.coders {
+                if coder.encoder_method_id().starts_with(AES_METHOD_ID) {
+                    encrypted.insert(idx);
+                    break;
+                }
+            }
+        }
+        encrypted
+    }
+
+    /// Create a new 7z archive reader with an optional password
+    pub fn new_with_password(mut reader: T, password: Option<String>) -> Result<Self> {
         // Parse the archive and collect all entries upfront
-        let archive =
-            sevenz_rust2::ArchiveReader::new(&mut reader, sevenz_rust2::Password::empty())
-                .map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
+        let pwd = match &password {
+            Some(p) => sevenz_rust2::Password::from(p.as_str()),
+            None => sevenz_rust2::Password::empty(),
+        };
+
+        let archive = sevenz_rust2::ArchiveReader::new(&mut reader, pwd)
+            .map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
+
+        // Detect which blocks use AES encryption
+        let encrypted_blocks = Self::get_encrypted_blocks(archive.archive());
+        let is_encrypted = !encrypted_blocks.is_empty();
 
         let mut entries = Vec::new();
 
@@ -68,6 +104,20 @@ impl<T: Read + Seek> SevenZArchive<T> {
             // Get compression method info
             let compression_method = "7z".to_string();
 
+            // Check if this file is in an encrypted block
+            let file_encrypted = if is_directory {
+                false
+            } else {
+                archive
+                    .archive()
+                    .stream_map
+                    .file_block_index
+                    .get(index)
+                    .and_then(|opt| *opt)
+                    .map(|block_idx| encrypted_blocks.contains(&block_idx))
+                    .unwrap_or(false)
+            };
+
             entries.push(SevenZFileHeader {
                 name,
                 compressed_size,
@@ -76,6 +126,7 @@ impl<T: Read + Seek> SevenZArchive<T> {
                 date_time,
                 crc32,
                 is_directory,
+                is_encrypted: file_encrypted,
                 index,
             });
         }
@@ -84,7 +135,24 @@ impl<T: Read + Seek> SevenZArchive<T> {
             reader,
             entries,
             current_index: 0,
+            password,
+            is_encrypted,
         })
+    }
+
+    /// Check if the archive contains any encrypted content
+    pub fn is_encrypted(&self) -> bool {
+        self.is_encrypted
+    }
+
+    /// Set the password for encrypted archives
+    pub fn set_password<P: Into<String>>(&mut self, password: P) {
+        self.password = Some(password.into());
+    }
+
+    /// Clear the password
+    pub fn clear_password(&mut self) {
+        self.password = None;
     }
 
     /// Get the next entry in the archive
@@ -107,14 +175,27 @@ impl<T: Read + Seek> SevenZArchive<T> {
 
     /// Read and decompress an entry's data
     pub fn read(&mut self, header: &SevenZFileHeader) -> Result<Vec<u8>> {
+        self.read_with_password(header, self.password.clone())
+    }
+
+    /// Read and decompress an entry's data with a specific password
+    pub fn read_with_password(
+        &mut self,
+        header: &SevenZFileHeader,
+        password: Option<String>,
+    ) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
         }
 
         // We need to re-open the archive and read the specific file
-        let mut archive =
-            sevenz_rust2::ArchiveReader::new(&mut self.reader, sevenz_rust2::Password::empty())
-                .map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
+        let pwd = match &password {
+            Some(p) => sevenz_rust2::Password::from(p.as_str()),
+            None => sevenz_rust2::Password::empty(),
+        };
+
+        let mut archive = sevenz_rust2::ArchiveReader::new(&mut self.reader, pwd)
+            .map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
 
         // Find and extract the file by name
         archive

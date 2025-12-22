@@ -9,9 +9,11 @@
 mod ace_archive;
 mod bitstream;
 mod crc16;
+mod crypto;
 mod header;
 mod huffman;
 mod lz77;
 
 pub use ace_archive::AceArchive;
+pub use crypto::decrypt_ace_data;
 pub use header::FileHeader;

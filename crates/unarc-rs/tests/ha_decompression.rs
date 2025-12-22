@@ -16,7 +16,7 @@ fn extract_stored() {
 
     // Read and verify contents
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 
     // Verify no more entries
     let next = archive.get_next_entry().unwrap();
@@ -34,7 +34,7 @@ fn extract_asc() {
 
     // ASC is now supported
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn extract_hsc() {
 
     // HSC is now supported
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -66,5 +66,5 @@ fn extract_asc_alt() {
 
     // Use alternative implementation
     let result = decompress_asc(Cursor::new(&compressed)).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }

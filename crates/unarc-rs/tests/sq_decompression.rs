@@ -9,7 +9,7 @@ fn extract_sq() {
     let entry = archive.get_next_entry().unwrap().unwrap();
     assert_eq!("license", entry.name);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 
 #[test]
@@ -20,5 +20,5 @@ fn extract_sq2() {
     // seems to be an error in the cmd line client with files with no extension :)
     assert_eq!(".LIC", entry.name);
     let result = archive.read(&entry).unwrap();
-    assert_eq!(include_bytes!("../LICENSE"), result.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }

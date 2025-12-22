@@ -24,6 +24,8 @@ pub struct ZipFileHeader {
     pub crc32: u32,
     /// Whether this entry is a directory
     pub is_directory: bool,
+    /// Whether this entry is encrypted
+    pub is_encrypted: bool,
     /// Index of the file in the archive (for random access)
     pub index: usize,
 }
@@ -32,6 +34,7 @@ pub struct ZipFileHeader {
 pub struct ZipArchive<T: Read + Seek> {
     archive: zip::ZipArchive<T>,
     current_index: usize,
+    password: Option<Vec<u8>>,
 }
 
 impl<T: Read + Seek> ZipArchive<T> {
@@ -43,7 +46,18 @@ impl<T: Read + Seek> ZipArchive<T> {
         Ok(Self {
             archive,
             current_index: 0,
+            password: None,
         })
+    }
+
+    /// Set the password for encrypted entries
+    pub fn set_password<P: AsRef<[u8]>>(&mut self, password: P) {
+        self.password = Some(password.as_ref().to_vec());
+    }
+
+    /// Clear the password
+    pub fn clear_password(&mut self) {
+        self.password = None;
     }
 
     /// Get the next entry in the archive
@@ -66,6 +80,7 @@ impl<T: Read + Seek> ZipArchive<T> {
         let compression_method = format!("{:?}", file.compression());
         let crc32 = file.crc32();
         let is_directory = file.is_dir();
+        let is_encrypted = file.encrypted();
 
         // Convert last_modified to DosDateTime
         let date_time = file.last_modified().map(|dt| {
@@ -93,6 +108,7 @@ impl<T: Read + Seek> ZipArchive<T> {
             date_time,
             crc32,
             is_directory,
+            is_encrypted,
             index,
         }))
     }
@@ -105,17 +121,49 @@ impl<T: Read + Seek> ZipArchive<T> {
 
     /// Read and decompress an entry's data
     pub fn read(&mut self, header: &ZipFileHeader) -> Result<Vec<u8>> {
+        let password = self.password.clone();
+        self.read_with_password(header, password.as_deref())
+    }
+
+    /// Read and decompress an entry's data with a specific password
+    pub fn read_with_password(
+        &mut self,
+        header: &ZipFileHeader,
+        password: Option<&[u8]>,
+    ) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
         }
 
-        let mut file = self
-            .archive
-            .by_index(header.index)
-            .map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
-
         let mut data = Vec::with_capacity(header.original_size as usize);
-        file.read_to_end(&mut data)?;
+
+        if header.is_encrypted {
+            // Use decryption
+            let password =
+                password.ok_or_else(|| ArchiveError::encryption_required(&header.name, "ZIP"))?;
+
+            let mut file = self
+                .archive
+                .by_index_decrypt(header.index, password)
+                .map_err(|e| {
+                    // Check if it's a password error
+                    let msg = e.to_string();
+                    if msg.contains("password") || msg.contains("decrypt") {
+                        ArchiveError::invalid_password(&header.name, "ZIP")
+                    } else {
+                        ArchiveError::external_library("zip", msg)
+                    }
+                })?;
+
+            file.read_to_end(&mut data)?;
+        } else {
+            let mut file = self
+                .archive
+                .by_index(header.index)
+                .map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
+
+            file.read_to_end(&mut data)?;
+        }
 
         Ok(data)
     }

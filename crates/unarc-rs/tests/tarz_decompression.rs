@@ -40,7 +40,7 @@ fn test_tarz_read_content() {
         .expect("Expected at least one entry");
 
     let content = archive.read(&entry).expect("Failed to read content");
-    assert_eq!(include_bytes!("../LICENSE"), content.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), content.as_slice());
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn test_tarz_unified_api() {
     assert_eq!(entry.name(), "LICENSE");
 
     let content = archive.read(&entry).expect("Failed to read content");
-    assert_eq!(include_bytes!("../LICENSE"), content.as_slice());
+    assert_eq!(include_bytes!("../../../LICENSE"), content.as_slice());
 }
 
 #[test]

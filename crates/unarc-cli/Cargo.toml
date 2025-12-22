@@ -1,6 +1,6 @@
 [package]
 name = "unarc-cli"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2021"
 description = "Universal Archive Extractor - CLI tool for extracting various archive formats"
 authors = ["Mike Krüger <mkrueger@posteo.de>"]

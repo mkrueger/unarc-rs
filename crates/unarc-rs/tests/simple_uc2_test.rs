@@ -69,11 +69,11 @@ fn test_extract_file() {
 
     if let Ok(data) = read_result {
         eprintln!("✅ Successfully decompressed {} bytes", data.len());
-        let expected_size = include_bytes!("../LICENSE").len();
+        let expected_size = include_bytes!("../../../LICENSE").len();
         eprintln!("✅ Expected size: {} bytes", expected_size);
         if data.len() == expected_size {
             eprintln!("✅ Size matches!");
-            if data == include_bytes!("../LICENSE") {
+            if data == include_bytes!("../../../LICENSE") {
                 eprintln!("✅✅✅ CONTENT MATCHES!!!!");
             } else {
                 eprintln!("❌ Content does not match");

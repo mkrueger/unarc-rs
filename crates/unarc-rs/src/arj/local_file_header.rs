@@ -64,6 +64,8 @@ pub struct LocalFileHeader {
     pub arj_flags: u8,
     pub compression_method: CompressionMethod,
     pub file_type: FileType,
+    /// Password modifier byte used for garble encryption
+    pub password_modifier: u8,
 
     pub date_time_modified: DosDateTime,
     pub compressed_size: u32,
@@ -101,7 +103,7 @@ impl LocalFileHeader {
         convert_u8!(arj_flags, header_bytes);
         convert_u8!(compression_method, header_bytes);
         convert_u8!(file_type, header_bytes);
-        skip!(header_bytes, 1);
+        convert_u8!(password_modifier, header_bytes);
         convert_u32!(date_time_modified, header_bytes);
         convert_u32!(compressed_size, header_bytes);
         convert_u32!(original_size, header_bytes);
@@ -138,6 +140,7 @@ impl LocalFileHeader {
             arj_flags,
             compression_method: compression_method.into(),
             file_type: file_type.into(),
+            password_modifier,
             date_time_modified: DosDateTime::new(date_time_modified),
             compressed_size,
             original_size,

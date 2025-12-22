@@ -3,28 +3,37 @@
 [![Crates.io](https://img.shields.io/crates/v/unarc-rs.svg)](https://crates.io/crates/unarc-rs)
 [![License](https://img.shields.io/crates/l/unarc-rs.svg)](https://github.com/mkrueger/unarc-rs)
 
-A Rust library for reading and extracting various archive formats, with a focus on legacy/retro formats from the BBS era, plus modern formats like 7z.
+A Rust library and CLI tool for reading and extracting various archive formats, with a focus on legacy/retro formats from the BBS era, plus modern formats like 7z.
+
+## Crates
+
+This workspace contains two crates:
+
+| Crate | Description |
+|-------|-------------|
+| [**unarc-rs**](crates/unarc-rs) | Library for reading archive formats |
+| [**unarc-cli**](crates/unarc-cli) | Command-line tool (`unarc`) |
 
 ## Supported Formats
 
 ### Archive Formats
 
-| Format | Extensions | Compression Support |
-|--------|------------|---------------------|
-| **7z** | `.7z` | Full support via sevenz-rust2 |
-| **ZIP** | `.zip` | Full support via zip crate (including legacy methods) |
-| **RAR** | `.rar` | Full support via unrar (RAR4 & RAR5) |
-| **LHA/LZH** | `.lha`, `.lzh` | Full support via delharc |
-| **TAR** | `.tar` | Full support via tar crate |
-| **ACE** | `.ace` | ACE 1.0 (LZ77) and ACE 2.0 (Blocked) |
-| **ARJ** | `.arj` | Store, Method 1-4 (full support) |
-| **ARC** | `.arc` | Unpacked, Packed, Squeezed, Crunched, Squashed |
-| **ZOO** | `.zoo` | Store, LZW, LH5 (full support) |
-| **HA** | `.ha` | Store, ASC, HSC (full support) |
-| **UC2** | `.uc2` | Full support |
-| **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support |
-| **SQZ** | `.sqz` | Full support (stored + “Squeeze” methods 1–4) |
-| **HYP** | `.hyp` | Full support |
+| Format | Extensions | Compression | Encryption |
+|--------|------------|-------------|------------|
+| **7z** | `.7z` | LZMA, LZMA2, etc. | AES-256 ✓ |
+| **ZIP** | `.zip` | Deflate, legacy methods | ZipCrypto, AES ✓ |
+| **RAR** | `.rar` | RAR4 & RAR5 | AES ✓ |
+| **LHA/LZH** | `.lha`, `.lzh` | Full support | - |
+| **TAR** | `.tar` | Full support | - |
+| **ACE** | `.ace` | LZ77, Blocked | Blowfish ✓ |
+| **ARJ** | `.arj` | Store, Method 1-4 | Garble, GOST40 ✓ |
+| **ARC** | `.arc` | Packed, Squeezed, Crunched | - |
+| **ZOO** | `.zoo` | Store, LZW, LH5 | - |
+| **HA** | `.ha` | Store, ASC, HSC | - |
+| **UC2** | `.uc2` | Full support | - |
+| **SQ/SQ2** | `.sq`, `.qqq` | Full support | - |
+| **SQZ** | `.sqz` | Stored, Squeeze 1-4 | - |
+| **HYP** | `.hyp` | Full support | - |
 
 ### Single-File Compression
 
@@ -33,19 +42,35 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **Z** | `.Z` | Unix compress (LZW) |
 | **GZ** | `.gz` | Gzip (Deflate) |
 | **BZ2** | `.bz2` | Bzip2 |
-| **ICE** | `.ice` | Ice |
+| **ICE** | `.ice` | Ice compression |
 
 ### Compressed Archives
 
-| Format | Extensions | Notes |
-|--------|------------|-------|
-| **TGZ** | `.tgz`, `.tar.gz` | Gzip-compressed TAR |
-| **TBZ** | `.tbz`, `.tbz2`, `.tar.bz2` | Bzip2-compressed TAR |
-| **TAR.Z** | `.tar.Z` | LZW-compressed TAR |
+| Format | Extensions |
+|--------|------------|
+| **TGZ** | `.tgz`, `.tar.gz` |
+| **TBZ** | `.tbz`, `.tar.bz2` |
+| **TAR.Z** | `.tar.Z` |
 
-> **Note:** Single-file formats (`.Z`, `.gz`, `.bz2`) compress one file only. When a path like `file.tar.gz` is opened, the library detects it as a compressed TAR archive, returning all entries from the inner TAR.
+## Quick Start
 
-## Installation
+### CLI Tool
+
+```bash
+# Install
+cargo install unarc-cli
+
+# List archive contents
+unarc list archive.arj
+
+# Extract files
+unarc extract archive.zip -o ./output
+
+# Extract encrypted archive
+unarc extract -p secret encrypted.arj
+```
+
+### Library
 
 Add to your `Cargo.toml`:
 
@@ -54,156 +79,52 @@ Add to your `Cargo.toml`:
 unarc-rs = "0.5"
 ```
 
-## Quick Start
-
-### Using the Unified API (Recommended)
-
 ```rust
 use unarc_rs::unified::ArchiveFormat;
 
-// Open archive directly from path
+// Open and iterate
 let mut archive = ArchiveFormat::open_path("archive.arj")?;
 
-// Iterate over entries
-for entry in archive.entries_iter() {
-    let entry = entry?;
-    println!("{}: {} bytes", entry.name(), entry.original_size());
-}
-```
-
-### Extracting Files
-
-```rust
-use std::fs::File;
-use unarc_rs::unified::ArchiveFormat;
-
-let mut archive = ArchiveFormat::open_path("archive.zip")?;
-
 while let Some(entry) = archive.next_entry()? {
-    // Extract to a file
-    let mut output = File::create(entry.file_name())?;
-    archive.read_to(&entry, &mut output)?;
-}
-```
-
-### Using a Specific Format
-
-```rust
-use std::fs::File;
-use unarc_rs::unified::ArchiveFormat;
-
-let file = File::open("data.arj")?;
-let mut archive = ArchiveFormat::Arj.open(file)?;
-
-for entry in archive.entries_iter() {
-    let entry = entry?;
+    println!("{}: {} bytes", entry.name(), entry.original_size());
     let data = archive.read(&entry)?;
     // ... process data
 }
 ```
 
-### Format Detection
+### Encrypted Archives
 
 ```rust
-use std::path::Path;
-use unarc_rs::unified::{ArchiveFormat, is_supported_archive};
+use unarc_rs::unified::{ArchiveFormat, ArchiveOptions};
 
-// Check if a file is a supported archive
-if is_supported_archive(Path::new("file.arj")) {
-    println!("Supported!");
-}
+let mut archive = ArchiveFormat::open_path("encrypted.arj")?;
+let options = ArchiveOptions::new().with_password("secret");
 
-// Get format from path
-if let Some(format) = ArchiveFormat::from_path(Path::new("archive.zoo")) {
-    println!("Format: {}", format.name()); // "ZOO"
+while let Some(entry) = archive.next_entry()? {
+    let data = archive.read_with_options(&entry, &options)?;
+    // ... process decrypted data
 }
 ```
 
-## API Overview
+## Building
 
-### `ArchiveFormat`
+```bash
+git clone https://github.com/mkrueger/unarc-rs
+cd unarc-rs
+cargo build --release
+```
 
-- `open_path(path)` - Open archive from file path (auto-detects format)
-- `open(reader)` - Open archive from any `Read + Seek`
-- `from_path(path)` - Detect format from path
-- `name()` / `extension()` / `extensions()` - Format metadata
-
-### `UnifiedArchive`
-
-- `next_entry()` - Get next entry (returns `Option<ArchiveEntry>`)
-- `entries_iter()` - Iterator over all entries
-- `read(&entry)` - Read entry data into `Vec<u8>`
-- `read_to(&entry, &mut writer)` - Stream entry data to writer
-- `skip(&entry)` - Skip entry without reading
-
-### `ArchiveEntry`
-
-- `name()` / `file_name()` - Entry name (with/without path)
-- `original_size()` / `compressed_size()` - Sizes
-- `compression_method()` - Compression algorithm used
-- `compression_ratio()` - Compression efficiency
-- `modified_time()` - Modification timestamp
-- `crc()` - Checksum
-
-## Format-Specific Notes
-
-### 7z
-
-Full support via the [sevenz-rust2](https://crates.io/crates/sevenz-rust2) crate. Supports LZMA, LZMA2, and other 7z compression methods.
-
-### ZIP
-
-Full support via the [zip](https://crates.io/crates/zip) crate with legacy compression methods enabled.
-
-### RAR
-
-Full support for RAR4 and RAR5 via the [unrar](https://crates.io/crates/unrar) crate (uses native unrar library).
-
-### LHA/LZH
-
-Full support via the excellent [delharc](https://crates.io/crates/delharc) crate.
-
-### ACE
-
-ACE archive support with LZ77+Huffman decompression. Supports both ACE 1.0 (LZ77 mode) and ACE 2.0 (Blocked mode). Password-protected and multi-volume archives are not supported.
-
-### ARC
-
-Classic DOS archiver. Crushed & Distilled methods are not supported.
-
-### ARJ
-
-Popular in the BBS scene in the 90s. Multi-volume and encrypted archives are not supported.
-
-### UC2
-
-UltraCompressor II archive format. Supports decompression with SuperMaster dictionary and custom master entries.
-
-### ZOO
-
-Classic DOS/Amiga archiver from 1986. Native implementation supporting all compression methods.
-
-### HA
-
-Harri Hirvola's archiver (1993). Native implementation with ASC (arithmetic coding) and HSC (static Huffman) support.
-
-### SQ/SQ2
-
-CP/M and DOS "squeeze" format. Huffman-based compression used for single files, commonly seen as `?Q?` patterns (e.g., `.BQK` for `.BAS`).
-
-### TAR Variants
-
-TAR archives can be wrapped with compression. The library auto-detects `.tar.gz`, `.tar.bz2`, and `.tar.Z` from the file path and handles decompression transparently.
+The CLI binary will be at `target/release/unarc`.
 
 ## Background
 
-This library was written for my [icy_board](https://github.com/mkrueger/icy_board) BBS project. It focuses on extraction (not creation) of legacy archive formats.
+This library was written for the [icy_board](https://github.com/mkrueger/icy_board) BBS project. It focuses on extraction (not creation) of legacy archive formats commonly found in BBS file areas.
 
-Contributions welcome! Contact me on the icy_board repo or via email if I miss issues/PRs here.
+Contributions welcome! Contact me on the icy_board repo or via email.
 
-## Related projects
+## Related Projects
 
-https://github.com/temisu/ancient
+- [ancient](https://github.com/temisu/ancient) - C++ decompression library for ancient formats
 
 ## License
 
