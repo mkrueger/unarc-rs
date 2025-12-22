@@ -273,6 +273,261 @@ impl ArchiveFormat {
         }
     }
 
+    /// Returns the magic bytes (preamble) for this archive format, if available.
+    ///
+    /// Some formats have magic bytes at a specific offset rather than at the start,
+    /// in which case this returns `None` and `detect_from_bytes` should be used instead.
+    ///
+    /// # Example
+    /// ```
+    /// use unarc_rs::unified::ArchiveFormat;
+    ///
+    /// assert_eq!(ArchiveFormat::Arj.preambles(), Some(&[&[0x60u8, 0xEA][..]][..]));
+    /// assert_eq!(ArchiveFormat::Zip.preambles(), Some(&[b"PK\x03\x04".as_slice(), b"PK\x05\x06".as_slice()][..]));
+    /// ```
+    pub fn preambles(&self) -> Option<&'static [&'static [u8]]> {
+        match self {
+            // ACE: "**ACE**" at offset 7
+            ArchiveFormat::Ace => Some(&[b"**ACE**"]),
+            // ARC: 0x1A followed by method byte (1-11)
+            ArchiveFormat::Arc => Some(&[&[0x1A]]),
+            // ARJ: 0x60 0xEA
+            ArchiveFormat::Arj => Some(&[&[0x60, 0xEA]]),
+            // ZOO: "ZOO " text header
+            ArchiveFormat::Zoo => Some(&[b"ZOO "]),
+            // SQ/SQ2: two possible signatures
+            ArchiveFormat::Sq => Some(&[&[0x76, 0xFF], &[0xFA, 0xFF]]),
+            // SQZ: "HLSQZ"
+            ArchiveFormat::Sqz => Some(&[b"HLSQZ"]),
+            // Unix compress: 0x1F 0x9D
+            ArchiveFormat::Z => Some(&[&[0x1F, 0x9D]]),
+            // Gzip: 0x1F 0x8B
+            ArchiveFormat::Gz => Some(&[&[0x1F, 0x8B]]),
+            // Bzip2: "BZh"
+            ArchiveFormat::Bz2 => Some(&[b"BZh"]),
+            // ICE: no fixed magic, starts with size
+            ArchiveFormat::Ice => None,
+            // HYP: "HP" (compressed) or "ST" (stored)
+            ArchiveFormat::Hyp => Some(&[b"HP", b"ST"]),
+            // HA: "HA"
+            ArchiveFormat::Ha => Some(&[b"HA"]),
+            // UC2: "UC2\x1A"
+            ArchiveFormat::Uc2 => Some(&[b"UC2\x1a"]),
+            // LHA: "-lh" or "-lz" at offset 2
+            ArchiveFormat::Lha => Some(&[b"-lh", b"-lz"]),
+            // ZIP: "PK\x03\x04" or "PK\x05\x06" (empty)
+            ArchiveFormat::Zip => Some(&[b"PK\x03\x04", b"PK\x05\x06"]),
+            // RAR: "Rar!\x1A\x07"
+            ArchiveFormat::Rar => Some(&[b"Rar!\x1a\x07"]),
+            // 7z: "7z\xBC\xAF\x27\x1C"
+            ArchiveFormat::SevenZ => Some(&[&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]]),
+            // TAR: "ustar" at offset 257
+            ArchiveFormat::Tar => Some(&[b"ustar"]),
+            // TGZ: gzip magic (contains TAR inside)
+            ArchiveFormat::Tgz => Some(&[&[0x1F, 0x8B]]),
+            // TBZ: bzip2 magic (contains TAR inside)
+            ArchiveFormat::Tbz => Some(&[b"BZh"]),
+            // TAR.Z: Unix compress magic (contains TAR inside)
+            ArchiveFormat::TarZ => Some(&[&[0x1F, 0x9D]]),
+        }
+    }
+
+    /// Returns the offset where the magic bytes are located.
+    ///
+    /// Most formats have magic at offset 0, but some (like LHA, ACE, TAR) have it elsewhere.
+    pub fn preamble_offset(&self) -> usize {
+        match self {
+            ArchiveFormat::Lha => 2,   // "-lh" or "-lz" at offset 2
+            ArchiveFormat::Ace => 7,   // "**ACE**" at offset 7
+            ArchiveFormat::Tar => 257, // "ustar" at offset 257
+            _ => 0,
+        }
+    }
+
+    /// Detect archive format from file content (magic bytes).
+    ///
+    /// This function attempts to identify the archive format by examining
+    /// the first bytes of the file content. It checks for known magic bytes
+    /// and signatures at various offsets.
+    ///
+    /// Returns `Some(format)` if a known format is detected, `None` otherwise.
+    ///
+    /// # Example
+    /// ```
+    /// use unarc_rs::unified::ArchiveFormat;
+    ///
+    /// let zip_data = b"PK\x03\x04rest of zip...";
+    /// assert_eq!(ArchiveFormat::detect_from_bytes(zip_data), Some(ArchiveFormat::Zip));
+    ///
+    /// let unknown = b"random data";
+    /// assert_eq!(ArchiveFormat::detect_from_bytes(unknown), None);
+    /// ```
+    pub fn detect_from_bytes(data: &[u8]) -> Option<Self> {
+        if data.len() < 2 {
+            return None;
+        }
+
+        // Check simple prefix-based formats first (most specific to least)
+
+        // 7z: 6 bytes "7z\xBC\xAF\x27\x1C"
+        if data.len() >= 6 && data.starts_with(&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]) {
+            return Some(ArchiveFormat::SevenZ);
+        }
+
+        // RAR: "Rar!\x1A\x07" (6 bytes for RAR4, 7 bytes for RAR5)
+        if data.len() >= 6 && data.starts_with(b"Rar!\x1a\x07") {
+            return Some(ArchiveFormat::Rar);
+        }
+
+        // SQZ: "HLSQZ" (5 bytes)
+        if data.len() >= 5 && data.starts_with(b"HLSQZ") {
+            return Some(ArchiveFormat::Sqz);
+        }
+
+        // ZIP: "PK\x03\x04" or "PK\x05\x06" (empty archive)
+        if data.len() >= 4 && (data.starts_with(b"PK\x03\x04") || data.starts_with(b"PK\x05\x06")) {
+            return Some(ArchiveFormat::Zip);
+        }
+
+        // UC2: "UC2\x1A"
+        if data.len() >= 4 && data.starts_with(b"UC2\x1a") {
+            return Some(ArchiveFormat::Uc2);
+        }
+
+        // ZOO: "ZOO " (then version text)
+        if data.len() >= 4 && data.starts_with(b"ZOO ") {
+            return Some(ArchiveFormat::Zoo);
+        }
+
+        // BZ2: "BZh" (3 bytes)
+        if data.len() >= 3 && data.starts_with(b"BZh") {
+            // Could be TBZ if followed by TAR, but we can't know without decompressing
+            // Return Bz2 as default, let caller use extension for TBZ
+            return Some(ArchiveFormat::Bz2);
+        }
+
+        // Gzip: 0x1F 0x8B (2 bytes)
+        if data.len() >= 2 && data[0] == 0x1F && data[1] == 0x8B {
+            // Could be TGZ if contains TAR, but we can't know without decompressing
+            // Return Gz as default, let caller use extension for TGZ
+            return Some(ArchiveFormat::Gz);
+        }
+
+        // Unix compress: 0x1F 0x9D (2 bytes)
+        if data.len() >= 2 && data[0] == 0x1F && data[1] == 0x9D {
+            // Could be TAR.Z, but we can't know without decompressing
+            return Some(ArchiveFormat::Z);
+        }
+
+        // ARJ: 0x60 0xEA (2 bytes)
+        if data.len() >= 2 && data[0] == 0x60 && data[1] == 0xEA {
+            return Some(ArchiveFormat::Arj);
+        }
+
+        // HA: "HA" (2 bytes)
+        if data.len() >= 2 && data.starts_with(b"HA") {
+            return Some(ArchiveFormat::Ha);
+        }
+
+        // HYP: "HP" (compressed) or "ST" (stored)
+        if data.len() >= 2 && (data.starts_with(b"HP") || data.starts_with(b"ST")) {
+            return Some(ArchiveFormat::Hyp);
+        }
+
+        // SQ: 0x76 0xFF or 0xFA 0xFF
+        if data.len() >= 2 && data[1] == 0xFF && (data[0] == 0x76 || data[0] == 0xFA) {
+            return Some(ArchiveFormat::Sq);
+        }
+
+        // ARC: 0x1A followed by method byte (1-11)
+        if data.len() >= 2 && data[0] == 0x1A && data[1] >= 1 && data[1] <= 11 {
+            return Some(ArchiveFormat::Arc);
+        }
+
+        // ACE: "**ACE**" at offset 7
+        if data.len() >= 14 && &data[7..14] == b"**ACE**" {
+            return Some(ArchiveFormat::Ace);
+        }
+
+        // LHA/LZH: "-lh" or "-lz" at offset 2
+        if data.len() >= 5
+            && data[2] == b'-'
+            && data[3] == b'l'
+            && (data[4] == b'h' || data[4] == b'z')
+        {
+            return Some(ArchiveFormat::Lha);
+        }
+
+        // TAR: "ustar" at offset 257 (POSIX format)
+        if data.len() >= 263 && &data[257..262] == b"ustar" {
+            return Some(ArchiveFormat::Tar);
+        }
+
+        // TAR: Alternative detection - check if it looks like a TAR header
+        // TAR headers have null-terminated filename at start, mode at 100, etc.
+        if data.len() >= 512 {
+            // Check for valid TAR: name ends with null, reasonable checksum area
+            let has_null_in_name = data[..100].contains(&0);
+            let checksum_area = &data[148..156];
+            let is_checksum_space_or_digit = checksum_area
+                .iter()
+                .all(|&b| b == b' ' || b == b'0' || (b >= b'1' && b <= b'7'));
+            if has_null_in_name && is_checksum_space_or_digit {
+                // Could be TAR, but this is a weak heuristic
+                // Only return TAR if nothing else matched
+                return Some(ArchiveFormat::Tar);
+            }
+        }
+
+        None
+    }
+
+    /// Detect archive format from a reader.
+    ///
+    /// Reads up to 512 bytes from the reader, then seeks back to the original position.
+    /// Returns `Some(format)` if detected, `None` otherwise.
+    pub fn detect_from_reader<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<Self>> {
+        let pos = reader.stream_position()?;
+        let mut buffer = [0u8; 512];
+        let bytes_read = reader.read(&mut buffer)?;
+        reader.seek(std::io::SeekFrom::Start(pos))?;
+        Ok(Self::detect_from_bytes(&buffer[..bytes_read]))
+    }
+
+    /// Detect archive format, trying preamble first, then falling back to extension.
+    ///
+    /// This is the recommended method for detecting archive formats:
+    /// 1. First tries to detect from file content (magic bytes)
+    /// 2. Falls back to extension-based detection if content detection fails
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::path::Path;
+    /// use std::fs::File;
+    /// use std::io::Read;
+    /// use unarc_rs::unified::ArchiveFormat;
+    ///
+    /// let path = Path::new("archive.arj");
+    /// let mut file = File::open(path).unwrap();
+    /// let format = ArchiveFormat::detect(&mut file, Some(path)).unwrap();
+    /// ```
+    pub fn detect<R: Read + Seek>(
+        reader: &mut R,
+        path: Option<&Path>,
+    ) -> std::io::Result<Option<Self>> {
+        // First try content-based detection
+        if let Some(format) = Self::detect_from_reader(reader)? {
+            return Ok(Some(format));
+        }
+
+        // Fall back to extension-based detection
+        if let Some(p) = path {
+            return Ok(Self::from_path(p));
+        }
+
+        Ok(None)
+    }
+
     /// Open an archive with this format
     ///
     /// # Example
@@ -1257,5 +1512,130 @@ mod tests {
             index: EntryIndex::Z,
         };
         assert!((empty.compression_ratio() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_preambles() {
+        // Test formats with single preamble
+        assert_eq!(
+            ArchiveFormat::Arj.preambles(),
+            Some(&[&[0x60u8, 0xEA][..]][..])
+        );
+        assert_eq!(
+            ArchiveFormat::Sqz.preambles(),
+            Some(&[b"HLSQZ".as_slice()][..])
+        );
+        assert_eq!(ArchiveFormat::Ha.preambles(), Some(&[b"HA".as_slice()][..]));
+
+        // Test formats with multiple preambles
+        assert_eq!(
+            ArchiveFormat::Sq.preambles(),
+            Some(&[&[0x76u8, 0xFF][..], &[0xFAu8, 0xFF][..]][..])
+        );
+        assert_eq!(
+            ArchiveFormat::Hyp.preambles(),
+            Some(&[b"HP".as_slice(), b"ST".as_slice()][..])
+        );
+        assert_eq!(
+            ArchiveFormat::Lha.preambles(),
+            Some(&[b"-lh".as_slice(), b"-lz".as_slice()][..])
+        );
+        assert_eq!(
+            ArchiveFormat::Zip.preambles(),
+            Some(&[b"PK\x03\x04".as_slice(), b"PK\x05\x06".as_slice()][..])
+        );
+
+        // Test formats with offset > 0
+        assert_eq!(ArchiveFormat::Lha.preamble_offset(), 2);
+        assert_eq!(ArchiveFormat::Ace.preamble_offset(), 7);
+        assert_eq!(ArchiveFormat::Tar.preamble_offset(), 257);
+        assert_eq!(ArchiveFormat::Arj.preamble_offset(), 0);
+
+        // ICE has no fixed magic
+        assert_eq!(ArchiveFormat::Ice.preambles(), None);
+    }
+
+    #[test]
+    fn test_detect_from_bytes() {
+        // Test ZIP detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"PK\x03\x04rest of data"),
+            Some(ArchiveFormat::Zip)
+        );
+
+        // Test ARJ detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(&[0x60, 0xEA, 0x00, 0x00]),
+            Some(ArchiveFormat::Arj)
+        );
+
+        // Test RAR detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"Rar!\x1a\x07\x00rest"),
+            Some(ArchiveFormat::Rar)
+        );
+
+        // Test 7z detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C, 0x00]),
+            Some(ArchiveFormat::SevenZ)
+        );
+
+        // Test gzip detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(&[0x1F, 0x8B, 0x08, 0x00]),
+            Some(ArchiveFormat::Gz)
+        );
+
+        // Test bzip2 detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"BZh9data"),
+            Some(ArchiveFormat::Bz2)
+        );
+
+        // Test SQZ detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"HLSQZrest"),
+            Some(ArchiveFormat::Sqz)
+        );
+
+        // Test HA detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"HArest"),
+            Some(ArchiveFormat::Ha)
+        );
+
+        // Test ARC detection (0x1A + method 1-11)
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(&[0x1A, 0x02, 0x00]),
+            Some(ArchiveFormat::Arc)
+        );
+
+        // Test ZOO detection
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"ZOO 2.10 Archive."),
+            Some(ArchiveFormat::Zoo)
+        );
+
+        // Test ACE detection (magic at offset 7)
+        let mut ace_data = vec![0u8; 20];
+        ace_data[7..14].copy_from_slice(b"**ACE**");
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(&ace_data),
+            Some(ArchiveFormat::Ace)
+        );
+
+        // Test LHA detection (magic at offset 2)
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"\x00\x00-lh5-rest"),
+            Some(ArchiveFormat::Lha)
+        );
+
+        // Test unknown format
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"random data here"), None);
+
+        // Test too short data
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"X"), None);
+        assert_eq!(ArchiveFormat::detect_from_bytes(b""), None);
     }
 }
