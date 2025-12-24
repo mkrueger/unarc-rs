@@ -33,7 +33,8 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **Z** | `.Z` | Unix compress (LZW) |
 | **GZ** | `.gz` | Gzip (Deflate) |
 | **BZ2** | `.bz2` | Bzip2 |
-| **ICE** | `.ice` | Ice |
+| **ICE** | `.ice` | Legacy DOS ICE (LH1) |
+| **Pack-Ice** | `.pi9` | Atari ST Pack-Ice (v0/v1/v2) |
 
 ### Compressed Archives
 

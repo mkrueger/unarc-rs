@@ -112,6 +112,7 @@ Show all supported archive formats with their extensions and magic bytes.
 | **Z** | `.Z` | - |
 | **GZ** | `.gz` | - |
 | **BZ2** | `.bz2` | - |
+| **Pack-Ice** | `.pi9` | - |
 | **TGZ** | `.tgz`, `.tar.gz` | - |
 | **TBZ** | `.tbz`, `.tar.bz2` | - |
 | **TAR.Z** | `.tar.Z` | - |
