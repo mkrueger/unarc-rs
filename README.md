@@ -27,7 +27,7 @@ This workspace contains two crates:
 | **TAR** | `.tar` | Full support | - |
 | **ACE** | `.ace` | LZ77, Blocked | Blowfish ✓ |
 | **ARJ** | `.arj` | Store, Method 1-4 | Garble, GOST40 ✓ |
-| **ARC** | `.arc` | Packed, Squeezed, Crunched | - |
+| **ARC/PAK** | `.arc`, `.pak` | Full support (all methods incl. Crushed, Distilled) | - |
 | **ZOO** | `.zoo` | Store, LZW, LH5 | - |
 | **HA** | `.ha` | Store, ASC, HSC | - |
 | **UC2** | `.uc2` | Full support | - |

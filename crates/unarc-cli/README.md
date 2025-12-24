@@ -102,7 +102,7 @@ Show all supported archive formats with their extensions and magic bytes.
 | **TAR** | `.tar` | - |
 | **ACE** | `.ace` | Blowfish |
 | **ARJ** | `.arj` | Garble, GOST40 |
-| **ARC** | `.arc` | - |
+| **ARC/PAK** | `.arc`, `.pak` | - |
 | **ZOO** | `.zoo` | - |
 | **HA** | `.ha` | - |
 | **UC2** | `.uc2` | - |

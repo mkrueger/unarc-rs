@@ -83,11 +83,10 @@ impl<T: Read + Seek> ArcArchive<T> {
             }
             CompressionMethod::Squashed => lzw::Lzw::new().decomp(&compressed_buffer, false)?,
             CompressionMethod::Crushed => {
-                return Err(ArchiveError::unsupported_method("ARC", "Crushed"));
+                let decompressed = super::crushed::decompress(&compressed_buffer)?;
+                unpack_rle(&decompressed)
             }
-            CompressionMethod::Distilled => {
-                return Err(ArchiveError::unsupported_method("ARC", "Distilled"));
-            }
+            CompressionMethod::Distilled => super::distilled::decompress(&compressed_buffer)?,
             CompressionMethod::Unknown(m) => {
                 return Err(ArchiveError::unsupported_method(
                     "ARC",
@@ -129,9 +128,17 @@ fn read_header<R: Read>(reader: &mut R) -> Result<Vec<u8>> {
         if u8_buf[0] != ID {
             continue;
         }
-        let mut header = [0; HEADER_SIZE];
-        reader.read_exact(&mut header)?;
-        return Ok(header.to_vec());
+        // Read compression method byte first to check for EOF marker
+        reader.read_exact(&mut u8_buf)?;
+        if u8_buf[0] == 0 {
+            // EOF marker (0x1A 0x00) - no more entries
+            return Ok(vec![0; HEADER_SIZE]);
+        }
+        // Read the rest of the header
+        let mut header = vec![u8_buf[0]];
+        header.resize(HEADER_SIZE, 0);
+        reader.read_exact(&mut header[1..])?;
+        return Ok(header);
     }
     Err(ArchiveError::invalid_header("ARC"))
 }

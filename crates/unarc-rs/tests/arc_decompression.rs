@@ -79,3 +79,53 @@ fn extract_encrypted() {
     let result = archive.read(&entry).unwrap();
     assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
+
+// PAK format tests (uses same ARC reader with additional compression methods)
+
+#[test]
+fn extract_pak_distilled() {
+    // license.pak is compressed with method 11 (Distilled)
+    let file = Cursor::new(include_bytes!("pak/license.pak"));
+    let mut archive = ArcArchive::new(file).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+    assert_eq!("LICENSE", entry.name);
+    assert_eq!(CompressionMethod::Distilled, entry.compression_method);
+    let result = archive.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
+}
+
+#[test]
+fn extract_pak_crushed() {
+    // license_crushed.pak is compressed with method 10 (Crushed)
+    let file = Cursor::new(include_bytes!("pak/license_crushed.pak"));
+    let mut archive = ArcArchive::new(file).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+    assert_eq!("LICENSE", entry.name);
+    assert_eq!(CompressionMethod::Crushed, entry.compression_method);
+    let result = archive.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
+}
+
+#[test]
+fn extract_pak_crunched() {
+    // license_crunched.pak is compressed with method 8 (Crunched)
+    let file = Cursor::new(include_bytes!("pak/license_crunched.pak"));
+    let mut archive = ArcArchive::new(file).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+    assert_eq!("LICENSE", entry.name);
+    assert_eq!(CompressionMethod::Crunched(8), entry.compression_method);
+    let result = archive.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
+}
+
+#[test]
+fn extract_pak_squashed() {
+    // license_squashed.pak is compressed with method 9 (Squashed)
+    let file = Cursor::new(include_bytes!("pak/license_squashed.pak"));
+    let mut archive = ArcArchive::new(file).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+    assert_eq!("LICENSE", entry.name);
+    assert_eq!(CompressionMethod::Squashed, entry.compression_method);
+    let result = archive.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
+}

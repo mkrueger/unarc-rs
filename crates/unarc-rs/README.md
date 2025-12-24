@@ -18,7 +18,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **TAR** | `.tar` | Full support via tar crate |
 | **ACE** | `.ace` | ACE 1.0 (LZ77) and ACE 2.0 (Blocked) |
 | **ARJ** | `.arj` | Store, Method 1-4 (full support) |
-| **ARC** | `.arc` | Unpacked, Packed, Squeezed, Crunched, Squashed |
+| **ARC/PAK** | `.arc`, `.pak` | Full support |
 | **ZOO** | `.zoo` | Store, LZW, LH5 (full support) |
 | **HA** | `.ha` | Store, ASC, HSC (full support) |
 | **UC2** | `.uc2` | Full support |

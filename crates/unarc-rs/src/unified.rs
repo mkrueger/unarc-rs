@@ -220,6 +220,8 @@ impl ArchiveFormat {
             "ice" => Some(ArchiveFormat::Ice),
             // Pack-Ice compressed pictures commonly use .PI9
             "pi9" => Some(ArchiveFormat::PackIce),
+            // PAK uses same format as ARC with additional compression methods
+            "pak" => Some(ArchiveFormat::Arc),
             "uc2" => Some(ArchiveFormat::Uc2),
             "ue2" => Some(ArchiveFormat::Uc2),
             "hyp" => Some(ArchiveFormat::Hyp),
