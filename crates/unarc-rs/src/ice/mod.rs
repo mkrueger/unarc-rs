@@ -1,14 +1,16 @@
 //! ICE archive format support
 //!
-//! ICE is a simple compression format that uses LHA compression (typically -lh1-)
-//! but without the standard LHA header. The file starts with 4 bytes indicating
-//! the uncompressed size, followed by the raw compressed data.
+//! ICE is a simple single-file compression format created by Michael Lamanuzzi in 1995.
+//! It uses LHA compression (specifically the `-lh1-` method) but without the standard
+//! LHA file header, making it a very compact format for storing a single compressed file.
+//!
+//! **Note:** This is unrelated to the Atari ST Pack-Ice format (see `packice` module).
 
 use std::io::Read;
 
 use delharc::decode::{Decoder, Lh1Decoder};
 
-use crate::error::Result;
+use crate::error::{ArchiveError, Result};
 
 /// ICE archive reader
 ///
@@ -32,18 +34,17 @@ impl IceArchive {
     /// This reads the compressed data and attempts to decompress it using
     /// various LHA compression methods until one succeeds.
     pub fn new<T: Read>(mut reader: T) -> Result<Self> {
-        // Read the 4-byte uncompressed size
-        let mut len_bytes = [0u8; 4];
-        reader.read_exact(&mut len_bytes)?;
-        let original_size = u32::from_le_bytes(len_bytes);
+        let mut file_data = Vec::new();
+        reader.read_to_end(&mut file_data)?;
 
-        // Read all remaining compressed data
-        let mut compressed_data = Vec::new();
-        reader.read_to_end(&mut compressed_data)?;
+        // Legacy ICE: first 4 bytes are the uncompressed size in LE.
+        if file_data.len() < 4 {
+            return Err(ArchiveError::invalid_header("ICE"));
+        }
+        let original_size = u32::from_le_bytes(file_data[0..4].try_into().unwrap());
+        let compressed_data = &file_data[4..];
 
-        // Try to decompress with different LHA methods
-        // ICE typically uses -lh1- compression
-        let data = Self::try_decompress(&compressed_data, original_size)?;
+        let data = Self::try_decompress(compressed_data, original_size)?;
 
         Ok(Self {
             original_size,

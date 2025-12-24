@@ -16,6 +16,7 @@ pub mod ha;
 pub mod hyp;
 pub mod ice;
 pub mod lha;
+pub mod packice;
 pub mod rar;
 pub mod sevenz;
 pub mod sq;

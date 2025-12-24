@@ -52,6 +52,7 @@ use crate::hyp::header::Header as HypHeader;
 use crate::hyp::hyp_archive::HypArchive;
 use crate::ice::IceArchive;
 use crate::lha::lha_archive::{LhaArchiveSeekable, LhaFileHeader};
+use crate::packice::PackIceArchive;
 use crate::rar::rar_archive::{RarArchive, RarFileHeader};
 use crate::sevenz::sevenz_archive::{SevenZArchive, SevenZFileHeader};
 use crate::sq::header::Header as SqHeader;
@@ -148,8 +149,10 @@ pub enum ArchiveFormat {
     Gz,
     /// Bzip2 single file format (.bz2)
     Bz2,
-    /// ICE compressed file format (.ice)
+    /// ICE compressed file format (.ice) - Legacy DOS ICE
     Ice,
+    /// Pack-Ice compressed format (.pi9, etc.) - Atari ST Pack-Ice
+    PackIce,
     /// Hyper archive format (.hyp)
     Hyp,
     /// HA (Harri Archiver) format (.ha)
@@ -187,6 +190,7 @@ impl ArchiveFormat {
         ArchiveFormat::Gz,
         ArchiveFormat::Bz2,
         ArchiveFormat::Ice,
+        ArchiveFormat::PackIce,
         ArchiveFormat::Hyp,
         ArchiveFormat::Ha,
         ArchiveFormat::Uc2,
@@ -214,6 +218,8 @@ impl ArchiveFormat {
             "gz" => Some(ArchiveFormat::Gz),
             "bz2" => Some(ArchiveFormat::Bz2),
             "ice" => Some(ArchiveFormat::Ice),
+            // Pack-Ice compressed pictures commonly use .PI9
+            "pi9" => Some(ArchiveFormat::PackIce),
             "uc2" => Some(ArchiveFormat::Uc2),
             "ue2" => Some(ArchiveFormat::Uc2),
             "hyp" => Some(ArchiveFormat::Hyp),
@@ -279,6 +285,7 @@ impl ArchiveFormat {
             ArchiveFormat::Gz => "gz",
             ArchiveFormat::Bz2 => "bz2",
             ArchiveFormat::Ice => "ice",
+            ArchiveFormat::PackIce => "pi9",
             ArchiveFormat::Hyp => "hyp",
             ArchiveFormat::Ha => "ha",
             ArchiveFormat::Uc2 => "uc2",
@@ -305,7 +312,8 @@ impl ArchiveFormat {
             ArchiveFormat::Z => "Z (Unix compress)",
             ArchiveFormat::Gz => "GZ (gzip)",
             ArchiveFormat::Bz2 => "BZ2 (bzip2)",
-            ArchiveFormat::Ice => "ICE",
+            ArchiveFormat::Ice => "ICE (Legacy DOS)",
+            ArchiveFormat::PackIce => "Pack-Ice (Atari ST)",
             ArchiveFormat::Hyp => "HYP (Hyper)",
             ArchiveFormat::Ha => "HA (Harri Archiver)",
             ArchiveFormat::Uc2 => "UC2 (Ultra Compressor II)",
@@ -333,6 +341,7 @@ impl ArchiveFormat {
             ArchiveFormat::Gz => &["gz"],
             ArchiveFormat::Bz2 => &["bz2"],
             ArchiveFormat::Ice => &["ice"],
+            ArchiveFormat::PackIce => &["pi9"],
             ArchiveFormat::Hyp => &["hyp"],
             ArchiveFormat::Ha => &["ha"],
             // UE2 is UltraCrypt-encrypted UC2 (detected, but not decrypted).
@@ -380,8 +389,10 @@ impl ArchiveFormat {
             ArchiveFormat::Gz => Some(&[&[0x1F, 0x8B]]),
             // Bzip2: "BZh"
             ArchiveFormat::Bz2 => Some(&[b"BZh"]),
-            // ICE: no fixed magic, starts with size
+            // ICE: no fixed magic, starts with size (Legacy DOS format)
             ArchiveFormat::Ice => None,
+            // Pack-Ice: "ICE!", "Ice!", "TMM!", "TSM!", "SHE!" at offset 0
+            ArchiveFormat::PackIce => Some(&[b"ICE!", b"Ice!", b"TMM!", b"TSM!", b"SHE!"]),
             // HYP: "HP" (compressed) or "ST" (stored)
             ArchiveFormat::Hyp => Some(&[b"HP", b"ST"]),
             // HA: "HA"
@@ -462,6 +473,17 @@ impl ArchiveFormat {
         // ZIP: "PK\x03\x04" or "PK\x05\x06" (empty archive)
         if data.len() >= 4 && (data.starts_with(b"PK\x03\x04") || data.starts_with(b"PK\x05\x06")) {
             return Some(ArchiveFormat::Zip);
+        }
+
+        // Pack-Ice: several 4-byte IDs at offset 0
+        if data.len() >= 4
+            && (data.starts_with(b"ICE!")
+                || data.starts_with(b"Ice!")
+                || data.starts_with(b"TMM!")
+                || data.starts_with(b"TSM!")
+                || data.starts_with(b"SHE!"))
+        {
+            return Some(ArchiveFormat::PackIce);
         }
 
         // UC2: "UC2\x1A"
@@ -763,8 +785,10 @@ enum EntryIndex {
     Gz,
     /// BZ2 format has no header per file, just one file
     Bz2,
-    /// ICE format has no header per file, just one file
+    /// ICE format has no header per file, just one file (Legacy DOS)
     Ice,
+    /// Pack-Ice format has no header per file, just one file (Atari ST)
+    PackIce,
     Hyp(HypHeader),
     Ha(HaHeader),
     Uc2(Uc2Header),
@@ -877,10 +901,11 @@ enum ArchiveInner<T: Read + Seek> {
     Zoo(ZooArchive<T>),
     Sq(SqArchive<T>),
     Sqz(SqzArchive<T>),
-    Z(ZArchive<T>, bool),     // bool = already read
-    Gz(GzArchive<T>, bool),   // bool = already read
-    Bz2(Bz2Archive<T>, bool), // bool = already read
-    Ice(IceArchive, bool),    // bool = already read
+    Z(ZArchive<T>, bool),          // bool = already read
+    Gz(GzArchive<T>, bool),        // bool = already read
+    Bz2(Bz2Archive<T>, bool),      // bool = already read
+    Ice(IceArchive, bool),         // bool = already read (Legacy DOS)
+    PackIce(PackIceArchive, bool), // bool = already read (Atari ST)
     Hyp(HypArchive<T>),
     Ha(HaArchive<T>),
     Uc2(Uc2Archive<T>),
@@ -930,6 +955,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Gz => ArchiveInner::Gz(GzArchive::new(reader)?, false),
             ArchiveFormat::Bz2 => ArchiveInner::Bz2(Bz2Archive::new(reader)?, false),
             ArchiveFormat::Ice => ArchiveInner::Ice(IceArchive::new(reader)?, false),
+            ArchiveFormat::PackIce => {
+                ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false)
+            }
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
             ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
             ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
@@ -992,6 +1020,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Gz => ArchiveInner::Gz(GzArchive::new(reader)?, false),
             ArchiveFormat::Bz2 => ArchiveInner::Bz2(Bz2Archive::new(reader)?, false),
             ArchiveFormat::Ice => ArchiveInner::Ice(IceArchive::new(reader)?, false),
+            ArchiveFormat::PackIce => {
+                ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false)
+            }
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
             ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
             ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
@@ -1258,6 +1289,27 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     }))
                 }
             }
+            ArchiveInner::PackIce(ref archive, ref mut read) => {
+                if *read {
+                    Ok(None)
+                } else {
+                    *read = true;
+                    let name = self
+                        .single_file_name
+                        .clone()
+                        .unwrap_or_else(|| "compressed".to_string());
+                    Ok(Some(ArchiveEntry {
+                        name,
+                        compressed_size: 0, // Not stored in Pack-Ice format
+                        original_size: archive.original_size() as u64,
+                        compression_method: "Pack-Ice".to_string(),
+                        modified_time: None,
+                        crc: 0,
+                        encryption: EncryptionMethod::None,
+                        index: EntryIndex::PackIce,
+                    }))
+                }
+            }
             ArchiveInner::Hyp(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
                     Ok(Some(ArchiveEntry {
@@ -1480,6 +1532,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Gz(archive, _), EntryIndex::Gz) => archive.read(),
             (ArchiveInner::Bz2(archive, _), EntryIndex::Bz2) => archive.read(),
             (ArchiveInner::Ice(archive, _), EntryIndex::Ice) => archive.read(),
+            (ArchiveInner::PackIce(archive, _), EntryIndex::PackIce) => archive.read(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.read(header),
             (ArchiveInner::Ha(archive), EntryIndex::Ha(header)) => archive.read(header),
             (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.read(header),
@@ -1606,6 +1659,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Gz(archive, _), EntryIndex::Gz) => archive.skip(),
             (ArchiveInner::Bz2(archive, _), EntryIndex::Bz2) => archive.skip(),
             (ArchiveInner::Ice(archive, _), EntryIndex::Ice) => archive.skip(),
+            (ArchiveInner::PackIce(archive, _), EntryIndex::PackIce) => archive.skip(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.skip(header),
             (ArchiveInner::Ha(archive), EntryIndex::Ha(header)) => archive.skip(header),
             (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.skip(header),
