@@ -55,3 +55,27 @@ fn extract_crunch() {
     let result = archive.read(&entry).unwrap();
     assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
+
+#[test]
+fn extract_encrypted() {
+    // First test: without password should fail with CRC or decompression error
+    let file = Cursor::new(include_bytes!("arc/license_cypted.arc"));
+    let mut archive = ArcArchive::new(file).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+    assert_eq!("LICENSE", entry.name);
+    assert_eq!(CompressionMethod::Crunched(8), entry.compression_method);
+
+    // Without password, should fail
+    let result = archive.read(&entry);
+    assert!(result.is_err(), "Expected error without password");
+
+    // Second test: with correct password should succeed
+    let file = Cursor::new(include_bytes!("arc/license_cypted.arc"));
+    let mut archive = ArcArchive::new(file).unwrap();
+    archive.set_password("SECRET");
+    assert!(archive.has_password());
+
+    let entry = archive.get_next_entry().unwrap().unwrap();
+    let result = archive.read(&entry).unwrap();
+    assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
+}

@@ -9,13 +9,53 @@ use super::{
     rle::unpack_rle,
 };
 
+/// Decrypt data using ARC's simple XOR encryption.
+///
+/// ARC uses a repeating XOR with the password bytes.
+/// Based on the original arccode.c by Thom Henderson.
+fn decrypt(data: &mut [u8], password: &[u8]) {
+    if password.is_empty() {
+        return;
+    }
+    let mut key_pos = 0;
+    for byte in data.iter_mut() {
+        *byte ^= password[key_pos];
+        key_pos += 1;
+        if key_pos >= password.len() {
+            key_pos = 0;
+        }
+    }
+}
+
 pub struct ArcArchive<T: Read + Seek> {
     reader: T,
+    password: Option<Vec<u8>>,
 }
 
 impl<T: Read + Seek> ArcArchive<T> {
     pub fn new(reader: T) -> Result<Self> {
-        Ok(Self { reader })
+        Ok(Self {
+            reader,
+            password: None,
+        })
+    }
+
+    /// Set the password for decrypting encrypted entries.
+    ///
+    /// Note: ARC has no encryption flag in headers - the user must know
+    /// if a password is required. Wrong passwords result in CRC errors.
+    pub fn set_password(&mut self, password: &str) {
+        self.password = Some(password.as_bytes().to_vec());
+    }
+
+    /// Clear the current password.
+    pub fn clear_password(&mut self) {
+        self.password = None;
+    }
+
+    /// Check if a password is currently set.
+    pub fn has_password(&self) -> bool {
+        self.password.is_some()
     }
 
     pub fn skip(&mut self, header: &LocalFileHeader) -> Result<()> {
@@ -27,6 +67,11 @@ impl<T: Read + Seek> ArcArchive<T> {
     pub fn read(&mut self, header: &LocalFileHeader) -> Result<Vec<u8>> {
         let mut compressed_buffer = vec![0; header.compressed_size as usize];
         self.reader.read_exact(&mut compressed_buffer)?;
+
+        // Decrypt if password is set
+        if let Some(ref password) = self.password {
+            decrypt(&mut compressed_buffer, password);
+        }
 
         let uncompressed = match header.compression_method {
             CompressionMethod::Unpacked(_) => compressed_buffer,

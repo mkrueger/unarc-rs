@@ -1005,7 +1005,13 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                 }
                 ArchiveInner::Ace(archive)
             }
-            ArchiveFormat::Arc => ArchiveInner::Arc(ArcArchive::new(reader)?),
+            ArchiveFormat::Arc => {
+                let mut archive = ArcArchive::new(reader)?;
+                if let Some(ref pwd) = password {
+                    archive.set_password(pwd);
+                }
+                ArchiveInner::Arc(archive)
+            }
             ArchiveFormat::Arj => {
                 let mut archive = ArjArchive::new(reader)?;
                 if let Some(ref pwd) = password {
