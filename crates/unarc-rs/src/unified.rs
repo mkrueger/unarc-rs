@@ -1620,6 +1620,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Ace(archive), EntryIndex::Ace(header)) => {
                 archive.read_with_password(header, password)
             }
+            (ArchiveInner::Arc(archive), EntryIndex::Arc(header)) => {
+                archive.read_with_password(header, password)
+            }
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => {
                 archive.read_with_password(header, password.as_ref().map(|s| s.as_bytes()))
             }

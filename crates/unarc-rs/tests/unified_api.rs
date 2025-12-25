@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::path::Path;
 use unarc_rs::unified::{
-    is_supported_archive, supported_extensions, ArchiveFormat, UnifiedArchive,
+    is_supported_archive, supported_extensions, ArchiveFormat, ArchiveOptions, UnifiedArchive,
 };
 
 #[test]
@@ -16,6 +16,27 @@ fn test_arc_via_unified() {
     assert!(!entry.file_name().is_empty());
 
     let data = archive.read(&entry).unwrap();
+    assert!(!data.is_empty());
+}
+
+#[test]
+fn test_arc_encrypted_via_unified_options() {
+    // ARC reads consume the underlying reader; use a fresh archive for each attempt.
+    {
+        let file = File::open("tests/arc/license_cypted.arc").unwrap();
+        let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Arc).unwrap();
+        let entry = archive.next_entry().unwrap().unwrap();
+
+        // ARC encryption can't be reliably detected; without password, CRC typically fails.
+        assert!(archive.read(&entry).is_err());
+    }
+
+    let file = File::open("tests/arc/license_cypted.arc").unwrap();
+    let mut archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Arc).unwrap();
+    let entry = archive.next_entry().unwrap().unwrap();
+
+    let options = ArchiveOptions::new().with_password("SECRET");
+    let data = archive.read_with_options(&entry, &options).unwrap();
     assert!(!data.is_empty());
 }
 

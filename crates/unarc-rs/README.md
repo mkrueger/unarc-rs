@@ -17,10 +17,10 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **LHA/LZH** | `.lha`, `.lzh` | Full support via delharc |
 | **TAR** | `.tar` | Full support via tar crate |
 | **ACE** | `.ace` | ACE 1.0 (LZ77) and ACE 2.0 (Blocked) |
-| **ARJ** | `.arj` | Store, Method 1-4 (full support) |
+| **ARJ** | `.arj` | Full support |
 | **ARC/PAK** | `.arc`, `.pak` | Full support |
-| **ZOO** | `.zoo` | Store, LZW, LH5 (full support) |
-| **HA** | `.ha` | Store, ASC, HSC (full support) |
+| **ZOO** | `.zoo` Full support |
+| **HA** | `.ha` | Full support |
 | **UC2** | `.uc2` | Full support |
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support |
 | **SQZ** | `.sqz` | Full support (stored + “Squeeze” methods 1–4) |
@@ -30,11 +30,11 @@ A Rust library for reading and extracting various archive formats, with a focus 
 
 | Format | Extensions | Notes |
 |--------|------------|-------|
-| **Z** | `.Z` | Unix compress (LZW) |
+| **Z** | `.Z` | Full support |
 | **GZ** | `.gz` | Gzip (Deflate) |
 | **BZ2** | `.bz2` | Bzip2 |
-| **ICE** | `.ice` | Legacy DOS ICE (LH1) |
-| **Pack-Ice** | `.pi9` | Atari ST Pack-Ice (v0/v1/v2) |
+| **ICE** | `.ice` | Full support |
+| **Pack-Ice** | `.pi9` | Full support |
 
 ### Compressed Archives
 
@@ -158,7 +158,9 @@ Several formats support encrypted archives:
 | **ZIP** | ZipCrypto, AES-128/192/256 | ZipCrypto is weak |
 | **RAR** | AES-128/256 | Legacy RAR encryption is weak |
 | **ACE** | Blowfish | |
-| **ARJ** | Garble, GOST40 | Both are weak by modern standards |
+| **ARJ** | Garble, GOST40, GOST-256 | GOST-256 requires ARJCRYPT and is not supported |
+| **ARC/PAK** | XOR (password) | No reliable encryption flag; wrong password typically yields CRC errors |
+| **UC2** | UltraCrypt (UE2) | Detected but not supported (decrypt with UCRYPT first) |
 
 To decrypt, use `ArchiveOptions` with a password:
 
@@ -203,13 +205,17 @@ https://github.com/droe/acefile
 
 Classic DOS archiver. Crushed & Distilled methods are not supported.
 
+ARC/PAK can be password-decrypted (simple XOR), but the format has no reliable encryption flag in headers.
+
 ### ARJ
 
-Popular in the BBS scene in the 90s. Supports Garble and GOST40 encryption (password required). Multi-volume archives are not supported.
+Popular in the BBS scene in the 90s. Supports Garble and GOST40 encryption (password required). GOST-256 (ARJCRYPT) is detected but not supported. Multi-volume archives are not supported.
 
 ### UC2
 
 UltraCompressor II archive format. Supports decompression with SuperMaster dictionary and custom master entries.
+
+UltraCrypt (UE2) encrypted wrappers are detected but not supported.
 
 ### ZOO
 

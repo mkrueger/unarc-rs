@@ -107,6 +107,23 @@ impl<T: Read + Seek> ArcArchive<T> {
         }
     }
 
+    /// Read an entry with a specific password (for per-entry decryption)
+    ///
+    /// ARC/PAK has no reliable encryption flag in headers, so encryption is
+    /// "best effort": if a password is set, the compressed data is XOR-decrypted
+    /// before decompression and CRC verification.
+    pub fn read_with_password(
+        &mut self,
+        header: &LocalFileHeader,
+        password: Option<String>,
+    ) -> Result<Vec<u8>> {
+        let old_password = self.password.take();
+        self.password = password.map(|p| p.into_bytes());
+        let result = self.read(header);
+        self.password = old_password;
+        result
+    }
+
     pub fn get_next_entry(&mut self) -> Result<Option<LocalFileHeader>> {
         let header_bytes = read_header(self.reader.by_ref())?;
         let current_local_file_header = LocalFileHeader::load_from(&header_bytes);

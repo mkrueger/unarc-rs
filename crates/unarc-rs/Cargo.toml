@@ -2,7 +2,7 @@
 name = "unarc-rs"
 version = "0.6.0"
 edition = "2021"
-description = "Universal archive extraction & decompression library for retro + modern formats (7z, ZIP, RAR, LHA/LZH, TAR, ARJ, ARC, ZOO, HA, UC2, SQ/SQ2, SQZ, HYP, gz, bz2, Z)."
+description = "Universal archive extraction & decompression library for retro + modern formats (7z, ZIP, RAR, LHA/LZH, TAR, ARJ, ARC/PAK, ZOO, HA, UC2, SQ/SQ2, SQZ, HYP, gz, bz2, Z)."
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 homepage = "https://github.com/mkrueger/unarc-rs"
 repository = "https://github.com/mkrueger/unarc-rs"

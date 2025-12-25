@@ -65,13 +65,37 @@ impl<T: Read + Seek> ArjArchive<T> {
             return Err(ArchiveError::encryption_required(&header.name, "ARJ"));
         }
 
+        // Some ARJ encryption modes are detected but cannot be decrypted.
+        // Fail early with a clear error instead of later CRC/decompression errors.
+        let encryption_type = if header.is_garbled() {
+            let enc = self.get_encryption_type();
+            match enc {
+                Some(ArjEncryption::Gost256) => {
+                    self.skip(header)?;
+                    return Err(ArchiveError::unsupported_method(
+                        "ARJ",
+                        "GOST-256 encryption (requires ARJCRYPT; decrypt externally first)",
+                    ));
+                }
+                Some(ArjEncryption::Unknown) => {
+                    self.skip(header)?;
+                    return Err(ArchiveError::unsupported_method(
+                        "ARJ",
+                        "unknown encryption method",
+                    ));
+                }
+                _ => enc,
+            }
+        } else {
+            None
+        };
+
         let mut compressed_buffer = vec![0; header.compressed_size as usize];
         self.reader.read_exact(&mut compressed_buffer)?;
 
         // Decrypt if needed
         if header.is_garbled() {
             if let Some(ref password) = self.password {
-                let encryption_type = self.get_encryption_type();
                 // Use the password_modifier from the header
                 let ftime: u32 = header.date_time_modified.into();
                 decrypt_arj_data(
