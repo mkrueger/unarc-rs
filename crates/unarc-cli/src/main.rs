@@ -6,10 +6,11 @@ mod password;
 
 use clap::{Parser, Subcommand};
 use std::fs::{self, File};
-use std::io;
+use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use unarc_rs::error::ArchiveError;
-use unarc_rs::unified::{ArchiveFormat, ArchiveOptions, UnifiedArchive};
+use unarc_rs::unified::{ArchiveFormat, ArchiveOptions, UnifiedArchive, VolumeProvider};
 
 #[derive(Parser)]
 #[command(name = "unarc")]
@@ -211,6 +212,63 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     Ok(())
 }
 
+/// Volume provider for multi-volume archives from the filesystem
+struct FileVolumeProvider {
+    base_path: PathBuf,
+    format: ArchiveFormat,
+}
+
+impl FileVolumeProvider {
+    fn new(base_path: PathBuf, format: ArchiveFormat) -> Self {
+        Self { base_path, format }
+    }
+
+    fn get_volume_extension(&self, volume_number: u32) -> String {
+        match self.format {
+            ArchiveFormat::Arj => {
+                if volume_number == 0 {
+                    "arj".to_string()
+                } else {
+                    format!("a{:02}", volume_number)
+                }
+            }
+            ArchiveFormat::Rar => {
+                if volume_number == 0 {
+                    "rar".to_string()
+                } else {
+                    format!("r{:02}", volume_number - 1)
+                }
+            }
+            // Add more formats as needed
+            _ => format!("{:03}", volume_number),
+        }
+    }
+}
+
+impl VolumeProvider for FileVolumeProvider {
+    fn open_volume(&self, volume_number: u32) -> Option<Box<dyn Read>> {
+        let ext = self.get_volume_extension(volume_number);
+
+        // Try lowercase first, then uppercase (DOS compatibility)
+        let path_lower = self.base_path.with_extension(&ext);
+        let path_upper = self.base_path.with_extension(ext.to_uppercase());
+
+        let (path, file) = if let Ok(f) = File::open(&path_lower) {
+            (path_lower, f)
+        } else if let Ok(f) = File::open(&path_upper) {
+            (path_upper, f)
+        } else {
+            return None;
+        };
+
+        if volume_number > 0 {
+            println!("  Opening volume: {}", path.display());
+        }
+
+        Some(Box::new(BufReader::new(file)) as Box<dyn Read>)
+    }
+}
+
 fn cmd_extract(
     archive_path: &Path,
     output_dir: &Path,
@@ -225,10 +283,13 @@ fn cmd_extract(
         archive_path.display()
     );
 
+    // Create volume provider for multi-volume support
+    let volume_provider = Arc::new(FileVolumeProvider::new(archive_path.to_path_buf(), format));
+
     let file = File::open(archive_path)?;
     let mut archive = UnifiedArchive::open_with_format(file, format)?;
 
-    // Set up options with password if provided
+    // Set up options with password and volume provider
     let options = match password {
         Some(pwd) => {
             println!("Using password for decryption");
@@ -236,6 +297,8 @@ fn cmd_extract(
         }
         None => ArchiveOptions::new(),
     };
+    let options = options.with_volume_provider_arc(volume_provider);
+    archive.set_options(options.clone());
 
     // For single-file formats, derive the output filename from the archive name
     if matches!(

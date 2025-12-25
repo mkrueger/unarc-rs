@@ -35,6 +35,7 @@
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, Write};
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::ace::{AceArchive, FileHeader as AceFileHeader};
 use crate::arc::arc_archive::ArcArchive;
@@ -69,6 +70,51 @@ use crate::zip::zip_archive::{ZipArchive, ZipFileHeader};
 use crate::zoo::dirent::DirectoryEntry as ZooEntry;
 use crate::zoo::zoo_archive::ZooArchive;
 
+/// Trait for providing additional volumes for multi-volume archives.
+///
+/// This trait is used to open subsequent volumes when extracting files
+/// that span multiple archive volumes (e.g., ARJ split archives).
+///
+/// # Example
+///
+/// ```no_run
+/// use std::fs::File;
+/// use std::io::{BufReader, Cursor};
+/// use std::path::PathBuf;
+/// use unarc_rs::unified::{ArchiveOptions, VolumeProvider};
+///
+/// struct FileVolumeProvider {
+///     base_path: PathBuf,
+/// }
+///
+/// impl VolumeProvider for FileVolumeProvider {
+///     fn open_volume(&self, volume_number: u32) -> Option<Box<dyn std::io::Read>> {
+///         // ARJ volumes: .arj, .a01, .a02, ...
+///         let ext = if volume_number == 0 {
+///             "arj".to_string()
+///         } else {
+///             format!("a{:02}", volume_number)
+///         };
+///         let path = self.base_path.with_extension(&ext);
+///         println!("Opening volume: {}", path.display());
+///         File::open(&path).ok().map(|f| Box::new(BufReader::new(f)) as Box<dyn std::io::Read>)
+///     }
+/// }
+/// ```
+pub trait VolumeProvider: Send + Sync {
+    /// Opens the specified volume number and returns a reader.
+    ///
+    /// Volume 0 is the first volume (the one being opened initially).
+    /// Returns `None` if the volume cannot be opened.
+    fn open_volume(&self, volume_number: u32) -> Option<Box<dyn Read>>;
+}
+
+impl std::fmt::Debug for dyn VolumeProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "VolumeProvider")
+    }
+}
+
 /// Options for opening and reading archives
 ///
 /// `ArchiveOptions` provides a builder-style API for configuring archive operations,
@@ -92,6 +138,8 @@ pub struct ArchiveOptions {
     password: Option<String>,
     /// Whether to verify CRC checksums during extraction
     verify_crc: bool,
+    /// Volume provider for multi-volume archives
+    volume_provider: Option<Arc<dyn VolumeProvider>>,
 }
 
 impl ArchiveOptions {
@@ -112,6 +160,18 @@ impl ArchiveOptions {
         self
     }
 
+    /// Set the volume provider for multi-volume archives
+    pub fn with_volume_provider<V: VolumeProvider + 'static>(mut self, provider: V) -> Self {
+        self.volume_provider = Some(Arc::new(provider));
+        self
+    }
+
+    /// Set the volume provider using an Arc for shared ownership
+    pub fn with_volume_provider_arc(mut self, provider: Arc<dyn VolumeProvider>) -> Self {
+        self.volume_provider = Some(provider);
+        self
+    }
+
     /// Returns the password if set
     pub fn password(&self) -> Option<&str> {
         self.password.as_deref()
@@ -125,6 +185,11 @@ impl ArchiveOptions {
     /// Returns whether CRC verification is enabled
     pub fn verify_crc(&self) -> bool {
         self.verify_crc
+    }
+
+    /// Returns a reference to the volume provider if set
+    pub fn volume_provider(&self) -> Option<&Arc<dyn VolumeProvider>> {
+        self.volume_provider.as_ref()
     }
 }
 
@@ -1019,6 +1084,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                 if let Some(ref pwd) = password {
                     archive.set_password(pwd);
                 }
+                if let Some(ref provider) = options.volume_provider {
+                    archive.set_volume_provider(provider.clone());
+                }
                 ArchiveInner::Arj(archive)
             }
             ArchiveFormat::Zoo => ArchiveInner::Zoo(ZooArchive::new(reader)?),
@@ -1091,6 +1159,12 @@ impl<T: Read + Seek> UnifiedArchive<T> {
 
     /// Set the archive options
     pub fn set_options(&mut self, options: ArchiveOptions) {
+        // Pass volume provider to inner archives that support multi-volume
+        if let Some(ref provider) = options.volume_provider {
+            if let ArchiveInner::Arj(archive) = &mut self.inner {
+                archive.set_volume_provider(provider.clone());
+            }
+        }
         self.options = options;
     }
 

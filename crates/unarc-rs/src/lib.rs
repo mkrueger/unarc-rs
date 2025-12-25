@@ -31,4 +31,4 @@ pub mod zip;
 pub mod zoo;
 
 pub mod unified;
-pub use unified::ArchiveOptions;
+pub use unified::{ArchiveOptions, VolumeProvider};

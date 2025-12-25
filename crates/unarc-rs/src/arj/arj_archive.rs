@@ -1,10 +1,12 @@
 use std::io::{Read, Seek};
+use std::sync::Arc;
 
 use delharc::decode::{Decoder, DecoderAny};
 
 use crate::date_time::DosDateTime;
 use crate::encryption::ArjEncryption;
 use crate::error::{ArchiveError, Result};
+use crate::unified::VolumeProvider;
 
 use super::{
     crypto::decrypt_arj_data,
@@ -18,6 +20,8 @@ pub struct ArjArchive<T: Read + Seek> {
     reader: T,
     header: MainHeader,
     password: Option<String>,
+    volume_provider: Option<Arc<dyn VolumeProvider>>,
+    current_volume: u32,
 }
 
 impl<T: Read + Seek> ArjArchive<T> {
@@ -34,7 +38,14 @@ impl<T: Read + Seek> ArjArchive<T> {
             header,
             reader,
             password: None,
+            volume_provider: None,
+            current_volume: 0,
         })
+    }
+
+    /// Set the volume provider for multi-volume archives
+    pub fn set_volume_provider(&mut self, provider: Arc<dyn VolumeProvider>) {
+        self.volume_provider = Some(provider);
     }
 
     /// Set the password for decrypting garbled entries
@@ -91,13 +102,19 @@ impl<T: Read + Seek> ArjArchive<T> {
             None
         };
 
+        // For multi-volume files, we need to decompress each chunk separately
+        // and then concatenate the decompressed data
+        if header.is_volume() {
+            return self.read_multi_volume(header, encryption_type);
+        }
+
+        // Single volume: read and decompress normally
         let mut compressed_buffer = vec![0; header.compressed_size as usize];
         self.reader.read_exact(&mut compressed_buffer)?;
 
         // Decrypt if needed
         if header.is_garbled() {
             if let Some(ref password) = self.password {
-                // Use the password_modifier from the header
                 let ftime: u32 = header.date_time_modified.into();
                 decrypt_arj_data(
                     &mut compressed_buffer,
@@ -109,31 +126,11 @@ impl<T: Read + Seek> ArjArchive<T> {
             }
         }
 
-        let uncompressed = match header.compression_method {
-            CompressionMethod::Stored => compressed_buffer,
-            CompressionMethod::CompressedMost
-            | CompressionMethod::Compressed
-            | CompressionMethod::CompressedFaster => {
-                let mut decoder = DecoderAny::new_from_compression(
-                    delharc::CompressionMethod::Lh6,
-                    compressed_buffer.as_slice(),
-                );
-                let mut decompressed_buffer = vec![0; header.original_size as usize];
-                decoder.fill_buffer(&mut decompressed_buffer)?;
-                decompressed_buffer
-            }
-            CompressionMethod::CompressedFastest => {
-                decode_fastest(compressed_buffer.as_slice(), header.original_size as usize)?
-            }
-            CompressionMethod::NoDataNoCrc
-            | CompressionMethod::NoData
-            | CompressionMethod::Unknown(_) => {
-                return Err(ArchiveError::unsupported_method(
-                    "ARJ",
-                    format!("{:?}", header.compression_method),
-                ));
-            }
-        };
+        let uncompressed = self.decompress_chunk(
+            &compressed_buffer,
+            header.original_size as usize,
+            &header.compression_method,
+        )?;
 
         if uncompressed.len() != header.original_size as usize {
             return Err(ArchiveError::decompression_failed(
@@ -156,6 +153,222 @@ impl<T: Read + Seek> ArjArchive<T> {
         } else {
             Ok(uncompressed)
         }
+    }
+
+    /// Decompress a single chunk of data
+    fn decompress_chunk(
+        &self,
+        compressed: &[u8],
+        original_size: usize,
+        method: &CompressionMethod,
+    ) -> Result<Vec<u8>> {
+        match method {
+            CompressionMethod::Stored => Ok(compressed.to_vec()),
+            CompressionMethod::CompressedMost
+            | CompressionMethod::Compressed
+            | CompressionMethod::CompressedFaster => {
+                let mut decoder =
+                    DecoderAny::new_from_compression(delharc::CompressionMethod::Lh6, compressed);
+                let mut decompressed_buffer = vec![0; original_size];
+                decoder.fill_buffer(&mut decompressed_buffer)?;
+                Ok(decompressed_buffer)
+            }
+            CompressionMethod::CompressedFastest => decode_fastest(compressed, original_size),
+            CompressionMethod::NoDataNoCrc
+            | CompressionMethod::NoData
+            | CompressionMethod::Unknown(_) => Err(ArchiveError::unsupported_method(
+                "ARJ",
+                format!("{:?}", method),
+            )),
+        }
+    }
+
+    /// Read and decompress a multi-volume file
+    /// Each volume chunk is decompressed separately, CRC-checked, then concatenated
+    fn read_multi_volume(
+        &mut self,
+        header: &LocalFileHeader,
+        encryption_type: Option<ArjEncryption>,
+    ) -> Result<Vec<u8>> {
+        let volume_provider = match &self.volume_provider {
+            Some(provider) => provider.clone(),
+            None => {
+                self.skip(header)?;
+                return Err(ArchiveError::io_error(
+                    "Multi-volume archive requires a volume provider",
+                ));
+            }
+        };
+
+        // Total expected size
+        let total_size = if header.original_size_even_for_volumes > 0 {
+            header.original_size_even_for_volumes as usize
+        } else {
+            header.original_size as usize
+        };
+
+        let mut result = Vec::with_capacity(total_size);
+        let filename = header.name.clone();
+        let compression_method = header.compression_method;
+
+        // Read and decompress first chunk from current volume
+        let mut compressed_buffer = vec![0; header.compressed_size as usize];
+        self.reader.read_exact(&mut compressed_buffer)?;
+
+        // Decrypt if needed
+        if header.is_garbled() {
+            if let Some(ref password) = self.password {
+                let ftime: u32 = header.date_time_modified.into();
+                decrypt_arj_data(
+                    &mut compressed_buffer,
+                    encryption_type,
+                    password,
+                    header.password_modifier,
+                    ftime,
+                );
+            }
+        }
+
+        let decompressed = self.decompress_chunk(
+            &compressed_buffer,
+            header.original_size as usize,
+            &compression_method,
+        )?;
+
+        // Verify CRC of first chunk
+        let checksum = crc32fast::hash(&decompressed);
+        if checksum != header.original_crc32 {
+            return Err(ArchiveError::crc_mismatch(
+                &filename,
+                header.original_crc32,
+                checksum,
+            ));
+        }
+
+        result.extend_from_slice(&decompressed);
+
+        // Read continuation chunks from subsequent volumes
+        let mut continues = header.is_volume();
+        while continues {
+            self.current_volume += 1;
+
+            // Open next volume
+            let mut next_volume = match volume_provider.open_volume(self.current_volume) {
+                Some(reader) => reader,
+                None => {
+                    return Err(ArchiveError::io_error(format!(
+                        "Cannot open volume {} for multi-volume archive",
+                        self.current_volume
+                    )));
+                }
+            };
+
+            // Read and skip main header
+            let main_header_bytes = read_header(&mut next_volume)?;
+            if main_header_bytes.is_empty() {
+                return Err(ArchiveError::corrupted_entry_named(
+                    "ARJ",
+                    &filename,
+                    "unexpected end of volume header",
+                ));
+            }
+            read_extended_headers(&mut next_volume)?;
+
+            // Read the file header (should be continuation of our file)
+            let file_header_bytes = read_header(&mut next_volume)?;
+            if file_header_bytes.is_empty() {
+                return Err(ArchiveError::corrupted_entry_named(
+                    "ARJ",
+                    &filename,
+                    "unexpected end of file header in volume",
+                ));
+            }
+
+            let continuation_header =
+                LocalFileHeader::load_from(&file_header_bytes).ok_or_else(|| {
+                    ArchiveError::corrupted_entry_named(
+                        "ARJ",
+                        &filename,
+                        "invalid continuation header",
+                    )
+                })?;
+
+            // Verify this is a continuation of the same file
+            if !continuation_header.is_ext_file() {
+                return Err(ArchiveError::corrupted_entry_named(
+                    "ARJ",
+                    &filename,
+                    "expected extended file (continuation) header",
+                ));
+            }
+
+            if continuation_header.name != filename {
+                return Err(ArchiveError::corrupted_entry_named(
+                    "ARJ",
+                    &filename,
+                    format!(
+                        "filename mismatch in continuation: expected '{}', got '{}'",
+                        filename, continuation_header.name
+                    ),
+                ));
+            }
+
+            read_extended_headers(&mut next_volume)?;
+
+            // Read the compressed data from this volume
+            let mut chunk = vec![0; continuation_header.compressed_size as usize];
+            next_volume.read_exact(&mut chunk)?;
+
+            // Decrypt if needed (continuation chunks use their own header data)
+            if continuation_header.is_garbled() {
+                if let Some(ref password) = self.password {
+                    let ftime: u32 = continuation_header.date_time_modified.into();
+                    decrypt_arj_data(
+                        &mut chunk,
+                        encryption_type,
+                        password,
+                        continuation_header.password_modifier,
+                        ftime,
+                    );
+                }
+            }
+
+            // Decompress this chunk
+            let decompressed = self.decompress_chunk(
+                &chunk,
+                continuation_header.original_size as usize,
+                &continuation_header.compression_method,
+            )?;
+
+            // Verify CRC of this chunk
+            let checksum = crc32fast::hash(&decompressed);
+            if checksum != continuation_header.original_crc32 {
+                return Err(ArchiveError::crc_mismatch(
+                    &format!("{} (volume {})", filename, self.current_volume),
+                    continuation_header.original_crc32,
+                    checksum,
+                ));
+            }
+
+            result.extend_from_slice(&decompressed);
+
+            // Check if there are more volumes
+            continues = continuation_header.is_volume();
+        }
+
+        // Verify total size
+        if result.len() != total_size {
+            return Err(ArchiveError::decompression_failed(
+                &filename,
+                format!(
+                    "multi-volume size mismatch: expected {}, got {}",
+                    total_size,
+                    result.len()
+                ),
+            ));
+        }
+
+        Ok(result)
     }
 
     pub fn get_next_entry(&mut self) -> Result<Option<LocalFileHeader>> {
