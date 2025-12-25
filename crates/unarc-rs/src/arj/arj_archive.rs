@@ -11,6 +11,7 @@ use super::{
     decode_fastest::decode_fastest,
     local_file_header::{CompressionMethod, LocalFileHeader},
     main_header::{HostOS, MainHeader},
+    password_verifier::ArjPasswordVerifier,
 };
 
 pub struct ArjArchive<T: Read + Seek> {
@@ -209,6 +210,59 @@ impl<T: Read + Seek> ArjArchive<T> {
 
     pub fn get_archive_size(&self) -> u32 {
         self.header.archive_size
+    }
+
+    /// Create a standalone password verifier for the given entry.
+    ///
+    /// This reads the compressed data from the archive and creates a verifier
+    /// that can be used independently (and in parallel) to test passwords.
+    ///
+    /// The verifier is `Send + Sync` and can be safely used with rayon.
+    ///
+    /// Returns `None` if the entry is not encrypted or uses unsupported encryption.
+    pub fn create_password_verifier(
+        &mut self,
+        header: &LocalFileHeader,
+    ) -> Result<Option<ArjPasswordVerifier>> {
+        // Check if encrypted
+        if !header.is_garbled() {
+            return Ok(None);
+        }
+
+        // Check encryption type
+        let encryption_type = self.get_encryption_type();
+        match encryption_type {
+            Some(ArjEncryption::Gost256) => {
+                return Err(ArchiveError::unsupported_method(
+                    "ARJ",
+                    "GOST-256 encryption (requires ARJCRYPT; decrypt externally first)",
+                ));
+            }
+            Some(ArjEncryption::Unknown) => {
+                return Err(ArchiveError::unsupported_method(
+                    "ARJ",
+                    "unknown encryption method",
+                ));
+            }
+            _ => {}
+        }
+
+        // Read compressed data
+        let mut compressed_data = vec![0; header.compressed_size as usize];
+        self.reader.read_exact(&mut compressed_data)?;
+
+        let file_time: u32 = header.date_time_modified.into();
+
+        Ok(Some(ArjPasswordVerifier::new(
+            compressed_data,
+            header.compression_method,
+            header.original_crc32,
+            header.original_size,
+            header.name.clone(),
+            encryption_type,
+            header.password_modifier,
+            file_time,
+        )))
     }
 }
 

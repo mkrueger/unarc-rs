@@ -11,6 +11,13 @@ enum State {
 /// count == 0 -> DLE
 pub fn unpack_rle(compressed_buffer: &[u8]) -> Vec<u8> {
     let mut res = Vec::new();
+    unpack_rle_into(compressed_buffer, &mut res);
+    res
+}
+
+/// Unpacks RLE compressed buffer into an existing Vec to avoid allocations.
+pub fn unpack_rle_into(compressed_buffer: &[u8], res: &mut Vec<u8>) {
+    res.clear();
     let mut state = State::Normal(0);
     for &c in compressed_buffer {
         match state {
@@ -33,7 +40,6 @@ pub fn unpack_rle(compressed_buffer: &[u8]) -> Vec<u8> {
             }
         }
     }
-    res
 }
 
 #[cfg(test)]

@@ -3,7 +3,7 @@
 //! Uses the `sevenz-rust2` crate for decompression.
 
 use std::collections::HashSet;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, SeekFrom};
 
 use crate::date_time::DosDateTime;
 use crate::error::{ArchiveError, Result};
@@ -274,4 +274,34 @@ fn day_of_year_to_month_day(day_of_year: u32, is_leap: bool) -> (u8, u8) {
 
     // Fallback (shouldn't happen with valid input)
     (12, 31)
+}
+
+impl<T: Read + Seek> SevenZArchive<T> {
+    /// Create a password verifier for the given encrypted entry.
+    ///
+    /// This reads the entire archive into memory and returns a standalone
+    /// verifier that can be used from multiple threads with rayon.
+    pub fn create_password_verifier(
+        &mut self,
+        header: &SevenZFileHeader,
+    ) -> Result<super::password_verifier::SevenZPasswordVerifier> {
+        if !header.is_encrypted {
+            return Err(ArchiveError::unsupported_method(
+                "7z",
+                "entry is not encrypted",
+            ));
+        }
+
+        // Read the entire archive into memory
+        self.reader.seek(SeekFrom::Start(0))?;
+        let mut archive_data = Vec::new();
+        self.reader.read_to_end(&mut archive_data)?;
+
+        Ok(super::password_verifier::SevenZPasswordVerifier::new(
+            archive_data,
+            header.name.clone(),
+            header.crc32,
+            header.original_size,
+        ))
+    }
 }

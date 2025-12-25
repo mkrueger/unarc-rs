@@ -267,3 +267,28 @@ impl<T: Read + Seek> Drop for RarArchive<T> {
         }
     }
 }
+
+impl<T: Read + Seek> RarArchive<T> {
+    /// Create a password verifier for the given encrypted entry.
+    ///
+    /// Returns a standalone verifier that can be used from multiple threads with rayon.
+    /// Note: RAR verification requires re-opening the archive file for each attempt.
+    pub fn create_password_verifier(
+        &self,
+        header: &RarFileHeader,
+    ) -> Result<super::password_verifier::RarPasswordVerifier> {
+        if !header.is_encrypted {
+            return Err(ArchiveError::unsupported_method(
+                "RAR",
+                "entry is not encrypted",
+            ));
+        }
+
+        Ok(super::password_verifier::RarPasswordVerifier::new(
+            self.archive_path.clone(),
+            header.name.clone(),
+            header.crc32,
+            header.original_size,
+        ))
+    }
+}

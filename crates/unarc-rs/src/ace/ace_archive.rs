@@ -434,6 +434,47 @@ impl<R: Read + Seek> AceArchive<R> {
     pub fn is_solid(&self) -> bool {
         self.main_header.is_solid()
     }
+
+    /// Create a password verifier for the given file entry.
+    ///
+    /// This reads the compressed data for the entry and returns a standalone
+    /// verifier that can be used from multiple threads with rayon.
+    ///
+    /// Note: For solid archives, parallel password testing is not supported
+    /// since the LZ77 decoder state must be maintained across files.
+    /// This will return an error for solid archives.
+    pub fn create_password_verifier(
+        &mut self,
+        header: &FileHeader,
+    ) -> Result<super::password_verifier::AcePasswordVerifier> {
+        if self.is_solid() {
+            return Err(ArchiveError::unsupported_method(
+                "ACE",
+                "solid archives not supported for parallel password testing",
+            ));
+        }
+
+        if !header.is_encrypted() {
+            return Err(ArchiveError::unsupported_method(
+                "ACE",
+                "entry is not encrypted",
+            ));
+        }
+
+        // Seek to and read the compressed data
+        self.reader.seek(SeekFrom::Start(header.data_offset))?;
+        let mut compressed = vec![0u8; header.packed_size as usize];
+        self.reader.read_exact(&mut compressed)?;
+
+        Ok(super::password_verifier::AcePasswordVerifier::new(
+            compressed,
+            header.compression_type,
+            header.crc32,
+            header.original_size,
+            header.dictionary_size(),
+            header.filename.clone(),
+        ))
+    }
 }
 
 /// Helper trait for stream length

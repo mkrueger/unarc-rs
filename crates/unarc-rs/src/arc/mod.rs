@@ -4,5 +4,6 @@ pub mod distilled;
 mod distilled_table;
 pub mod local_file_header;
 pub mod lzw;
-mod rle;
+pub mod password_verifier;
+pub(crate) mod rle;
 pub mod unsqueeze;

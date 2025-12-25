@@ -66,8 +66,20 @@ impl Lzw {
         reader.read_var::<u16>(self.n_bits as u32).ok()
     }
 
-    pub fn decomp(&mut self, mut input: &[u8], use_crunched: bool) -> Result<Vec<u8>> {
+    pub fn decomp(&mut self, input: &[u8], use_crunched: bool) -> Result<Vec<u8>> {
         let mut result = Vec::new();
+        self.decomp_into(input, use_crunched, &mut result)?;
+        Ok(result)
+    }
+
+    /// Decompress into an existing buffer to avoid allocations.
+    pub fn decomp_into(
+        &mut self,
+        mut input: &[u8],
+        use_crunched: bool,
+        result: &mut Vec<u8>,
+    ) -> Result<()> {
+        result.clear();
         let bits = if use_crunched {
             let b = input[0];
             input = &input[1..];
@@ -95,7 +107,7 @@ impl Lzw {
         self.oldcode = if let Some(old) = self.getcode(&mut reader) {
             old
         } else {
-            return Ok(result);
+            return Ok(());
         };
         self.finchar = self.oldcode as u8;
         result.push(self.finchar);
@@ -116,7 +128,17 @@ impl Lzw {
                 self.stack.push(self.finchar);
                 code = self.oldcode;
             }
+            // Safety limit to prevent infinite loops on corrupt data
+            let mut iterations = 0usize;
+            const MAX_ITERATIONS: usize = 65536;
             while code >= 256 {
+                iterations += 1;
+                if iterations > MAX_ITERATIONS {
+                    return Err(ArchiveError::decompression_failed(
+                        "LZW",
+                        "infinite loop detected (corrupt data or wrong password)",
+                    ));
+                }
                 self.stack.push(self.suffix[code as usize]);
                 code = self.prefix[code as usize];
             }
@@ -131,6 +153,6 @@ impl Lzw {
             }
             self.oldcode = incode;
         }
-        Ok(result)
+        Ok(())
     }
 }

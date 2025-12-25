@@ -2,6 +2,8 @@
 //!
 //! A command-line tool for listing and extracting files from various archive formats.
 
+mod password;
+
 use clap::{Parser, Subcommand};
 use std::fs::{self, File};
 use std::io;
@@ -45,6 +47,33 @@ enum Commands {
         password: Option<String>,
     },
 
+    /// Try passwords from a file, directory, or stdin to find the correct one
+    #[command(alias = "tp")]
+    TryPasswords {
+        /// Archive file to test
+        archive: PathBuf,
+
+        /// File containing passwords (one per line), use "-" for stdin
+        #[arg(short = 'f', long, conflicts_with = "password_dir")]
+        password_file: Option<PathBuf>,
+
+        /// Directory containing password files (searches recursively for *.txt)
+        #[arg(short = 'd', long, conflicts_with = "password_file")]
+        password_dir: Option<PathBuf>,
+
+        /// Read passwords from stdin
+        #[arg(long, conflicts_with_all = ["password_file", "password_dir"])]
+        stdin: bool,
+
+        /// Show progress every N passwords
+        #[arg(short = 'v', long, default_value = "1000")]
+        verbose_interval: usize,
+
+        /// Specific entry name to test against (useful for selecting a small file)
+        #[arg(short = 'e', long)]
+        entry: Option<String>,
+    },
+
     /// Show supported archive formats
     Formats,
 }
@@ -60,6 +89,21 @@ fn main() {
             force,
             password,
         } => cmd_extract(&archive, &output, force, password.as_deref()),
+        Commands::TryPasswords {
+            archive,
+            password_file,
+            password_dir,
+            stdin,
+            verbose_interval,
+            entry,
+        } => password::cmd_try_passwords(
+            &archive,
+            password_file.as_deref(),
+            password_dir.as_deref(),
+            stdin,
+            verbose_interval,
+            entry.as_deref(),
+        ),
         Commands::Formats => cmd_formats(),
     };
 
@@ -339,7 +383,7 @@ fn detect_format(path: &Path) -> Result<ArchiveFormat, ArchiveError> {
     })
 }
 
-fn truncate(s: &str, max_len: usize) -> String {
+pub fn truncate(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {

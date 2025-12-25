@@ -57,6 +57,24 @@ unarc extract -p secret encrypted.arj        # Decrypt with password
 unarc formats
 ```
 
+### Try Passwords (Password Cracking)
+
+Test passwords from a file, directory, or stdin against an encrypted archive:
+
+```bash
+# Try passwords from a file
+unarc try-passwords archive.arj -f passwords.txt
+
+# Try passwords from all .txt files in a directory (recursive)
+unarc tp encrypted.7z -d ~/wordlists/
+
+# Try passwords from stdin (pipe from another tool)
+crunch 4 6 abc123 | unarc tp archive.zip --stdin
+
+# Select a specific small file for faster testing
+unarc tp large_archive.rar -f passwords.txt -e "small_file.txt"
+```
+
 ## Command Reference
 
 ### `unarc list` (alias: `l`)
@@ -90,6 +108,40 @@ Options:
 ### `unarc formats`
 
 Show all supported archive formats with their extensions and magic bytes.
+
+### `unarc try-passwords` (alias: `tp`)
+
+Test passwords against an encrypted archive using parallel processing.
+
+```
+Usage: unarc try-passwords [OPTIONS] <ARCHIVE>
+
+Arguments:
+  <ARCHIVE>  Archive file to test
+
+Options:
+  -f, --password-file <PASSWORD_FILE>  File containing passwords (one per line)
+  -d, --password-dir <PASSWORD_DIR>    Directory with password files (*.txt, recursive)
+      --stdin                          Read passwords from stdin
+  -v, --verbose-interval <N>           Show progress every N passwords [default: 1000]
+  -e, --entry <ENTRY>                  Specific entry to test against (for faster testing)
+  -h, --help                           Print help
+```
+
+**Features:**
+- **Parallel processing** using all CPU cores (via rayon)
+- **Multiple input sources**: single file, directory of wordlists, or stdin
+- **Entry selection**: Use `-e` to pick a small file for faster password testing
+- **Progress reporting**: See passwords/sec and current progress
+- **Smart verification**: Uses CRC32 + size validation to avoid false positives
+
+**Supported formats for password testing:** ARC, ARJ, ACE, ZIP, RAR, 7z
+
+**Performance** varies by format due to encryption complexity:
+- ARC: ~3.5 million passwords/sec (simple XOR)
+- ARJ: ~2,000 passwords/sec (Garble)
+- ZIP: ~50,000 passwords/sec (ZipCrypto)
+- 7z: ~16 passwords/sec (AES-256, by design slow)
 
 ## Supported Formats
 
@@ -132,6 +184,18 @@ unarc list backup.7z
 Extract all files from a ZOO archive, overwriting existing:
 ```bash
 unarc x -f old_archive.zoo
+```
+
+Crack a password-protected archive:
+```bash
+# First, see which encrypted files are available
+unarc tp archive.arj --stdin -e "?"  # Shows list of encrypted entries
+# Error: Entry '?' not found. Encrypted entries:
+#   - LICENSE (11357 bytes)
+#   - bigfile.dat (50000000 bytes)
+
+# Pick the smallest file for faster testing
+unarc tp archive.arj -f rockyou.txt -e "LICENSE"
 ```
 
 ## Related

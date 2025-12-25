@@ -6,6 +6,7 @@ use crate::error::{ArchiveError, Result};
 
 use super::{
     local_file_header::{CompressionMethod, LocalFileHeader},
+    password_verifier::ArcPasswordVerifier,
     rle::unpack_rle,
 };
 
@@ -131,6 +132,28 @@ impl<T: Read + Seek> ArcArchive<T> {
             return Ok(None);
         }
         Ok(current_local_file_header)
+    }
+
+    /// Create a standalone password verifier for the given entry.
+    ///
+    /// This reads the compressed data from the archive and creates a verifier
+    /// that can be used independently (and in parallel) to test passwords.
+    ///
+    /// The verifier is `Send + Sync` and can be safely used with rayon.
+    pub fn create_password_verifier(
+        &mut self,
+        header: &LocalFileHeader,
+    ) -> Result<ArcPasswordVerifier> {
+        let mut compressed_data = vec![0; header.compressed_size as usize];
+        self.reader.read_exact(&mut compressed_data)?;
+
+        Ok(ArcPasswordVerifier::new(
+            compressed_data,
+            header.compression_method,
+            header.crc16,
+            header.original_size,
+            header.name.clone(),
+        ))
     }
 }
 

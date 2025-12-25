@@ -13,7 +13,9 @@ mod crypto;
 mod header;
 mod huffman;
 mod lz77;
+mod password_verifier;
 
 pub use ace_archive::AceArchive;
 pub use crypto::decrypt_ace_data;
 pub use header::FileHeader;
+pub use password_verifier::AcePasswordVerifier;

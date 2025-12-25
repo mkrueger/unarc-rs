@@ -160,8 +160,20 @@ impl HuffmanTree {
         }
 
         let mut idx = 0;
+        // Safety limit: tree traversal should never exceed tree depth
+        // Max depth is bounded by number of nodes
+        let max_iterations = self.nodes.len() + 1;
+        let mut iterations = 0;
 
         loop {
+            iterations += 1;
+            if iterations > max_iterations {
+                return Err(ArchiveError::decompression_failed(
+                    "Distilled",
+                    "tree traversal loop detected (corrupt data or wrong password)",
+                ));
+            }
+
             if idx >= self.nodes.len() {
                 return Err(ArchiveError::decompression_failed(
                     "Distilled",

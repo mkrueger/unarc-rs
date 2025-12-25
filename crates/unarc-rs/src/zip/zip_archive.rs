@@ -167,4 +167,30 @@ impl<T: Read + Seek> ZipArchive<T> {
 
         Ok(data)
     }
+
+    /// Create a password verifier for the given encrypted entry.
+    ///
+    /// # Arguments
+    /// * `header` - The encrypted file header
+    /// * `archive_data` - The complete archive data (needed since we can't re-read from the internal reader)
+    pub fn create_password_verifier(
+        &self,
+        header: &ZipFileHeader,
+        archive_data: Vec<u8>,
+    ) -> Result<super::password_verifier::ZipPasswordVerifier> {
+        if !header.is_encrypted {
+            return Err(ArchiveError::unsupported_method(
+                "ZIP",
+                "entry is not encrypted",
+            ));
+        }
+
+        Ok(super::password_verifier::ZipPasswordVerifier::new(
+            archive_data,
+            header.index,
+            header.crc32,
+            header.original_size,
+            header.name.clone(),
+        ))
+    }
 }

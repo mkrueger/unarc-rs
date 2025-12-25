@@ -133,7 +133,13 @@ impl CrushedState {
 
     /// Get first byte of a string (walk to root).
     fn first_byte(&self, mut sym: usize) -> u8 {
+        // Safety limit to prevent infinite loops on corrupt data
+        let mut iterations = 0usize;
         while sym < TABLE_SIZE && self.table[sym].parent >= 0 {
+            iterations += 1;
+            if iterations > TABLE_SIZE {
+                break; // Corrupt data, just return what we have
+            }
             sym = self.table[sym].parent as usize;
         }
         self.table.get(sym).map(|e| e.byte).unwrap_or(0)
@@ -141,7 +147,13 @@ impl CrushedState {
 
     /// Mark symbol chain as recently used.
     fn mark_used(&mut self, mut sym: usize) {
+        // Safety limit to prevent infinite loops on corrupt data
+        let mut iterations = 0usize;
         while sym < TABLE_SIZE {
+            iterations += 1;
+            if iterations > TABLE_SIZE {
+                break; // Corrupt data
+            }
             self.usage[sym] = 4;
             let parent = self.table[sym].parent;
             if parent < 0 {
@@ -235,9 +247,17 @@ impl CrushedState {
                 ArchiveError::decompression_failed("Crushed", "KwKwK without previous symbol")
             })?;
 
-            // Decode previous string.
+            // Decode previous string with safety limit.
             let mut s = prev;
+            let mut iterations = 0usize;
             while s < TABLE_SIZE {
+                iterations += 1;
+                if iterations > TABLE_SIZE {
+                    return Err(ArchiveError::decompression_failed(
+                        "Crushed",
+                        "infinite loop detected (corrupt data or wrong password)",
+                    ));
+                }
                 let entry = &self.table[s];
                 out.push(entry.byte);
                 if entry.parent < 0 {
@@ -260,8 +280,17 @@ impl CrushedState {
         }
 
         // Normal decode: walk parent chain.
+        // Safety limit to prevent infinite loops on corrupt data
         let mut s = sym;
+        let mut iterations = 0usize;
         while s < TABLE_SIZE {
+            iterations += 1;
+            if iterations > TABLE_SIZE {
+                return Err(ArchiveError::decompression_failed(
+                    "Crushed",
+                    "infinite loop detected (corrupt data or wrong password)",
+                ));
+            }
             let entry = &self.table[s];
             out.push(entry.byte);
             if entry.parent < 0 {
