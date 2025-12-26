@@ -17,7 +17,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
 | **TAR** | `.tar` | Full support | — | — |
 | **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |
-| **ARJ** | `.arj` | Full support | Garble, GOST40 ✓ | — |
+| **ARJ** | `.arj` | Full support | Garble, GOST40 ✓ | ✓ |
 | **ARC/PAK** | `.arc`, `.pak` | Full support | XOR ✓ | — |
 | **ZOO** | `.zoo` | Full support | — | — |
 | **HA** | `.ha` | Full support | — | — |

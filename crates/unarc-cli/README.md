@@ -159,7 +159,7 @@ Options:
 | **LHA/LZH** | `.lha`, `.lzh` | — | — |
 | **TAR** | `.tar` | — | — |
 | **ACE** | `.ace` | Blowfish | ✓ |
-| **ARJ** | `.arj` | Garble, GOST40 | — |
+| **ARJ** | `.arj` | Garble, GOST40 | ✓ |
 | **ARC/PAK** | `.arc`, `.pak` | XOR | — |
 | **ZOO** | `.zoo` | — | — |
 | **HA** | `.ha` | — | — |
