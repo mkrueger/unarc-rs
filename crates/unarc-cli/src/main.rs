@@ -114,6 +114,87 @@ fn main() {
     }
 }
 
+/// Open an archive, automatically handling multi-volume split archives
+fn open_archive_auto(
+    archive_path: &Path,
+    format: ArchiveFormat,
+    options: ArchiveOptions,
+) -> Result<Box<dyn ArchiveReader>, ArchiveError> {
+    // Check if this is a multi-volume split archive (ZIP .001/.z01 or 7z .001)
+    if let Some(pattern) = FileVolumeProvider::detect_pattern(archive_path) {
+        match pattern {
+            VolumePattern::Numeric3 | VolumePattern::SevenZ => {
+                // For .001/.7z.001 style, we need to use the MultiVolumeReader
+                let volumes = FileVolumeProvider::find_all_volumes(archive_path);
+                if volumes.len() > 1 {
+                    println!("  Detected {} volumes", volumes.len());
+                    match format {
+                        ArchiveFormat::Zip => {
+                            let archive = ArchiveFormat::open_multi_volume_zip(&volumes, options)?;
+                            return Ok(Box::new(archive));
+                        }
+                        ArchiveFormat::SevenZ => {
+                            let archive = ArchiveFormat::open_multi_volume_7z(&volumes, options)?;
+                            return Ok(Box::new(archive));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            VolumePattern::WinZip => {
+                // For .zip/.z01 style
+                let volumes = FileVolumeProvider::find_all_volumes(archive_path);
+                if volumes.len() > 1 {
+                    println!("  Detected {} volumes", volumes.len());
+                    let archive = ArchiveFormat::open_multi_volume_zip(&volumes, options)?;
+                    return Ok(Box::new(archive));
+                }
+            }
+            _ => {
+                // For other patterns (ARJ, ACE, RAR), the VolumeProvider handles it
+            }
+        }
+    }
+
+    // Standard single-file or VolumeProvider-handled multi-volume
+    let volume_provider = Arc::new(FileVolumeProvider::new(archive_path, format));
+    let file = File::open(archive_path)?;
+    let mut archive = UnifiedArchive::open_with_format(file, format)?;
+    archive.set_options(options.with_volume_provider_arc(volume_provider));
+    Ok(Box::new(archive))
+}
+
+/// Trait for abstracting archive operations
+trait ArchiveReader {
+    fn next_entry_box(&mut self) -> Result<Option<unarc_rs::unified::ArchiveEntry>, ArchiveError>;
+    fn read_with_options_box(
+        &mut self,
+        entry: &unarc_rs::unified::ArchiveEntry,
+        options: &ArchiveOptions,
+    ) -> Result<Vec<u8>, ArchiveError>;
+    fn skip_box(&mut self, entry: &unarc_rs::unified::ArchiveEntry) -> Result<(), ArchiveError>;
+    fn set_single_file_name_box(&mut self, name: String);
+}
+
+impl<T: std::io::Read + std::io::Seek> ArchiveReader for UnifiedArchive<T> {
+    fn next_entry_box(&mut self) -> Result<Option<unarc_rs::unified::ArchiveEntry>, ArchiveError> {
+        self.next_entry()
+    }
+    fn read_with_options_box(
+        &mut self,
+        entry: &unarc_rs::unified::ArchiveEntry,
+        options: &ArchiveOptions,
+    ) -> Result<Vec<u8>, ArchiveError> {
+        self.read_with_options(entry, options)
+    }
+    fn skip_box(&mut self, entry: &unarc_rs::unified::ArchiveEntry) -> Result<(), ArchiveError> {
+        self.skip(entry)
+    }
+    fn set_single_file_name_box(&mut self, name: String) {
+        self.set_single_file_name(name);
+    }
+}
+
 fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     let format = detect_format(archive_path)?;
 
@@ -125,8 +206,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     );
     println!("{}", "-".repeat(105));
 
-    let file = File::open(archive_path)?;
-    let mut archive = UnifiedArchive::open_with_format(file, format)?;
+    let mut archive = open_archive_auto(archive_path, format, ArchiveOptions::new())?;
 
     // For single-file formats, derive the filename from the archive name
     if matches!(
@@ -134,7 +214,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
         ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
     ) {
         if let Some(stem) = archive_path.file_stem() {
-            archive.set_single_file_name(stem.to_string_lossy().to_string());
+            archive.set_single_file_name_box(stem.to_string_lossy().to_string());
         }
     }
 
@@ -144,7 +224,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     let mut encrypted_count = 0;
 
     loop {
-        let entry = match archive.next_entry() {
+        let entry = match archive.next_entry_box() {
             Ok(Some(e)) => e,
             Ok(None) => break,
             Err(ArchiveError::Io(ref e)) if e.kind() == io::ErrorKind::UnexpectedEof => break,
@@ -179,7 +259,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
         count += 1;
 
         // Skip to next entry (don't decompress)
-        if let Err(e) = archive.skip(&entry) {
+        if let Err(e) = archive.skip_box(&entry) {
             if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof)
             {
                 return Err(e);
@@ -214,58 +294,353 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
 
 /// Volume provider for multi-volume archives from the filesystem
 struct FileVolumeProvider {
-    base_path: PathBuf,
-    format: ArchiveFormat,
+    /// Cached list of volume paths, sorted in order
+    volume_paths: Vec<PathBuf>,
+}
+
+/// Pattern for multi-volume archive naming
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum VolumePattern {
+    /// .001, .002, .003 (generic split)
+    Numeric3,
+    /// .zip, .z01, .z02 (WinZip style)
+    WinZip,
+    /// .rar, .r00, .r01 (old RAR style)
+    RarOld,
+    /// .part1.rar, .part2.rar (new RAR5 style)
+    RarNew,
+    /// .7z.001, .7z.002 (7-Zip split)
+    SevenZ,
+    /// .ace, .c00, .c01 (ACE style)
+    Ace,
+    /// .arj, .a01, .a02 (ARJ style)
+    Arj,
 }
 
 impl FileVolumeProvider {
-    fn new(base_path: PathBuf, format: ArchiveFormat) -> Self {
-        Self { base_path, format }
+    fn new(archive_path: &Path, _format: ArchiveFormat) -> Self {
+        let volume_paths = Self::find_all_volumes(archive_path);
+        Self { volume_paths }
     }
 
-    fn get_volume_extension(&self, volume_number: u32) -> String {
-        match self.format {
-            ArchiveFormat::Arj => {
-                if volume_number == 0 {
-                    "arj".to_string()
+    /// Detect the volume pattern from a filename
+    fn detect_pattern(path: &Path) -> Option<VolumePattern> {
+        let name = path.file_name()?.to_str()?.to_lowercase();
+
+        // Check for .partN.rar pattern (RAR5 new style)
+        if name.contains(".part") && name.ends_with(".rar") {
+            return Some(VolumePattern::RarNew);
+        }
+
+        // Check for .7z.NNN pattern
+        if let Some(pos) = name.rfind(".7z.") {
+            let suffix = &name[pos + 4..];
+            if suffix.chars().all(|c| c.is_ascii_digit()) {
+                return Some(VolumePattern::SevenZ);
+            }
+        }
+
+        // Get the extension
+        let ext = path.extension()?.to_str()?.to_lowercase();
+
+        match ext.as_str() {
+            // Numeric extensions like .001, .002
+            s if s.len() == 3 && s.chars().all(|c| c.is_ascii_digit()) => {
+                Some(VolumePattern::Numeric3)
+            }
+            // ZIP and WinZip split: .zip, .z01, .z02
+            "zip" => Some(VolumePattern::WinZip),
+            s if s.starts_with('z') && s.len() == 3 => Some(VolumePattern::WinZip),
+            // RAR old style: .rar, .r00, .r01
+            "rar" => Some(VolumePattern::RarOld),
+            s if s.starts_with('r') && s.len() == 3 => Some(VolumePattern::RarOld),
+            // ACE style: .ace, .c00, .c01
+            "ace" => Some(VolumePattern::Ace),
+            s if s.starts_with('c') && s.len() == 3 => Some(VolumePattern::Ace),
+            // ARJ style: .arj, .a01, .a02
+            "arj" => Some(VolumePattern::Arj),
+            s if s.starts_with('a') && s.len() == 3 && s != "ace" && s != "arj" => {
+                Some(VolumePattern::Arj)
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the base name for finding other volumes (without volume-specific extension)
+    fn get_base_for_pattern(path: &Path, pattern: VolumePattern) -> Option<PathBuf> {
+        let parent = path.parent()?;
+        let name = path.file_name()?.to_str()?;
+
+        match pattern {
+            VolumePattern::RarNew => {
+                // Remove .partN.rar to get base
+                // e.g., "archive.part1.rar" -> "archive"
+                let lower = name.to_lowercase();
+                if let Some(pos) = lower.find(".part") {
+                    let base = &name[..pos];
+                    return Some(parent.join(base));
+                }
+                None
+            }
+            VolumePattern::SevenZ => {
+                // Remove .7z.NNN to get base
+                // e.g., "archive.7z.001" -> "archive"
+                let lower = name.to_lowercase();
+                if let Some(pos) = lower.rfind(".7z.") {
+                    let base = &name[..pos];
+                    return Some(parent.join(base));
+                }
+                None
+            }
+            _ => {
+                // For other patterns, just remove the extension
+                let stem = path.file_stem()?.to_str()?;
+                Some(parent.join(stem))
+            }
+        }
+    }
+
+    /// Check if a file matches the volume pattern for a given base
+    fn matches_pattern(path: &Path, base: &Path, pattern: VolumePattern) -> bool {
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_lowercase(),
+            None => return false,
+        };
+
+        let base_name = match base.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_lowercase(),
+            None => return false,
+        };
+
+        match pattern {
+            VolumePattern::Numeric3 => {
+                // base.001, base.002, ...
+                if !name.starts_with(&base_name) {
+                    return false;
+                }
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                ext.len() == 3 && ext.chars().all(|c| c.is_ascii_digit())
+            }
+            VolumePattern::WinZip => {
+                // base.zip, base.z01, base.z02, ...
+                if !name.starts_with(&base_name) {
+                    return false;
+                }
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                ext == "zip"
+                    || (ext.starts_with('z')
+                        && ext.len() == 3
+                        && ext[1..].chars().all(|c| c.is_ascii_digit()))
+            }
+            VolumePattern::RarOld => {
+                // base.rar, base.r00, base.r01, ...
+                if !name.starts_with(&base_name) {
+                    return false;
+                }
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                ext == "rar"
+                    || (ext.starts_with('r')
+                        && ext.len() == 3
+                        && ext[1..].chars().all(|c| c.is_ascii_digit()))
+            }
+            VolumePattern::RarNew => {
+                // base.part1.rar, base.part2.rar, ...
+                if !name.starts_with(&base_name) {
+                    return false;
+                }
+                name.contains(".part") && name.ends_with(".rar")
+            }
+            VolumePattern::SevenZ => {
+                // base.7z.001, base.7z.002, ...
+                if !name.starts_with(&base_name) {
+                    return false;
+                }
+                if let Some(pos) = name.rfind(".7z.") {
+                    let suffix = &name[pos + 4..];
+                    return suffix.chars().all(|c| c.is_ascii_digit());
+                }
+                false
+            }
+            VolumePattern::Ace => {
+                // base.ace, base.c00, base.c01, ...
+                if !name.starts_with(&base_name) {
+                    return false;
+                }
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                ext == "ace"
+                    || (ext.starts_with('c')
+                        && ext.len() == 3
+                        && ext[1..].chars().all(|c| c.is_ascii_digit()))
+            }
+            VolumePattern::Arj => {
+                // base.arj, base.a01, base.a02, ...
+                if !name.starts_with(&base_name) {
+                    return false;
+                }
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                ext == "arj"
+                    || (ext.starts_with('a')
+                        && ext.len() == 3
+                        && ext[1..].chars().all(|c| c.is_ascii_digit()))
+            }
+        }
+    }
+
+    /// Extract volume number from a path for sorting
+    fn get_volume_number(path: &Path, pattern: VolumePattern) -> u32 {
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_lowercase(),
+            None => return u32::MAX,
+        };
+
+        match pattern {
+            VolumePattern::Numeric3 | VolumePattern::SevenZ => {
+                // Extract last numeric extension
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                ext.parse().unwrap_or(u32::MAX)
+            }
+            VolumePattern::WinZip => {
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ext == "zip" {
+                    0
+                } else if ext.starts_with('z') {
+                    ext[1..].parse().unwrap_or(u32::MAX)
                 } else {
-                    format!("a{:02}", volume_number)
+                    u32::MAX
                 }
             }
-            ArchiveFormat::Rar => {
-                if volume_number == 0 {
-                    "rar".to_string()
+            VolumePattern::RarOld => {
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ext == "rar" {
+                    0
+                } else if ext.starts_with('r') {
+                    // .r00 = volume 1, .r01 = volume 2, etc.
+                    ext[1..].parse::<u32>().map(|n| n + 1).unwrap_or(u32::MAX)
                 } else {
-                    format!("r{:02}", volume_number - 1)
+                    u32::MAX
                 }
             }
-            // Add more formats as needed
-            _ => format!("{:03}", volume_number),
+            VolumePattern::RarNew => {
+                // Extract number from .partN.rar
+                if let Some(start) = name.find(".part") {
+                    let rest = &name[start + 5..];
+                    if let Some(end) = rest.find('.') {
+                        return rest[..end].parse().unwrap_or(u32::MAX);
+                    }
+                }
+                u32::MAX
+            }
+            VolumePattern::Ace => {
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ext == "ace" {
+                    0
+                } else if ext.starts_with('c') {
+                    // .c00 = volume 1, .c01 = volume 2, etc.
+                    ext[1..].parse::<u32>().map(|n| n + 1).unwrap_or(u32::MAX)
+                } else {
+                    u32::MAX
+                }
+            }
+            VolumePattern::Arj => {
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ext == "arj" {
+                    0
+                } else if ext.starts_with('a') {
+                    ext[1..].parse().unwrap_or(u32::MAX)
+                } else {
+                    u32::MAX
+                }
+            }
+        }
+    }
+
+    /// Find all volumes for an archive
+    fn find_all_volumes(archive_path: &Path) -> Vec<PathBuf> {
+        let pattern = match Self::detect_pattern(archive_path) {
+            Some(p) => p,
+            None => {
+                // No pattern detected, just return the single file
+                return vec![archive_path.to_path_buf()];
+            }
+        };
+
+        let base = match Self::get_base_for_pattern(archive_path, pattern) {
+            Some(b) => b,
+            None => return vec![archive_path.to_path_buf()],
+        };
+
+        let parent = match archive_path.parent() {
+            Some(p) => p,
+            None => return vec![archive_path.to_path_buf()],
+        };
+
+        // Read directory and find matching files
+        let mut volumes: Vec<PathBuf> = match std::fs::read_dir(parent) {
+            Ok(entries) => entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.is_file() && Self::matches_pattern(p, &base, pattern))
+                .collect(),
+            Err(_) => return vec![archive_path.to_path_buf()],
+        };
+
+        // Sort by volume number
+        volumes.sort_by_key(|p| Self::get_volume_number(p, pattern));
+
+        if volumes.is_empty() {
+            vec![archive_path.to_path_buf()]
+        } else {
+            volumes
         }
     }
 }
 
 impl VolumeProvider for FileVolumeProvider {
-    fn open_volume(&self, volume_number: u32) -> Option<Box<dyn Read>> {
-        let ext = self.get_volume_extension(volume_number);
+    fn open_volume(&self, volume_number: u32) -> Option<Box<dyn Read + Send>> {
+        let path = self.volume_paths.get(volume_number as usize)?;
 
-        // Try lowercase first, then uppercase (DOS compatibility)
-        let path_lower = self.base_path.with_extension(&ext);
-        let path_upper = self.base_path.with_extension(ext.to_uppercase());
-
-        let (path, file) = if let Ok(f) = File::open(&path_lower) {
-            (path_lower, f)
-        } else if let Ok(f) = File::open(&path_upper) {
-            (path_upper, f)
-        } else {
-            return None;
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(_) => return None,
         };
 
         if volume_number > 0 {
             println!("  Opening volume: {}", path.display());
         }
 
-        Some(Box::new(BufReader::new(file)) as Box<dyn Read>)
+        Some(Box::new(BufReader::new(file)) as Box<dyn Read + Send>)
     }
 }
 
@@ -283,13 +658,7 @@ fn cmd_extract(
         archive_path.display()
     );
 
-    // Create volume provider for multi-volume support
-    let volume_provider = Arc::new(FileVolumeProvider::new(archive_path.to_path_buf(), format));
-
-    let file = File::open(archive_path)?;
-    let mut archive = UnifiedArchive::open_with_format(file, format)?;
-
-    // Set up options with password and volume provider
+    // Set up options with password
     let options = match password {
         Some(pwd) => {
             println!("Using password for decryption");
@@ -297,8 +666,8 @@ fn cmd_extract(
         }
         None => ArchiveOptions::new(),
     };
-    let options = options.with_volume_provider_arc(volume_provider);
-    archive.set_options(options.clone());
+
+    let mut archive = open_archive_auto(archive_path, format, options.clone())?;
 
     // For single-file formats, derive the output filename from the archive name
     if matches!(
@@ -306,7 +675,7 @@ fn cmd_extract(
         ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
     ) {
         if let Some(stem) = archive_path.file_stem() {
-            archive.set_single_file_name(stem.to_string_lossy().to_string());
+            archive.set_single_file_name_box(stem.to_string_lossy().to_string());
         }
     }
 
@@ -316,7 +685,7 @@ fn cmd_extract(
     let mut count = 0;
     let mut errors = 0;
 
-    while let Some(entry) = archive.next_entry()? {
+    while let Some(entry) = archive.next_entry_box()? {
         let output_path = output_dir.join(entry.file_name());
 
         // Check if file exists
@@ -326,7 +695,7 @@ fn cmd_extract(
                 entry.name()
             );
             // Still need to skip the entry data
-            if let Err(e) = archive.skip(&entry) {
+            if let Err(e) = archive.skip_box(&entry) {
                 if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof)
                 {
                     return Err(e);
@@ -342,7 +711,7 @@ fn cmd_extract(
 
         print!("  {} ({} bytes)... ", entry.name(), entry.original_size());
 
-        match archive.read_with_options(&entry, &options) {
+        match archive.read_with_options_box(&entry, &options) {
             Ok(data) => {
                 fs::write(&output_path, &data)?;
                 println!("OK");

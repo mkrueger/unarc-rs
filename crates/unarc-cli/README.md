@@ -4,6 +4,7 @@
 [![License](https://img.shields.io/crates/l/unarc-cli.svg)](https://github.com/mkrueger/unarc-rs)
 
 A command-line tool for listing and extracting files from various archive formats, with a focus on legacy/retro formats from the BBS era.
+No other command line clients required. Everything in an all in one package. List/Extract/Retrieve lost passwords - everything possible with unarc.
 
 ## Installation
 
@@ -49,6 +50,11 @@ unarc extract archive.arj                    # Extract to current directory
 unarc x archive.zip -o ./output              # Extract to specific directory
 unarc extract -f archive.rar                 # Overwrite existing files
 unarc extract -p secret encrypted.arj        # Decrypt with password
+
+# Multi-volume archives (auto-detects all volumes)
+unarc extract archive.zip.001 -o ./output    # Split ZIP (.001, .002, ...)
+unarc extract archive.7z.001 -o ./output     # Split 7z (.7z.001, .7z.002, ...)
+unarc extract archive.z01 -o ./output        # WinZip style (.z01, .z02, .zip)
 ```
 
 ### Show Supported Formats
@@ -145,29 +151,29 @@ Options:
 
 ## Supported Formats
 
-| Format | Extensions | Encryption Support |
-|--------|------------|-------------------|
-| **7z** | `.7z` | AES-256 |
-| **ZIP** | `.zip` | ZipCrypto, AES |
-| **RAR** | `.rar` | AES |
-| **LHA/LZH** | `.lha`, `.lzh` | - |
-| **TAR** | `.tar` | - |
-| **ACE** | `.ace` | Blowfish |
-| **ARJ** | `.arj` | Garble, GOST40 |
-| **ARC/PAK** | `.arc`, `.pak` | - |
-| **ZOO** | `.zoo` | - |
-| **HA** | `.ha` | - |
-| **UC2** | `.uc2` | - |
-| **SQ** | `.sq`, `.qqq` | - |
-| **SQZ** | `.sqz` | - |
-| **HYP** | `.hyp` | - |
-| **Z** | `.Z` | - |
-| **GZ** | `.gz` | - |
-| **BZ2** | `.bz2` | - |
-| **Pack-Ice** | `.pi9` | - |
-| **TGZ** | `.tgz`, `.tar.gz` | - |
-| **TBZ** | `.tbz`, `.tar.bz2` | - |
-| **TAR.Z** | `.tar.Z` | - |
+| Format | Extensions | Encryption | Multi-Volume |
+|--------|------------|------------|--------------|
+| **7z** | `.7z`, `.7z.001` | AES-256 | ✓ |
+| **ZIP** | `.zip`, `.zip.001`, `.z01` | ZipCrypto, AES | ✓ |
+| **RAR** | `.rar` | AES | - |
+| **LHA/LZH** | `.lha`, `.lzh` | - | - |
+| **TAR** | `.tar` | - | - |
+| **ACE** | `.ace` | Blowfish | - |
+| **ARJ** | `.arj` | Garble, GOST40 | - |
+| **ARC/PAK** | `.arc`, `.pak` | - | - |
+| **ZOO** | `.zoo` | - | - |
+| **HA** | `.ha` | - | - |
+| **UC2** | `.uc2` | - | - |
+| **SQ** | `.sq`, `.qqq` | - | - |
+| **SQZ** | `.sqz` | - | - |
+| **HYP** | `.hyp` | - | - |
+| **Z** | `.Z` | - | - |
+| **GZ** | `.gz` | - | - |
+| **BZ2** | `.bz2` | - | - |
+| **Pack-Ice** | `.pi9` | - | - |
+| **TGZ** | `.tgz`, `.tar.gz` | - | - |
+| **TBZ** | `.tbz`, `.tar.bz2` | - | - |
+| **TAR.Z** | `.tar.Z` | - | - |
 
 ## Examples
 

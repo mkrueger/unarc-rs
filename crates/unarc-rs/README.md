@@ -11,8 +11,8 @@ A Rust library for reading and extracting various archive formats, with a focus 
 
 | Format | Extensions | Compression Support |
 |--------|------------|---------------------|
-| **7z** | `.7z` | Full support via sevenz-rust2 |
-| **ZIP** | `.zip` | Full support via zip crate (including legacy methods) |
+| **7z** | `.7z` | Full support via sevenz-rust2, multi-volume |
+| **ZIP** | `.zip` | Full support via zip crate (including legacy methods), multi-volume |
 | **RAR** | `.rar` | Full support via unrar (RAR4 & RAR5) |
 | **LHA/LZH** | `.lha`, `.lzh` | Full support via delharc |
 | **TAR** | `.tar` | Full support via tar crate |
@@ -126,6 +126,8 @@ if let Some(format) = ArchiveFormat::from_path(Path::new("archive.zoo")) {
 
 - `open_path(path)` - Open archive from file path (auto-detects format)
 - `open(reader)` - Open archive from any `Read + Seek`
+- `open_multi_volume_zip(paths, options)` - Open multi-volume ZIP archive
+- `open_multi_volume_7z(paths, options)` - Open multi-volume 7z archive
 - `from_path(path)` - Detect format from path
 - `name()` / `extension()` / `extensions()` - Format metadata
 
@@ -182,9 +184,13 @@ while let Some(entry) = archive.next_entry()? {
 
 Full support via the [sevenz-rust2](https://crates.io/crates/sevenz-rust2) crate. Supports LZMA, LZMA2, and other 7z compression methods. AES-256 encrypted archives are supported (password required).
 
+**Multi-volume support:** Split 7z archives (`.7z.001`, `.7z.002`, etc.) are supported via `open_multi_volume_7z()`.
+
 ### ZIP
 
 Full support via the [zip](https://crates.io/crates/zip) crate with legacy compression methods enabled.
+
+**Multi-volume support:** Split ZIP archives (`.zip.001`, `.z01`/`.z02`/`.zip`, etc.) are supported via `open_multi_volume_zip()`.
 
 ### RAR
 

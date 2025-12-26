@@ -66,6 +66,7 @@ use crate::tbz::TbzArchive;
 use crate::tgz::TgzArchive;
 use crate::uc2::uc2_archive::{Uc2Archive, Uc2ArchiveEntry as Uc2Header};
 use crate::z::ZArchive;
+use crate::zip::multi_volume::MultiVolumeReader;
 use crate::zip::zip_archive::{ZipArchive, ZipFileHeader};
 use crate::zoo::dirent::DirectoryEntry as ZooEntry;
 use crate::zoo::zoo_archive::ZooArchive;
@@ -88,7 +89,7 @@ use crate::zoo::zoo_archive::ZooArchive;
 /// }
 ///
 /// impl VolumeProvider for FileVolumeProvider {
-///     fn open_volume(&self, volume_number: u32) -> Option<Box<dyn std::io::Read>> {
+///     fn open_volume(&self, volume_number: u32) -> Option<Box<dyn std::io::Read + Send>> {
 ///         // ARJ volumes: .arj, .a01, .a02, ...
 ///         let ext = if volume_number == 0 {
 ///             "arj".to_string()
@@ -97,7 +98,7 @@ use crate::zoo::zoo_archive::ZooArchive;
 ///         };
 ///         let path = self.base_path.with_extension(&ext);
 ///         println!("Opening volume: {}", path.display());
-///         File::open(&path).ok().map(|f| Box::new(BufReader::new(f)) as Box<dyn std::io::Read>)
+///         File::open(&path).ok().map(|f| Box::new(BufReader::new(f)) as Box<dyn std::io::Read + Send>)
 ///     }
 /// }
 /// ```
@@ -106,7 +107,7 @@ pub trait VolumeProvider: Send + Sync {
     ///
     /// Volume 0 is the first volume (the one being opened initially).
     /// Returns `None` if the volume cannot be opened.
-    fn open_volume(&self, volume_number: u32) -> Option<Box<dyn Read>>;
+    fn open_volume(&self, volume_number: u32) -> Option<Box<dyn Read + Send>>;
 }
 
 impl std::fmt::Debug for dyn VolumeProvider {
@@ -814,6 +815,152 @@ impl ArchiveFormat {
 
         Ok(archive)
     }
+
+    /// Open a multi-volume (split) ZIP archive from multiple files
+    ///
+    /// This function is for ZIP archives that have been split into multiple files,
+    /// typically named with sequential extensions like `.001`, `.002`, `.003`, etc.
+    ///
+    /// # Arguments
+    /// * `paths` - Paths to the volume files in order (first volume first)
+    /// * `options` - Archive options (password, etc.)
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::path::PathBuf;
+    /// use unarc_rs::unified::{ArchiveFormat, ArchiveOptions};
+    ///
+    /// let volumes = vec![
+    ///     PathBuf::from("archive.001"),
+    ///     PathBuf::from("archive.002"),
+    ///     PathBuf::from("archive.003"),
+    /// ];
+    ///
+    /// let mut archive = ArchiveFormat::open_multi_volume_zip(&volumes, ArchiveOptions::new()).unwrap();
+    ///
+    /// for entry in archive.entries_iter() {
+    ///     let entry = entry.unwrap();
+    ///     println!("File: {}", entry.name());
+    /// }
+    /// ```
+    pub fn open_multi_volume_zip<P: AsRef<Path>>(
+        paths: &[P],
+        options: ArchiveOptions,
+    ) -> Result<UnifiedArchive<MultiVolumeReader>> {
+        if paths.is_empty() {
+            return Err(ArchiveError::io_error(
+                "No volume files provided for multi-volume ZIP archive",
+            ));
+        }
+
+        // Get sizes of all volumes
+        let mut volume_sizes = Vec::with_capacity(paths.len());
+        for path in paths {
+            let metadata = std::fs::metadata(path.as_ref())?;
+            volume_sizes.push(metadata.len());
+        }
+
+        // Create volume provider from file paths
+        let paths_owned: Vec<std::path::PathBuf> =
+            paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
+        let volume_provider = Arc::new(FileVolumeProvider { paths: paths_owned });
+
+        // Create the multi-volume reader
+        let reader = MultiVolumeReader::new(volume_provider.clone(), volume_sizes);
+
+        // Open ZIP archive with the multi-volume reader
+        let password = options.password().map(|s| s.to_string());
+        let mut archive = ZipArchive::new(reader)?;
+        if let Some(ref pwd) = password {
+            archive.set_password(pwd.as_bytes());
+        }
+
+        Ok(UnifiedArchive {
+            inner: ArchiveInner::Zip(archive),
+            format: ArchiveFormat::Zip,
+            single_file_name: None,
+            options,
+        })
+    }
+
+    /// Open a multi-volume (split) 7z archive from multiple files
+    ///
+    /// This function is for 7z archives that have been split into multiple files,
+    /// typically named with sequential extensions like `.7z.001`, `.7z.002`, `.7z.003`, etc.
+    ///
+    /// # Arguments
+    /// * `paths` - Paths to the volume files in order (first volume first)
+    /// * `options` - Archive options (password, etc.)
+    ///
+    /// # Example
+    /// ```no_run
+    /// use std::path::PathBuf;
+    /// use unarc_rs::unified::{ArchiveFormat, ArchiveOptions};
+    ///
+    /// let volumes = vec![
+    ///     PathBuf::from("archive.7z.001"),
+    ///     PathBuf::from("archive.7z.002"),
+    ///     PathBuf::from("archive.7z.003"),
+    /// ];
+    ///
+    /// let mut archive = ArchiveFormat::open_multi_volume_7z(&volumes, ArchiveOptions::new()).unwrap();
+    ///
+    /// for entry in archive.entries_iter() {
+    ///     let entry = entry.unwrap();
+    ///     println!("File: {}", entry.name());
+    /// }
+    /// ```
+    pub fn open_multi_volume_7z<P: AsRef<Path>>(
+        paths: &[P],
+        options: ArchiveOptions,
+    ) -> Result<UnifiedArchive<MultiVolumeReader>> {
+        if paths.is_empty() {
+            return Err(ArchiveError::io_error(
+                "No volume files provided for multi-volume 7z archive",
+            ));
+        }
+
+        // Get sizes of all volumes
+        let mut volume_sizes = Vec::with_capacity(paths.len());
+        for path in paths {
+            let metadata = std::fs::metadata(path.as_ref())?;
+            volume_sizes.push(metadata.len());
+        }
+
+        // Create volume provider from file paths
+        let paths_owned: Vec<std::path::PathBuf> =
+            paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
+        let volume_provider = Arc::new(FileVolumeProvider { paths: paths_owned });
+
+        // Create the multi-volume reader
+        let reader = MultiVolumeReader::new(volume_provider.clone(), volume_sizes);
+
+        // Open 7z archive with the multi-volume reader
+        let password = options.password().map(|s| s.to_string());
+        let archive = SevenZArchive::new_with_password(reader, password)?;
+
+        Ok(UnifiedArchive {
+            inner: ArchiveInner::SevenZ(archive),
+            format: ArchiveFormat::SevenZ,
+            single_file_name: None,
+            options,
+        })
+    }
+}
+
+/// File-based volume provider for multi-volume archives
+struct FileVolumeProvider {
+    paths: Vec<std::path::PathBuf>,
+}
+
+impl VolumeProvider for FileVolumeProvider {
+    fn open_volume(&self, volume_number: u32) -> Option<Box<dyn Read + Send>> {
+        self.paths.get(volume_number as usize).and_then(|path| {
+            File::open(path)
+                .ok()
+                .map(|f| Box::new(BufReader::new(f)) as Box<dyn Read + Send>)
+        })
+    }
 }
 
 /// Unified archive entry containing metadata about a file in an archive
@@ -1069,6 +1216,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                 let mut archive = AceArchive::new(reader)?;
                 if let Some(ref pwd) = password {
                     archive.set_password(pwd);
+                }
+                if let Some(ref provider) = options.volume_provider {
+                    archive.set_volume_provider(provider.clone());
                 }
                 ArchiveInner::Ace(archive)
             }

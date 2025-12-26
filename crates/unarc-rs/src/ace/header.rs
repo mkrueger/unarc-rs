@@ -15,7 +15,7 @@ pub mod header_type {
     pub const RECOVERY64B: u8 = 4;
 }
 
-/// Header flags
+/// Header flags for MAIN header
 #[allow(dead_code)]
 pub mod header_flags {
     pub const ADDSIZE: u16 = 0x0001;
@@ -26,11 +26,19 @@ pub mod header_flags {
     pub const LOCKED: u16 = 0x0020;
     pub const PROTECTED: u16 = 0x0040;
     pub const PASSWORD: u16 = 0x0080;
+    // Main header specific flags
+    pub const V20FORMAT: u16 = 0x0100;
+    pub const SFX: u16 = 0x0200;
+    pub const LIMITSFXJR: u16 = 0x0400;
     pub const MULTIVOLUME: u16 = 0x0800;
-    pub const VOLUME_FIRST: u16 = 0x1000;
-    pub const VOLUME_LAST: u16 = 0x2000;
-    pub const CONTINUED_PREV: u16 = 0x4000;
-    pub const CONTINUED_NEXT: u16 = 0x8000;
+    pub const ADVERT: u16 = 0x1000;
+    pub const RECOVERY: u16 = 0x2000;
+    pub const LOCKED_MAIN: u16 = 0x4000;
+    pub const SOLID_MAIN: u16 = 0x8000;
+    // File header specific flags (different meaning for same bits)
+    pub const NTSECURITY: u16 = 0x0400;
+    pub const CONTINUED_PREV: u16 = 0x1000;
+    pub const CONTINUED_NEXT: u16 = 0x2000;
 }
 
 /// Compression types

@@ -18,22 +18,22 @@ This workspace contains two crates:
 
 ### Archive Formats
 
-| Format | Extensions | Compression | Encryption |
-|--------|------------|-------------|------------|
-| **7z** | `.7z` | LZMA, LZMA2, etc. | AES-256 ✓ |
-| **ZIP** | `.zip` | Deflate, legacy methods | ZipCrypto, AES ✓ |
-| **RAR** | `.rar` | RAR4 & RAR5 | AES ✓ |
-| **LHA/LZH** | `.lha`, `.lzh` | Full support | - |
-| **TAR** | `.tar` | Full support | - |
-| **ACE** | `.ace` | LZ77, Blocked | Blowfish ✓ |
-| **ARJ** | `.arj` | Store, Method 1-4 | Garble, GOST40 ✓ |
-| **ARC/PAK** | `.arc`, `.pak` | Full support (all methods incl. Crushed, Distilled) | - |
-| **ZOO** | `.zoo` | Store, LZW, LH5 | - |
-| **HA** | `.ha` | Store, ASC, HSC | - |
-| **UC2** | `.uc2` | Full support | - |
-| **SQ/SQ2** | `.sq`, `.qqq` | Full support | - |
-| **SQZ** | `.sqz` | Stored, Squeeze 1-4 | - |
-| **HYP** | `.hyp` | Full support | - |
+| Format | Extensions | Compression | Encryption | Multi-Volume |
+|--------|------------|-------------|------------|--------------|
+| **7z** | `.7z` | LZMA, LZMA2, etc. | AES-256 ✓ | ✓ |
+| **ZIP** | `.zip` | Deflate, legacy methods | ZipCrypto, AES ✓ | ✓ |
+| **RAR** | `.rar` | RAR4 & RAR5 | AES ✓ | - |
+| **LHA/LZH** | `.lha`, `.lzh` | Full support | - | - |
+| **TAR** | `.tar` | Full support | - | - |
+| **ACE** | `.ace` | LZ77, Blocked | Blowfish ✓ | - |
+| **ARJ** | `.arj` | Store, Method 1-4 | Garble, GOST40 ✓ | - |
+| **ARC/PAK** | `.arc`, `.pak` | Full support (all methods incl. Crushed, Distilled) | - | - |
+| **ZOO** | `.zoo` | Store, LZW, LH5 | - | - |
+| **HA** | `.ha` | Store, ASC, HSC | - | - |
+| **UC2** | `.uc2` | Full support | - | - |
+| **SQ/SQ2** | `.sq`, `.qqq` | Full support | - | - |
+| **SQZ** | `.sqz` | Stored, Squeeze 1-4 | - | - |
+| **HYP** | `.hyp` | Full support | - | - |
 
 ### Single-File Compression
 
@@ -69,6 +69,10 @@ unarc extract archive.zip -o ./output
 
 # Extract encrypted archive
 unarc extract -p secret encrypted.arj
+
+# Extract multi-volume archive (auto-detects all volumes)
+unarc extract archive.zip.001 -o ./output
+unarc extract archive.7z.001 -o ./output
 ```
 
 ### Library

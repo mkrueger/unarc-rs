@@ -78,7 +78,7 @@ struct TestVolumeProvider {
 }
 
 impl VolumeProvider for TestVolumeProvider {
-    fn open_volume(&self, volume_number: u32) -> Option<Box<dyn std::io::Read>> {
+    fn open_volume(&self, volume_number: u32) -> Option<Box<dyn std::io::Read + Send>> {
         match volume_number {
             0 => Some(Box::new(Cursor::new(self.volume0))),
             1 => Some(Box::new(Cursor::new(self.volume1))),
