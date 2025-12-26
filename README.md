@@ -14,6 +14,12 @@ This workspace contains two crates:
 | [**unarc-rs**](crates/unarc-rs) | Library for reading archive formats |
 | [**unarc-cli**](crates/unarc-cli) | Command-line tool (`unarc`) |
 
+Install the CLI tool:
+
+```bash
+cargo install unarc-cli
+```
+
 ## Supported Formats
 
 ### Archive Formats
