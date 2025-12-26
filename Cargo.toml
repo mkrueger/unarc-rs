@@ -13,3 +13,9 @@ homepage = "https://github.com/mkrueger/unarc-rs"
 repository = "https://github.com/mkrueger/unarc-rs"
 license = "MIT OR Apache-2.0"
 
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+unwrap_used = "warn"
+

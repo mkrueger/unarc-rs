@@ -10,7 +10,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 ### Archive Formats
 
 | Format | Extensions | Compression | Encryption | Multi-Volume |
-|--------|------------|-------------|------------|--------------|
+| ------ | ---------- | ----------- | ---------- | ------------ |
 | **7z** | `.7z` | LZMA, LZMA2, etc. | AES-256 ✓ | ✓ |
 | **ZIP** | `.zip` | Deflate, legacy methods | ZipCrypto, AES ✓ | ✓ |
 | **RAR** | `.rar` | RAR4 & RAR5 | AES ✓ | — |
@@ -29,7 +29,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 ### Single-File Compression
 
 | Format | Extensions | Notes |
-|--------|------------|-------|
+| ------ | ---------- | ----- |
 | **Z** | `.Z` | Full support |
 | **GZ** | `.gz` | Gzip (Deflate) |
 | **BZ2** | `.bz2` | Bzip2 |
@@ -39,7 +39,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 ### Compressed Archives
 
 | Format | Extensions | Notes |
-|--------|------------|-------|
+| ------ | ---------- | ----- |
 | **TGZ** | `.tgz`, `.tar.gz` | Gzip-compressed TAR |
 | **TBZ** | `.tbz`, `.tbz2`, `.tar.bz2` | Bzip2-compressed TAR |
 | **TAR.Z** | `.tar.Z` | LZW-compressed TAR |
@@ -155,7 +155,7 @@ if let Some(format) = ArchiveFormat::from_path(Path::new("archive.zoo")) {
 Several formats support encrypted archives:
 
 | Format | Encryption Methods | Notes |
-|--------|-------------------|-------|
+| ------ | ------------------ | ----- |
 | **7z** | AES-256 | Strong encryption |
 | **ZIP** | ZipCrypto, AES-128/192/256 | ZipCrypto is weak |
 | **RAR** | AES-128/256 | Legacy RAR encryption is weak |
@@ -204,8 +204,7 @@ Full support via the excellent [delharc](https://crates.io/crates/delharc) crate
 
 ACE archive support with LZ77+Huffman decompression. Supports both ACE 1.0 (LZ77 mode) and ACE 2.0 (Blocked mode). Blowfish encryption is supported (password required). Multi-volume archives are not supported.
 
-https://github.com/droe/acefile
-
+See <https://github.com/droe/acefile> for format documentation.
 
 ### ARC
 
@@ -247,7 +246,7 @@ Contributions welcome! Contact me on the icy_board repo or via email if I miss i
 
 ## Related projects
 
-https://github.com/temisu/ancient
+- [ancient](https://github.com/temisu/ancient) - Decompression of many formats
 
 ## License
 

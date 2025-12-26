@@ -54,6 +54,7 @@ impl ArjPasswordVerifier {
     /// * `encryption_type` - The type of encryption used
     /// * `password_modifier` - Modifier byte for garble encryption
     /// * `file_time` - DOS file time for GOST key derivation
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         compressed_data: Vec<u8>,
         compression_method: CompressionMethod,

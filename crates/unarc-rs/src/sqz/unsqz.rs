@@ -448,7 +448,7 @@ fn read_c_len<R: SqzBitRead>(
                 "SQZ",
                 format!("PT decode failed while reading C lengths (i={i}, n={n}): {e}"),
             )
-        })? as u16;
+        })?;
         if sym <= 2 {
             let run = match sym {
                 0 => 1usize,
@@ -572,6 +572,7 @@ fn decode_len_code<R: SqzBitRead>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
     mut br: R,
     original_size: usize,
@@ -605,8 +606,8 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
     // This is critical for the first match which often references the end of the window
     // to copy leading spaces in text files.
     let mut window = vec![0u8; 0x8000];
-    for i in 0x7FC0..0x8000 {
-        window[i] = 0x20; // Fill last 64 bytes with space character
+    for item in window.iter_mut().take(0x8000).skip(0x7FC0) {
+        *item = 0x20; // Fill last 64 bytes with space character
     }
     let window_mask: usize = 0x7fff;
     let mut win_pos: usize = win_pos_init & window_mask;

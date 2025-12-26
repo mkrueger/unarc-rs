@@ -73,7 +73,7 @@ impl<T: Read + Seek> HaArchive<T> {
 
             if calculated_crc != header.crc32 {
                 return Err(ArchiveError::crc_mismatch(
-                    &header.full_path(),
+                    header.full_path(),
                     header.crc32,
                     calculated_crc,
                 ));

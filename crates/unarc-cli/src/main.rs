@@ -201,8 +201,8 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     println!("Archive: {} ({})", archive_path.display(), format.name());
     println!();
     println!(
-        "{:<40} {:>12} {:>12} {:>8} {:<12} {}",
-        "Name", "Compressed", "Original", "Ratio", "Method", "Encryption"
+        "{:<40} {:>12} {:>12} {:>8} {:<12} Encryption",
+        "Name", "Compressed", "Original", "Ratio", "Method"
     );
     println!("{}", "-".repeat(105));
 
@@ -523,8 +523,8 @@ impl FileVolumeProvider {
                     .to_lowercase();
                 if ext == "zip" {
                     0
-                } else if ext.starts_with('z') {
-                    ext[1..].parse().unwrap_or(u32::MAX)
+                } else if let Some(stripped) = ext.strip_prefix('z') {
+                    stripped.parse().unwrap_or(u32::MAX)
                 } else {
                     u32::MAX
                 }
@@ -537,9 +537,9 @@ impl FileVolumeProvider {
                     .to_lowercase();
                 if ext == "rar" {
                     0
-                } else if ext.starts_with('r') {
+                } else if let Some(stripped) = ext.strip_prefix('r') {
                     // .r00 = volume 1, .r01 = volume 2, etc.
-                    ext[1..].parse::<u32>().map(|n| n + 1).unwrap_or(u32::MAX)
+                    stripped.parse::<u32>().map(|n| n + 1).unwrap_or(u32::MAX)
                 } else {
                     u32::MAX
                 }
@@ -562,9 +562,9 @@ impl FileVolumeProvider {
                     .to_lowercase();
                 if ext == "ace" {
                     0
-                } else if ext.starts_with('c') {
+                } else if let Some(stripped) = ext.strip_prefix('c') {
                     // .c00 = volume 1, .c01 = volume 2, etc.
-                    ext[1..].parse::<u32>().map(|n| n + 1).unwrap_or(u32::MAX)
+                    stripped.parse::<u32>().map(|n| n + 1).unwrap_or(u32::MAX)
                 } else {
                     u32::MAX
                 }
@@ -577,8 +577,8 @@ impl FileVolumeProvider {
                     .to_lowercase();
                 if ext == "arj" {
                     0
-                } else if ext.starts_with('a') {
-                    ext[1..].parse().unwrap_or(u32::MAX)
+                } else if let Some(stripped) = ext.strip_prefix('a') {
+                    stripped.parse().unwrap_or(u32::MAX)
                 } else {
                     u32::MAX
                 }
@@ -737,8 +737,8 @@ fn cmd_extract(
 fn cmd_formats() -> Result<(), ArchiveError> {
     println!("Supported archive formats:\n");
     println!(
-        "{:<12} {:<25} {:<18} {}",
-        "Extension", "Format", "Magic Bytes", "Aliases"
+        "{:<12} {:<25} {:<18} Aliases",
+        "Extension", "Format", "Magic Bytes"
     );
     println!("{}", "-".repeat(80));
 

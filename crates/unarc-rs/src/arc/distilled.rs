@@ -272,7 +272,7 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>> {
     let code_length = input[2];
 
     // Validate header.
-    if num_nodes < 2 || num_nodes > MAX_NODES {
+    if !(2..=MAX_NODES).contains(&num_nodes) {
         return Err(ArchiveError::decompression_failed(
             "Distilled",
             format!("invalid node count: {num_nodes}"),
@@ -302,13 +302,7 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>> {
     // Decompress data.
     let mut output = Vec::new();
 
-    loop {
-        // Decode symbol from tree.
-        let sym = match tree.decode(&mut reader) {
-            Ok(s) => s,
-            Err(_) => break, // EOF or error.
-        };
-
+    while let Ok(sym) = tree.decode(&mut reader) {
         if sym < EOF_SYMBOL {
             // Literal byte.
             output.push(sym as u8);

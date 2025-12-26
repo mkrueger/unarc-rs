@@ -413,9 +413,7 @@ fn decompress_internal(
             tmp <<= 1;
             count += 1;
         }
-        if count > 0 {
-            count -= 1;
-        }
+        count = count.saturating_sub(1);
         if count > 0 {
             let buf_content = value >> (32 - count);
             let buf_len = count - if use_bytes { 24 } else { 0 };

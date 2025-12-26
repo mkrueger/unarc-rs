@@ -41,8 +41,8 @@ impl BinaryTreeTable {
         let mut storage = vec![0u16; leaf_count * 2];
 
         // Set leaf values
-        for idx in leaf_count..(2 * leaf_count) {
-            storage[idx] = initial_value;
+        for item in storage.iter_mut().take(2 * leaf_count).skip(leaf_count) {
+            *item = initial_value;
         }
 
         // Compute internal nodes bottom-up

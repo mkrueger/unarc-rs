@@ -175,8 +175,13 @@ impl<R: Read> HscDecoder<R> {
         let mut freq_next = vec![NULL_PTR; FREQ_BLOCK_POOL_SIZE];
 
         // Chain free blocks (starting after context pool reserved blocks)
-        for i in CONTEXT_POOL_SIZE..(FREQ_BLOCK_POOL_SIZE - 1) {
-            freq_next[i] = (i + 1) as u16;
+        for (i, item) in freq_next
+            .iter_mut()
+            .enumerate()
+            .take(FREQ_BLOCK_POOL_SIZE - 1)
+            .skip(CONTEXT_POOL_SIZE)
+        {
+            *item = (i + 1) as u16;
         }
         let free_block_head = CONTEXT_POOL_SIZE as u16;
 
@@ -186,8 +191,8 @@ impl<R: Read> HscDecoder<R> {
         // Initialize escape probability tracking
         let mut initial_escape = [0u8; MAX_ORDER + 1];
         initial_escape[0] = ESCAPE_COUNTER_LIMIT >> 1;
-        for i in 1..=MAX_ORDER {
-            initial_escape[i] = (ESCAPE_COUNTER_LIMIT >> 1) - 1;
+        for item in initial_escape.iter_mut().skip(1) {
+            *item = (ESCAPE_COUNTER_LIMIT >> 1) - 1;
         }
 
         Ok(Self {
@@ -230,7 +235,7 @@ impl<R: Read> HscDecoder<R> {
         let mut table = vec![0u16; HASH_TABLE_SIZE];
         let mut seed: i64 = 10;
 
-        for i in 0..HASH_TABLE_SIZE {
+        for item in table.iter_mut() {
             // Linear congruential generator step
             let quotient = seed / (2147483647i64 / 16807);
             let remainder = seed % (2147483647i64 / 16807);
@@ -240,7 +245,7 @@ impl<R: Read> HscDecoder<R> {
             } else {
                 product + 2147483647
             };
-            table[i] = (seed as u16) & ((HASH_TABLE_SIZE - 1) as u16);
+            *item = (seed as u16) & ((HASH_TABLE_SIZE - 1) as u16);
         }
 
         table
@@ -252,8 +257,8 @@ impl<R: Read> HscDecoder<R> {
         let mask = (HASH_TABLE_SIZE - 1) as u16;
         let mut h: u16 = 0;
 
-        for i in 0..length.min(4) {
-            h = self.hash_rand[((bytes[i] as u16).wrapping_add(h) & mask) as usize];
+        for byte in bytes.iter().take(length.min(4)) {
+            h = self.hash_rand[((*byte as u16).wrapping_add(h) & mask) as usize];
         }
 
         h

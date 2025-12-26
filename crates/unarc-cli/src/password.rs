@@ -3,6 +3,8 @@
 //! This module provides commands and utilities for testing passwords
 //! against encrypted archives.
 
+#![allow(clippy::while_let_loop)]
+
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -780,7 +782,7 @@ fn process_batch(
 
             let count = tested.fetch_add(1, Ordering::Relaxed) + 1;
 
-            if count % verbose_interval == 0 {
+            if count.is_multiple_of(verbose_interval) {
                 if let Some(file_name) = current_file {
                     eprint!(
                         "\r[{}] Tested {} passwords...",

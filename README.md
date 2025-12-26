@@ -10,7 +10,7 @@ A Rust library and CLI tool for reading and extracting various archive formats, 
 This workspace contains two crates:
 
 | Crate | Description |
-|-------|-------------|
+| ----- | ----------- |
 | [**unarc-rs**](crates/unarc-rs) | Library for reading archive formats |
 | [**unarc-cli**](crates/unarc-cli) | Command-line tool (`unarc`) |
 
@@ -25,7 +25,7 @@ cargo install unarc-cli
 ### Archive Formats
 
 | Format | Extensions | Compression | Encryption | Multi-Volume |
-|--------|------------|-------------|------------|--------------|
+| ------ | ---------- | ----------- | ---------- | ------------ |
 | **7z** | `.7z` | Full support | AES-256 ✓ | ✓ |
 | **ZIP** | `.zip` | Full support | ZipCrypto, AES ✓ | ✓ |
 | **RAR** | `.rar` | Full support | AES ✓ | — |
@@ -44,7 +44,7 @@ cargo install unarc-cli
 ### Single-File Compression
 
 | Format | Extensions | Notes |
-|--------|------------|-------|
+| ------ | ---------- | ----- |
 | **Z** | `.Z` | Unix compress (LZW) |
 | **GZ** | `.gz` | Gzip (Deflate) |
 | **BZ2** | `.bz2` | Bzip2 |
@@ -54,7 +54,7 @@ cargo install unarc-cli
 ### Compressed Archives
 
 | Format | Extensions |
-|--------|------------|
+| ------ | ---------- |
 | **TGZ** | `.tgz`, `.tar.gz` |
 | **TBZ** | `.tbz`, `.tar.bz2` |
 | **TAR.Z** | `.tar.Z` |

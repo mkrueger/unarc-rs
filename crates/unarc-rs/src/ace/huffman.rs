@@ -180,8 +180,8 @@ impl HuffmanTree {
         // Read width-of-widths
         let width_num_widths = (upper_width + 1) as usize;
         let mut width_widths = vec![0u8; width_num_widths];
-        for i in 0..width_num_widths {
-            width_widths[i] = bs.read_bits(WIDTH_WIDTH_BITS)? as u8;
+        for item in width_widths.iter_mut().take(width_num_widths) {
+            *item = bs.read_bits(WIDTH_WIDTH_BITS)? as u8;
         }
 
         let width_tree = Self::from_widths(&width_widths, MAX_WIDTH_WIDTH)?;
@@ -196,7 +196,7 @@ impl HuffmanTree {
             } else {
                 let length = (bs.read_bits(4)? + 4) as usize;
                 let length = length.min(num_widths - widths.len());
-                widths.extend(std::iter::repeat(0u8).take(length));
+                widths.extend(std::iter::repeat_n(0u8, length));
             }
         }
 

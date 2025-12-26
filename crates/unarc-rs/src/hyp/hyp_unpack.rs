@@ -42,7 +42,7 @@ impl<'a> BitReader<'a> {
             buffer,
             byte_pos: 0,
             bit_cnt: 8,
-            puffer_byte: buffer.get(0).copied().unwrap_or(0),
+            puffer_byte: buffer.first().copied().unwrap_or(0),
         }
     }
 

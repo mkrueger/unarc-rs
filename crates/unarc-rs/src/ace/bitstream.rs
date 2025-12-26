@@ -27,7 +27,7 @@ impl<R: Read> BitStream<R> {
         let _ = reader.read(&mut data);
 
         // Convert to 32-bit words (little-endian)
-        let mut buffer = Vec::with_capacity((size + 3) / 4);
+        let mut buffer = Vec::with_capacity(size.div_ceil(4));
         for chunk in data.chunks(4) {
             let mut bytes = [0u8; 4];
             bytes[..chunk.len()].copy_from_slice(chunk);

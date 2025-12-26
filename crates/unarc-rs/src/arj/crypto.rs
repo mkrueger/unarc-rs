@@ -309,7 +309,7 @@ impl Gost40 {
         let len = data.len();
 
         // Fast path: 8-byte aligned blocks
-        if len % 8 == 0 && self.byte_offset == 0 {
+        if len.is_multiple_of(8) && self.byte_offset == 0 {
             for chunk in data.chunks_mut(8) {
                 // Generate keystream
                 self.feedback = self.encrypt_block(&self.feedback);

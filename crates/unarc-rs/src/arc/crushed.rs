@@ -92,8 +92,8 @@ impl CrushedState {
         let mut table = vec![LzwEntry::default(); TABLE_SIZE];
 
         // Initialize literal entries (0-255).
-        for i in 0..256 {
-            table[i] = LzwEntry {
+        for (i, entry) in table.iter_mut().enumerate().take(256) {
+            *entry = LzwEntry {
                 parent: -1,
                 byte: i as u8,
             };
@@ -106,8 +106,8 @@ impl CrushedState {
 
         // Initialize usage counters.
         let mut usage = vec![0u8; TABLE_SIZE];
-        for i in 0..RESERVED_ENTRIES {
-            usage[i] = 4; // Root entries start with high usage.
+        for item in usage.iter_mut().take(RESERVED_ENTRIES) {
+            *item = 4; // Root entries start with high usage.
         }
 
         Self {

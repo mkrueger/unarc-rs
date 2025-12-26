@@ -32,7 +32,8 @@ unarc l archive.zip      # short alias
 ```
 
 Example output:
-```
+
+```text
 Archive: test.arj (ARJ)
 
 Name                                     Compressed     Original    Ratio Method       Encryption
@@ -87,7 +88,7 @@ unarc tp large_archive.rar -f passwords.txt -e "small_file.txt"
 
 List contents of an archive.
 
-```
+```text
 Usage: unarc list <ARCHIVE>
 
 Arguments:
@@ -98,7 +99,7 @@ Arguments:
 
 Extract files from an archive.
 
-```
+```text
 Usage: unarc extract [OPTIONS] <ARCHIVE>
 
 Arguments:
@@ -119,7 +120,7 @@ Show all supported archive formats with their extensions and magic bytes.
 
 Test passwords against an encrypted archive using parallel processing.
 
-```
+```text
 Usage: unarc try-passwords [OPTIONS] <ARCHIVE>
 
 Arguments:
@@ -135,6 +136,7 @@ Options:
 ```
 
 **Features:**
+
 - **Parallel processing** using all CPU cores (via rayon)
 - **Multiple input sources**: single file, directory of wordlists, or stdin
 - **Entry selection**: Use `-e` to pick a small file for faster password testing
@@ -143,7 +145,26 @@ Options:
 
 **Supported formats for password testing:** ARC, ARJ, ACE, ZIP, RAR, 7z
 
+#### Tutorial: Using SecLists for Password Testing
+
+[SecLists](https://github.com/danielmiessler/SecLists) is a collection of common wordlists for security testing, including password lists.
+
+```bash
+# 1. Clone SecLists (or download specific files)
+git clone --depth 1 https://github.com/danielmiessler/SecLists.git ~/SecLists
+
+# 2. Use a single password list
+unarc tp encrypted.zip -f ~/SecLists/Passwords/Common-Credentials/10k-most-common.txt
+
+# 3. Or use an entire directory of password lists
+unarc tp encrypted.arj -d ~/SecLists/Passwords/
+
+# 4. For faster testing, pick a small file in the archive
+unarc tp large_archive.7z -d ~/SecLists/Passwords/ -e "readme.txt"
+```
+
 **Performance** varies by format due to encryption complexity:
+
 - ARC: ~3.5 million passwords/sec (simple XOR)
 - ARJ: ~2,000 passwords/sec (Garble)
 - ZIP: ~50,000 passwords/sec (ZipCrypto)
@@ -152,7 +173,7 @@ Options:
 ## Supported Formats
 
 | Format | Extensions | Encryption | Multi-Volume |
-|--------|------------|------------|--------------|
+| ------ | ---------- | ---------- | ------------ |
 | **7z** | `.7z`, `.7z.001` | AES-256 | ✓ |
 | **ZIP** | `.zip`, `.zip.001`, `.z01` | ZipCrypto, AES | ✓ |
 | **RAR** | `.rar` | AES | — |
@@ -178,21 +199,25 @@ Options:
 ## Examples
 
 Extract an encrypted ARJ archive:
+
 ```bash
 unarc extract -p mypassword encrypted.arj -o ./extracted/
 ```
 
 List a 7z archive:
+
 ```bash
 unarc list backup.7z
 ```
 
 Extract all files from a ZOO archive, overwriting existing:
+
 ```bash
 unarc x -f old_archive.zoo
 ```
 
 Crack a password-protected archive:
+
 ```bash
 # First, see which encrypted files are available
 unarc tp archive.arj --stdin -e "?"  # Shows list of encrypted entries

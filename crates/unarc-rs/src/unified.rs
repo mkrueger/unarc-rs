@@ -641,7 +641,7 @@ impl ArchiveFormat {
             let checksum_area = &data[148..156];
             let is_checksum_space_or_digit = checksum_area
                 .iter()
-                .all(|&b| b == b' ' || b == b'0' || (b >= b'1' && b <= b'7'));
+                .all(|&b| b == b' ' || b == b'0' || (b'1'..=b'7').contains(&b));
             if has_null_in_name && is_checksum_space_or_digit {
                 // Could be TAR, but this is a weak heuristic
                 // Only return TAR if nothing else matched

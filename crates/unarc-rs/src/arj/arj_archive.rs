@@ -344,7 +344,7 @@ impl<T: Read + Seek> ArjArchive<T> {
             let checksum = crc32fast::hash(&decompressed);
             if checksum != continuation_header.original_crc32 {
                 return Err(ArchiveError::crc_mismatch(
-                    &format!("{} (volume {})", filename, self.current_volume),
+                    format!("{} (volume {})", filename, self.current_volume),
                     continuation_header.original_crc32,
                     checksum,
                 ));
