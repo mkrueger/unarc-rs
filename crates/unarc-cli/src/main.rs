@@ -151,7 +151,7 @@ fn open_archive_auto(
                 }
             }
             _ => {
-                // For other patterns (ARJ, ACE, RAR), the VolumeProvider handles it
+                // For other patterns (ARJ, ACE), the VolumeProvider handles it
             }
         }
     }

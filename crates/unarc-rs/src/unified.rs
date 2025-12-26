@@ -1311,8 +1311,14 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     pub fn set_options(&mut self, options: ArchiveOptions) {
         // Pass volume provider to inner archives that support multi-volume
         if let Some(ref provider) = options.volume_provider {
-            if let ArchiveInner::Arj(archive) = &mut self.inner {
-                archive.set_volume_provider(provider.clone());
+            match &mut self.inner {
+                ArchiveInner::Ace(archive) => {
+                    archive.set_volume_provider(provider.clone());
+                }
+                ArchiveInner::Arj(archive) => {
+                    archive.set_volume_provider(provider.clone());
+                }
+                _ => {}
             }
         }
         self.options = options;

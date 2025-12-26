@@ -20,20 +20,20 @@ This workspace contains two crates:
 
 | Format | Extensions | Compression | Encryption | Multi-Volume |
 |--------|------------|-------------|------------|--------------|
-| **7z** | `.7z` | LZMA, LZMA2, etc. | AES-256 ✓ | ✓ |
-| **ZIP** | `.zip` | Deflate, legacy methods | ZipCrypto, AES ✓ | ✓ |
-| **RAR** | `.rar` | RAR4 & RAR5 | AES ✓ | - |
-| **LHA/LZH** | `.lha`, `.lzh` | Full support | - | - |
-| **TAR** | `.tar` | Full support | - | - |
-| **ACE** | `.ace` | LZ77, Blocked | Blowfish ✓ | - |
-| **ARJ** | `.arj` | Store, Method 1-4 | Garble, GOST40 ✓ | - |
-| **ARC/PAK** | `.arc`, `.pak` | Full support (all methods incl. Crushed, Distilled) | - | - |
-| **ZOO** | `.zoo` | Store, LZW, LH5 | - | - |
-| **HA** | `.ha` | Store, ASC, HSC | - | - |
-| **UC2** | `.uc2` | Full support | - | - |
-| **SQ/SQ2** | `.sq`, `.qqq` | Full support | - | - |
-| **SQZ** | `.sqz` | Stored, Squeeze 1-4 | - | - |
-| **HYP** | `.hyp` | Full support | - | - |
+| **7z** | `.7z` | Full support | AES-256 ✓ | ✓ |
+| **ZIP** | `.zip` | Full support | ZipCrypto, AES ✓ | ✓ |
+| **RAR** | `.rar` | Full support | AES ✓ | TODO |
+| **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
+| **TAR** | `.tar` | Full support | — | — |
+| **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |
+| **ARJ** | `.arj` | Full support | Garble, GOST40 ✓ | — |
+| **ARC/PAK** | `.arc`, `.pak` | Full support | XOR ✓ | — |
+| **ZOO** | `.zoo` | Full support | — | — |
+| **HA** | `.ha` | Full support | — | — |
+| **UC2** | `.uc2` | Full support | — | — |
+| **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support | — | — |
+| **SQZ** | `.sqz` | Full support | — | — |
+| **HYP** | `.hyp` | Full support | — | — |
 
 ### Single-File Compression
 
@@ -81,7 +81,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unarc-rs = "0.5"
+unarc-rs = "0.6"
 ```
 
 ```rust

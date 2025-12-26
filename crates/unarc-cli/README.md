@@ -155,25 +155,25 @@ Options:
 |--------|------------|------------|--------------|
 | **7z** | `.7z`, `.7z.001` | AES-256 | ✓ |
 | **ZIP** | `.zip`, `.zip.001`, `.z01` | ZipCrypto, AES | ✓ |
-| **RAR** | `.rar` | AES | - |
-| **LHA/LZH** | `.lha`, `.lzh` | - | - |
-| **TAR** | `.tar` | - | - |
-| **ACE** | `.ace` | Blowfish | - |
-| **ARJ** | `.arj` | Garble, GOST40 | - |
-| **ARC/PAK** | `.arc`, `.pak` | - | - |
-| **ZOO** | `.zoo` | - | - |
-| **HA** | `.ha` | - | - |
-| **UC2** | `.uc2` | - | - |
-| **SQ** | `.sq`, `.qqq` | - | - |
-| **SQZ** | `.sqz` | - | - |
-| **HYP** | `.hyp` | - | - |
-| **Z** | `.Z` | - | - |
-| **GZ** | `.gz` | - | - |
-| **BZ2** | `.bz2` | - | - |
-| **Pack-Ice** | `.pi9` | - | - |
-| **TGZ** | `.tgz`, `.tar.gz` | - | - |
-| **TBZ** | `.tbz`, `.tar.bz2` | - | - |
-| **TAR.Z** | `.tar.Z` | - | - |
+| **RAR** | `.rar` | AES | — |
+| **LHA/LZH** | `.lha`, `.lzh` | — | — |
+| **TAR** | `.tar` | — | — |
+| **ACE** | `.ace` | Blowfish | ✓ |
+| **ARJ** | `.arj` | Garble, GOST40 | — |
+| **ARC/PAK** | `.arc`, `.pak` | XOR | — |
+| **ZOO** | `.zoo` | — | — |
+| **HA** | `.ha` | — | — |
+| **UC2** | `.uc2` | — | — |
+| **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | — | — |
+| **SQZ** | `.sqz` | — | — |
+| **HYP** | `.hyp` | — | — |
+| **Z** | `.Z` | — | — |
+| **GZ** | `.gz` | — | — |
+| **BZ2** | `.bz2` | — | — |
+| **Pack-Ice** | `.pi9` | — | — |
+| **TGZ** | `.tgz`, `.tar.gz` | — | — |
+| **TBZ** | `.tbz`, `.tar.bz2` | — | — |
+| **TAR.Z** | `.tar.Z` | — | — |
 
 ## Examples
 

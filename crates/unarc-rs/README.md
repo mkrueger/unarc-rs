@@ -9,22 +9,22 @@ A Rust library for reading and extracting various archive formats, with a focus 
 
 ### Archive Formats
 
-| Format | Extensions | Compression Support |
-|--------|------------|---------------------|
-| **7z** | `.7z` | Full support via sevenz-rust2, multi-volume |
-| **ZIP** | `.zip` | Full support via zip crate (including legacy methods), multi-volume |
-| **RAR** | `.rar` | Full support via unrar (RAR4 & RAR5) |
-| **LHA/LZH** | `.lha`, `.lzh` | Full support via delharc |
-| **TAR** | `.tar` | Full support via tar crate |
-| **ACE** | `.ace` | ACE 1.0 (LZ77) and ACE 2.0 (Blocked) |
-| **ARJ** | `.arj` | Full support |
-| **ARC/PAK** | `.arc`, `.pak` | Full support |
-| **ZOO** | `.zoo` Full support |
-| **HA** | `.ha` | Full support |
-| **UC2** | `.uc2` | Full support |
-| **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support |
-| **SQZ** | `.sqz` | Full support (stored + “Squeeze” methods 1–4) |
-| **HYP** | `.hyp` | Full support |
+| Format | Extensions | Compression | Encryption | Multi-Volume |
+|--------|------------|-------------|------------|--------------|
+| **7z** | `.7z` | LZMA, LZMA2, etc. | AES-256 ✓ | ✓ |
+| **ZIP** | `.zip` | Deflate, legacy methods | ZipCrypto, AES ✓ | ✓ |
+| **RAR** | `.rar` | RAR4 & RAR5 | AES ✓ | — |
+| **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
+| **TAR** | `.tar` | Full support | — | — |
+| **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |
+| **ARJ** | `.arj` | Full support | Garble, GOST40 ✓ | — |
+| **ARC/PAK** | `.arc`, `.pak` | Full support | XOR ✓ | — |
+| **ZOO** | `.zoo` | Full support | — | — |
+| **HA** | `.ha` | Full support | — | — |
+| **UC2** | `.uc2` | Full support | — | — |
+| **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support | — | — |
+| **SQZ** | `.sqz` | Full support | — | — |
+| **HYP** | `.hyp` | Full support | — | — |
 
 ### Single-File Compression
 
@@ -52,7 +52,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unarc-rs = "0.5"
+unarc-rs = "0.6"
 ```
 
 ## Quick Start
@@ -209,7 +209,7 @@ https://github.com/droe/acefile
 
 ### ARC
 
-Classic DOS archiver. Crushed & Distilled methods are not supported.
+Classic DOS archiver. Full support for all compression methods including Crushed (Method 10) and Distilled (Method 11).
 
 ARC/PAK can be password-decrypted (simple XOR), but the format has no reliable encryption flag in headers.
 
