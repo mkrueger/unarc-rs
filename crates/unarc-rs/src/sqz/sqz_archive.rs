@@ -25,8 +25,7 @@ impl<T: Read + Seek> SqzArchive<T> {
     }
 
     pub fn skip(&mut self, header: &FileHeader) -> Result<()> {
-        self.reader
-            .seek(std::io::SeekFrom::Current(header.compressed_size as i64))?;
+        self.reader.seek(std::io::SeekFrom::Current(header.compressed_size as i64))?;
         Ok(())
     }
 
@@ -36,18 +35,10 @@ impl<T: Read + Seek> SqzArchive<T> {
 
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
-            CompressionMethod::Compressed => super::unsqz::unsqz_compressed(
-                &compressed_buffer,
-                header.original_size as usize,
-                header.method,
-                header.crc32,
-            )?,
+            CompressionMethod::Compressed => super::unsqz::unsqz_compressed(&compressed_buffer, header.original_size as usize, header.method, header.crc32)?,
 
             CompressionMethod::Unknown(m) => {
-                return Err(ArchiveError::unsupported_method(
-                    "SQZ",
-                    format!("Unknown({})", m),
-                ));
+                return Err(ArchiveError::unsupported_method("SQZ", format!("Unknown({})", m)));
             }
         };
 
@@ -74,8 +65,7 @@ impl<T: Read + Seek> SqzArchive<T> {
                 self.reader.read_exact(&mut compressed_size)?;
                 let compressed_size = u16::from_le_bytes(compressed_size);
                 // Skip: flags(1) + crc32(4) + compressed_data(compressed_size)
-                self.reader
-                    .seek(std::io::SeekFrom::Current(1 + 4 + compressed_size as i64))?;
+                self.reader.seek(std::io::SeekFrom::Current(1 + 4 + compressed_size as i64))?;
                 self.get_next_entry()
             }
             2 => {

@@ -33,9 +33,7 @@ impl<T: Read> Bz2Archive<T> {
             return Err(ArchiveError::invalid_header("BZ2"));
         }
 
-        Ok(Self {
-            reader: Some(reader),
-        })
+        Ok(Self { reader: Some(reader) })
     }
 
     /// Skip the file (BZ2 contains only one file)
@@ -46,9 +44,10 @@ impl<T: Read> Bz2Archive<T> {
 
     /// Read and decompress the file
     pub fn read(&mut self) -> Result<Vec<u8>> {
-        let reader = self.reader.take().ok_or_else(|| {
-            ArchiveError::io_error("BZ2 archive already read or in invalid state")
-        })?;
+        let reader = self
+            .reader
+            .take()
+            .ok_or_else(|| ArchiveError::io_error("BZ2 archive already read or in invalid state"))?;
 
         // Reconstruct with the header we already consumed
         let header = [b'B', b'Z', b'h'];

@@ -62,13 +62,7 @@ impl ArcPasswordVerifier {
     /// * `expected_crc` - The CRC16 from the header
     /// * `original_size` - The uncompressed size
     /// * `entry_name` - Name of the entry (for debugging)
-    pub fn new(
-        compressed_data: Vec<u8>,
-        compression_method: CompressionMethod,
-        expected_crc: u16,
-        original_size: u32,
-        entry_name: String,
-    ) -> Self {
+    pub fn new(compressed_data: Vec<u8>, compression_method: CompressionMethod, expected_crc: u16, original_size: u32, entry_name: String) -> Self {
         Self {
             compressed_data: Arc::from(compressed_data.into_boxed_slice()),
             compression_method,
@@ -122,13 +116,8 @@ impl ArcPasswordVerifier {
                         decrypt_into(&self.compressed_data, password.as_bytes(), &mut decrypt_buf);
 
                         // Decompress and verify CRC using thread-local buffers
-                        self.decompress_and_verify_reuse(
-                            &decrypt_buf,
-                            &mut lzw,
-                            &mut lzw_buf,
-                            &mut rle_buf,
-                        )
-                        .unwrap_or(false)
+                        self.decompress_and_verify_reuse(&decrypt_buf, &mut lzw, &mut lzw_buf, &mut rle_buf)
+                            .unwrap_or(false)
                     })
                 })
             })
@@ -136,13 +125,7 @@ impl ArcPasswordVerifier {
     }
 
     /// Decompress data and verify CRC, reusing provided buffers.
-    fn decompress_and_verify_reuse(
-        &self,
-        decrypted: &[u8],
-        lzw: &mut lzw::Lzw,
-        lzw_buf: &mut Vec<u8>,
-        rle_buf: &mut Vec<u8>,
-    ) -> Result<bool> {
+    fn decompress_and_verify_reuse(&self, decrypted: &[u8], lzw: &mut lzw::Lzw, lzw_buf: &mut Vec<u8>, rle_buf: &mut Vec<u8>) -> Result<bool> {
         match self.compression_method {
             CompressionMethod::Unpacked(_) => {
                 // No decompression needed, just check CRC directly

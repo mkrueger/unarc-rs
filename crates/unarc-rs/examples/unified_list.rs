@@ -24,29 +24,19 @@ fn main() -> Result<(), ArchiveError> {
     let archive_path = Path::new(&args[1]);
 
     // Detect format from extension
-    let format = ArchiveFormat::from_path(archive_path).ok_or_else(|| {
-        ArchiveError::UnsupportedFormat(format!(
-            "Unsupported archive format: {:?}",
-            archive_path.extension()
-        ))
-    })?;
+    let format = ArchiveFormat::from_path(archive_path)
+        .ok_or_else(|| ArchiveError::UnsupportedFormat(format!("Unsupported archive format: {:?}", archive_path.extension())))?;
 
     println!("Archive: {} ({})", archive_path.display(), format.name());
     println!();
-    println!(
-        "{:<30} {:>12} {:>12} {:>8} {}",
-        "Name", "Compressed", "Original", "Ratio", "Method"
-    );
+    println!("{:<30} {:>12} {:>12} {:>8} Method", "Name", "Compressed", "Original", "Ratio");
     println!("{}", "-".repeat(80));
 
     let file = File::open(archive_path)?;
     let mut archive = UnifiedArchive::open_with_format(file, format)?;
 
     // For single-file formats (.Z, .gz, .bz2), derive the filename from the archive name
-    if matches!(
-        format,
-        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
-    ) {
+    if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
         if let Some(stem) = archive_path.file_stem() {
             archive.set_single_file_name(stem.to_string_lossy().to_string());
         }
@@ -85,8 +75,7 @@ fn main() -> Result<(), ArchiveError> {
 
         // Skip to next entry (don't decompress)
         if let Err(e) = archive.skip(&entry) {
-            if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == std::io::ErrorKind::UnexpectedEof)
-            {
+            if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == std::io::ErrorKind::UnexpectedEof) {
                 return Err(e);
             }
             break;
@@ -95,10 +84,7 @@ fn main() -> Result<(), ArchiveError> {
 
     println!("{}", "-".repeat(80));
     let total_ratio = if total_original > 0 {
-        format!(
-            "{:>6.1}%",
-            (total_compressed as f64 / total_original as f64) * 100.0
-        )
+        format!("{:>6.1}%", (total_compressed as f64 / total_original as f64) * 100.0)
     } else {
         "   N/A".to_string()
     };

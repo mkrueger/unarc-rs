@@ -36,9 +36,7 @@ impl<T: Read> GzArchive<T> {
         // We need to reconstruct the reader with the header
         // Since we can't "unread", we'll store the reader and handle this in read()
         // For simplicity, we'll create a chain
-        Ok(Self {
-            reader: Some(reader),
-        })
+        Ok(Self { reader: Some(reader) })
     }
 
     /// Skip the file (GZ contains only one file)

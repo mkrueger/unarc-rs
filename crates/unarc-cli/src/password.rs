@@ -103,17 +103,9 @@ pub fn cmd_try_passwords(
 
     let (verifier, format_name) = create_verifier(archive_path, format, entry_filter)?;
 
-    println!(
-        "Testing passwords for {} archive: {}",
-        format_name,
-        archive_path.display()
-    );
+    println!("Testing passwords for {} archive: {}", format_name, archive_path.display());
 
-    let mut info = format!(
-        "Testing against entry: {} ({} bytes original",
-        verifier.entry_name(),
-        verifier.original_size()
-    );
+    let mut info = format!("Testing against entry: {} ({} bytes original", verifier.entry_name(), verifier.original_size());
 
     if let Some(extra) = verifier.extra_info() {
         info.push_str(&format!(", {}", extra));
@@ -123,21 +115,11 @@ pub fn cmd_try_passwords(
     println!("{}", info);
     println!();
 
-    run_password_test(
-        &verifier,
-        password_file,
-        password_dir,
-        use_stdin,
-        verbose_interval,
-    )
+    run_password_test(&verifier, password_file, password_dir, use_stdin, verbose_interval)
 }
 
 /// Create a password verifier for the given archive
-fn create_verifier(
-    archive_path: &Path,
-    format: ArchiveFormat,
-    entry_filter: Option<&str>,
-) -> Result<(UnifiedPasswordVerifier, &'static str), ArchiveError> {
+fn create_verifier(archive_path: &Path, format: ArchiveFormat, entry_filter: Option<&str>) -> Result<(UnifiedPasswordVerifier, &'static str), ArchiveError> {
     match format {
         ArchiveFormat::Arc => {
             let file = File::open(archive_path)?;
@@ -173,9 +155,7 @@ fn create_verifier(
             }
 
             // No filter - take first entry
-            let header = archive.get_next_entry()?.ok_or_else(|| {
-                ArchiveError::io_error("Archive is empty")
-            })?;
+            let header = archive.get_next_entry()?.ok_or_else(|| ArchiveError::io_error("Archive is empty"))?;
 
             let verifier = archive.create_password_verifier(&header)?;
             Ok((UnifiedPasswordVerifier::Arc(verifier), "ARC"))
@@ -547,10 +527,7 @@ fn run_password_test(
         )));
     };
 
-    let use_stdin = use_stdin
-        || password_file
-            .map(|p| p.to_string_lossy() == "-")
-            .unwrap_or(false);
+    let use_stdin = use_stdin || password_file.map(|p| p.to_string_lossy() == "-").unwrap_or(false);
 
     let tested = AtomicUsize::new(0);
     let found = AtomicBool::new(false);
@@ -559,14 +536,7 @@ fn run_password_test(
 
     if use_stdin {
         println!("Reading passwords from stdin...");
-        let result = try_passwords_from_reader(
-            verifier,
-            io::stdin().lock(),
-            &tested,
-            &found,
-            verbose_interval,
-            None,
-        );
+        let result = try_passwords_from_reader(verifier, io::stdin().lock(), &tested, &found, verbose_interval, None);
         let tested_count = tested.load(Ordering::Relaxed);
         let elapsed = start_time.elapsed();
         if let Some(password) = result {
@@ -595,12 +565,7 @@ fn run_password_test(
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| pwd_file_path.display().to_string());
 
-            eprint!(
-                "\r[{}/{}] {}...",
-                file_idx + 1,
-                total_files,
-                truncate(&file_name, 40)
-            );
+            eprint!("\r[{}/{}] {}...", file_idx + 1, total_files, truncate(&file_name, 40));
 
             let pwd_file = match File::open(pwd_file_path) {
                 Ok(f) => f,
@@ -611,14 +576,7 @@ fn run_password_test(
             };
             let reader = BufReader::new(pwd_file);
 
-            let result = try_passwords_from_reader(
-                verifier,
-                reader,
-                &tested,
-                &found,
-                verbose_interval,
-                Some(&file_name),
-            );
+            let result = try_passwords_from_reader(verifier, reader, &tested, &found, verbose_interval, Some(&file_name));
 
             if let Some(password) = result {
                 eprintln!(); // Clear progress line
@@ -668,10 +626,7 @@ fn collect_password_files(dir: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
     Ok(files)
 }
 
-fn collect_password_files_recursive(
-    dir: &Path,
-    files: &mut Vec<PathBuf>,
-) -> Result<(), ArchiveError> {
+fn collect_password_files_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), ArchiveError> {
     if !dir.is_dir() {
         return Err(ArchiveError::Io(io::Error::new(
             io::ErrorKind::NotFound,
@@ -729,15 +684,7 @@ fn try_passwords_from_reader<R: BufRead>(
 
         // Process batch when full
         if batch.len() >= BATCH_SIZE {
-            if let Some(pwd) = process_batch(
-                &batch,
-                verifier,
-                tested,
-                found,
-                verbose_interval,
-                current_file,
-                &result,
-            ) {
+            if let Some(pwd) = process_batch(&batch, verifier, tested, found, verbose_interval, current_file, &result) {
                 return Some(pwd);
             }
             batch.clear();
@@ -746,15 +693,7 @@ fn try_passwords_from_reader<R: BufRead>(
 
     // Process remaining passwords
     if !batch.is_empty() && !found.load(Ordering::Relaxed) {
-        if let Some(pwd) = process_batch(
-            &batch,
-            verifier,
-            tested,
-            found,
-            verbose_interval,
-            current_file,
-            &result,
-        ) {
+        if let Some(pwd) = process_batch(&batch, verifier, tested, found, verbose_interval, current_file, &result) {
             return Some(pwd);
         }
     }
@@ -784,11 +723,7 @@ fn process_batch(
 
             if count.is_multiple_of(verbose_interval) {
                 if let Some(file_name) = current_file {
-                    eprint!(
-                        "\r[{}] Tested {} passwords...",
-                        truncate(file_name, 30),
-                        count
-                    );
+                    eprint!("\r[{}] Tested {} passwords...", truncate(file_name, 30), count);
                 } else {
                     eprint!("\rTested {} passwords...", count);
                 }
@@ -813,10 +748,5 @@ fn detect_format(path: &Path) -> Result<ArchiveFormat, ArchiveError> {
     }
 
     // Fall back to extension only
-    ArchiveFormat::from_path(path).ok_or_else(|| {
-        ArchiveError::UnsupportedFormat(format!(
-            "Unsupported or unrecognized archive format: {:?}",
-            path.extension()
-        ))
-    })
+    ArchiveFormat::from_path(path).ok_or_else(|| ArchiveError::UnsupportedFormat(format!("Unsupported or unrecognized archive format: {:?}", path.extension())))
 }

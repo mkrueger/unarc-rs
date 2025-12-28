@@ -35,10 +35,7 @@ pub struct ArcArchive<T: Read + Seek> {
 
 impl<T: Read + Seek> ArcArchive<T> {
     pub fn new(reader: T) -> Result<Self> {
-        Ok(Self {
-            reader,
-            password: None,
-        })
+        Ok(Self { reader, password: None })
     }
 
     /// Set the password for decrypting encrypted entries.
@@ -60,8 +57,7 @@ impl<T: Read + Seek> ArcArchive<T> {
     }
 
     pub fn skip(&mut self, header: &LocalFileHeader) -> Result<()> {
-        self.reader
-            .seek(std::io::SeekFrom::Current(header.compressed_size as i64))?;
+        self.reader.seek(std::io::SeekFrom::Current(header.compressed_size as i64))?;
         Ok(())
     }
 
@@ -89,20 +85,13 @@ impl<T: Read + Seek> ArcArchive<T> {
             }
             CompressionMethod::Distilled => super::distilled::decompress(&compressed_buffer)?,
             CompressionMethod::Unknown(m) => {
-                return Err(ArchiveError::unsupported_method(
-                    "ARC",
-                    format!("Unknown({})", m),
-                ));
+                return Err(ArchiveError::unsupported_method("ARC", format!("Unknown({})", m)));
             }
         };
         let mut state = State::<ARC>::new();
         state.update(&uncompressed);
         if state.get() != header.crc16 {
-            Err(ArchiveError::crc_mismatch(
-                &header.name,
-                header.crc16 as u32,
-                state.get() as u32,
-            ))
+            Err(ArchiveError::crc_mismatch(&header.name, header.crc16 as u32, state.get() as u32))
         } else {
             Ok(uncompressed)
         }
@@ -113,11 +102,7 @@ impl<T: Read + Seek> ArcArchive<T> {
     /// ARC/PAK has no reliable encryption flag in headers, so encryption is
     /// "best effort": if a password is set, the compressed data is XOR-decrypted
     /// before decompression and CRC verification.
-    pub fn read_with_password(
-        &mut self,
-        header: &LocalFileHeader,
-        password: Option<String>,
-    ) -> Result<Vec<u8>> {
+    pub fn read_with_password(&mut self, header: &LocalFileHeader, password: Option<String>) -> Result<Vec<u8>> {
         let old_password = self.password.take();
         self.password = password.map(|p| p.into_bytes());
         let result = self.read(header);
@@ -140,10 +125,7 @@ impl<T: Read + Seek> ArcArchive<T> {
     /// that can be used independently (and in parallel) to test passwords.
     ///
     /// The verifier is `Send + Sync` and can be safely used with rayon.
-    pub fn create_password_verifier(
-        &mut self,
-        header: &LocalFileHeader,
-    ) -> Result<ArcPasswordVerifier> {
+    pub fn create_password_verifier(&mut self, header: &LocalFileHeader) -> Result<ArcPasswordVerifier> {
         let mut compressed_data = vec![0; header.compressed_size as usize];
         self.reader.read_exact(&mut compressed_data)?;
 

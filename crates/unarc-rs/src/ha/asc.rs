@@ -48,10 +48,7 @@ impl BinaryTreeTable {
         // Compute internal nodes bottom-up
         Self::recompute_internals(&mut storage, leaf_count);
 
-        Self {
-            storage,
-            leaf_count,
-        }
+        Self { storage, leaf_count }
     }
 
     /// Recompute internal nodes from leaf values
@@ -311,16 +308,11 @@ impl<R: Read> AscDecoder<R> {
                     self.bytes_emitted += 1;
                 }
             } else if type_total > threshold {
-                self.coder
-                    .decode_update(lit_freq, type_total, type_total + 1)?;
+                self.coder.decode_update(lit_freq, type_total, type_total + 1)?;
                 self.type_model.record_match();
 
                 while self.bytes_emitted > self.pos_max_value {
-                    self.pos_table.add_frequency(
-                        self.pos_codes_active as usize,
-                        POS_STEP,
-                        TOTAL_MAX,
-                    );
+                    self.pos_table.add_frequency(self.pos_codes_active as usize, POS_STEP, TOTAL_MAX);
                     self.pos_codes_active += 1;
                     self.pos_max_value <<= 1;
                 }
@@ -337,8 +329,7 @@ impl<R: Read> AscDecoder<R> {
                     }
                 }
             } else {
-                self.coder
-                    .decode_update(type_total, type_total + 1, type_total + 1)?;
+                self.coder.decode_update(type_total, type_total + 1, type_total + 1)?;
                 break;
             }
         }

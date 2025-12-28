@@ -84,12 +84,10 @@ impl MultiVolumeReader {
     /// Open a specific volume and seek to offset within it.
     fn open_volume_at(&mut self, volume: u32, offset: u64) -> std::io::Result<()> {
         // Open the volume
-        let reader = self.volume_provider.open_volume(volume).ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Cannot open volume {}", volume),
-            )
-        })?;
+        let reader = self
+            .volume_provider
+            .open_volume(volume)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, format!("Cannot open volume {}", volume)))?;
 
         self.current_reader = Some(reader);
         self.current_volume = volume;
@@ -103,10 +101,7 @@ impl MultiVolumeReader {
                 let reader = self.current_reader.as_mut().unwrap();
                 let n = reader.read(&mut self.buffer[..to_read])?;
                 if n == 0 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        "Unexpected end of volume while seeking",
-                    ));
+                    return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "Unexpected end of volume while seeking"));
                 }
                 remaining -= n;
             }
@@ -187,9 +182,7 @@ impl Seek for MultiVolumeReader {
         // Find which volume contains this position
         if let Some((vol, offset)) = self.volume_for_position(new_pos) {
             // Need to reopen if we're seeking to a different volume or backwards
-            let need_reopen = self.current_reader.is_none()
-                || vol != self.current_volume
-                || new_pos < self.position;
+            let need_reopen = self.current_reader.is_none() || vol != self.current_volume || new_pos < self.position;
 
             if need_reopen {
                 self.current_reader = None;

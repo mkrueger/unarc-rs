@@ -32,10 +32,7 @@ impl HuffmanTree {
 
         let code = bs.peek_bits(self.max_width)?;
         if code as usize >= self.codes.len() {
-            return Err(ArchiveError::decompression_failed(
-                "huffman",
-                "invalid code",
-            ));
+            return Err(ArchiveError::decompression_failed("huffman", "invalid code"));
         }
 
         let symbol = self.codes[code as usize];
@@ -88,10 +85,7 @@ impl HuffmanTree {
             let wdt = sorted_widths[i];
 
             if wdt > max_width {
-                return Err(ArchiveError::decompression_failed(
-                    "huffman",
-                    "width exceeds maximum",
-                ));
+                return Err(ArchiveError::decompression_failed("huffman", "width exceeds maximum"));
             }
 
             let repeat = 1usize << (max_width - wdt);
@@ -101,10 +95,7 @@ impl HuffmanTree {
 
             let max_codes = 1usize << max_width;
             if codes.len() > max_codes {
-                return Err(ArchiveError::decompression_failed(
-                    "huffman",
-                    "too many codes",
-                ));
+                return Err(ArchiveError::decompression_failed("huffman", "too many codes"));
             }
         }
 
@@ -166,11 +157,7 @@ impl HuffmanTree {
     }
 
     /// Read a Huffman tree from a bit stream
-    pub fn read_from<R: Read>(
-        bs: &mut BitStream<R>,
-        max_width: u8,
-        num_codes: usize,
-    ) -> Result<Self> {
+    pub fn read_from<R: Read>(bs: &mut BitStream<R>, max_width: u8, num_codes: usize) -> Result<Self> {
         let num_widths = (bs.read_bits(9)? + 1) as usize;
         let num_widths = num_widths.min(num_codes + 1);
 
@@ -225,10 +212,12 @@ mod tests {
     use super::*;
 
     /// Test based on Python docstring:
+    /// ```text
     /// >>> k, v = [1, 0, 0, 1, 2, 0, 0], list(range(7))
     /// >>> Huffman._quicksort(k, v)
     /// >>> (k, v)
     /// ([2, 1, 1, 0, 0, 0, 0], [4, 0, 3, 5, 6, 2, 1])
+    /// ```
     #[test]
     fn test_quicksort() {
         let mut keys = [1u8, 0, 0, 1, 2, 0, 0];
@@ -250,10 +239,7 @@ mod tests {
         let tree = HuffmanTree::from_widths(&widths, 7).unwrap();
 
         println!("codes len: {}", tree.codes.len());
-        println!(
-            "first 20 codes: {:?}",
-            &tree.codes[..20.min(tree.codes.len())]
-        );
+        println!("first 20 codes: {:?}", &tree.codes[..20.min(tree.codes.len())]);
 
         // Python result: codes len: 128, first 20 codes all 0
         assert_eq!(tree.codes.len(), 128);
@@ -282,10 +268,7 @@ mod tests {
             used += 1;
         }
 
-        let first_used: Vec<_> = sorted_symbols[..used]
-            .iter()
-            .zip(sorted_widths[..used].iter())
-            .collect();
+        let first_used: Vec<_> = sorted_symbols[..used].iter().zip(sorted_widths[..used].iter()).collect();
         println!("First used (highest widths): {:?}", first_used);
 
         // Python: [(37, 11), (33, 11), (39, 11), (10, 8), (34, 7), (32, 6)]
@@ -422,10 +405,7 @@ mod tests {
 
         println!("Rust sorted (first 20 used):");
         for i in 0..20.min(used) {
-            println!(
-                "  [{i}] symbol={}, width={}",
-                sorted_symbols[i], sorted_widths[i]
-            );
+            println!("  [{i}] symbol={}, width={}", sorted_symbols[i], sorted_widths[i]);
         }
 
         // Python result (first 20):

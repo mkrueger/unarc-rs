@@ -175,12 +175,7 @@ impl<R: Read> HscDecoder<R> {
         let mut freq_next = vec![NULL_PTR; FREQ_BLOCK_POOL_SIZE];
 
         // Chain free blocks (starting after context pool reserved blocks)
-        for (i, item) in freq_next
-            .iter_mut()
-            .enumerate()
-            .take(FREQ_BLOCK_POOL_SIZE - 1)
-            .skip(CONTEXT_POOL_SIZE)
-        {
+        for (i, item) in freq_next.iter_mut().enumerate().take(FREQ_BLOCK_POOL_SIZE - 1).skip(CONTEXT_POOL_SIZE) {
             *item = (i + 1) as u16;
         }
         let free_block_head = CONTEXT_POOL_SIZE as u16;
@@ -240,11 +235,7 @@ impl<R: Read> HscDecoder<R> {
             let quotient = seed / (2147483647i64 / 16807);
             let remainder = seed % (2147483647i64 / 16807);
             let product = 16807i64 * remainder - (2147483647i64 % 16807) * quotient;
-            seed = if product > 0 {
-                product
-            } else {
-                product + 2147483647
-            };
+            seed = if product > 0 { product } else { product + 2147483647 };
             *item = (seed as u16) & ((HASH_TABLE_SIZE - 1) as u16);
         }
 
@@ -303,18 +294,9 @@ impl<R: Read> HscDecoder<R> {
         let mask = (HASH_TABLE_SIZE - 1) as u16;
 
         self.order_hashes[1] = self.hash_rand[self.context_window[0] as usize];
-        self.order_hashes[2] = self.hash_rand[(self.context_window[1] as u16)
-            .wrapping_add(self.order_hashes[1])
-            as usize
-            & mask as usize];
-        self.order_hashes[3] = self.hash_rand[(self.context_window[2] as u16)
-            .wrapping_add(self.order_hashes[2])
-            as usize
-            & mask as usize];
-        self.order_hashes[4] = self.hash_rand[(self.context_window[3] as u16)
-            .wrapping_add(self.order_hashes[3])
-            as usize
-            & mask as usize];
+        self.order_hashes[2] = self.hash_rand[(self.context_window[1] as u16).wrapping_add(self.order_hashes[1]) as usize & mask as usize];
+        self.order_hashes[3] = self.hash_rand[(self.context_window[2] as u16).wrapping_add(self.order_hashes[2]) as usize & mask as usize];
+        self.order_hashes[4] = self.hash_rand[(self.context_window[3] as u16).wrapping_add(self.order_hashes[3]) as usize & mask as usize];
 
         // Reset search state
         self.update_depth = 0;
@@ -365,10 +347,7 @@ impl<R: Read> HscDecoder<R> {
                     && self.ctx_bytes[idx][1] == self.context_window[1]
                     && self.ctx_bytes[idx][2] == self.context_window[2]
             }
-            2 => {
-                self.ctx_bytes[idx][0] == self.context_window[0]
-                    && self.ctx_bytes[idx][1] == self.context_window[1]
-            }
+            2 => self.ctx_bytes[idx][0] == self.context_window[0] && self.ctx_bytes[idx][1] == self.context_window[1],
             1 => self.ctx_bytes[idx][0] == self.context_window[0],
             0 => true,
             _ => false,
@@ -384,9 +363,7 @@ impl<R: Read> HscDecoder<R> {
 
         // New context: use initial escape counter
         if total == 1 {
-            return if self.initial_escape[self.ctx_length[idx] as usize]
-                >= (ESCAPE_COUNTER_LIMIT >> 1)
-            {
+            return if self.initial_escape[self.ctx_length[idx] as usize] >= (ESCAPE_COUNTER_LIMIT >> 1) {
                 2
             } else {
                 1
@@ -463,13 +440,10 @@ impl<R: Read> HscDecoder<R> {
 
         if block != NULL_PTR {
             // Decoded a character
-            self.coder
-                .decode_update(cumulative, cumulative + symbol_freq, total + escape)?;
+            self.coder.decode_update(cumulative, cumulative + symbol_freq, total + escape)?;
 
             // Update initial escape counter
-            if self.ctx_total_freq[idx] == 1
-                && self.initial_escape[self.ctx_length[idx] as usize] > 0
-            {
+            if self.ctx_total_freq[idx] == 1 && self.initial_escape[self.ctx_length[idx] as usize] > 0 {
                 self.initial_escape[self.ctx_length[idx] as usize] -= 1;
             }
 
@@ -483,13 +457,10 @@ impl<R: Read> HscDecoder<R> {
             Ok(self.freq_char[block as usize] as u16)
         } else {
             // Escape
-            self.coder
-                .decode_update(total, total + escape, total + escape)?;
+            self.coder.decode_update(total, total + escape, total + escape)?;
 
             // Update initial escape counter
-            if self.ctx_total_freq[idx] == 1
-                && self.initial_escape[self.ctx_length[idx] as usize] < ESCAPE_COUNTER_LIMIT
-            {
+            if self.ctx_total_freq[idx] == 1 && self.initial_escape[self.ctx_length[idx] as usize] < ESCAPE_COUNTER_LIMIT {
                 self.initial_escape[self.ctx_length[idx] as usize] += 1;
             }
 
@@ -560,12 +531,9 @@ impl<R: Read> HscDecoder<R> {
 
         if block != NULL_PTR {
             // Decoded a character
-            self.coder
-                .decode_update(cumulative, cumulative + symbol_freq, total + escape)?;
+            self.coder.decode_update(cumulative, cumulative + symbol_freq, total + escape)?;
 
-            if self.ctx_total_freq[idx] == 1
-                && self.initial_escape[self.ctx_length[idx] as usize] > 0
-            {
+            if self.ctx_total_freq[idx] == 1 && self.initial_escape[self.ctx_length[idx] as usize] > 0 {
                 self.initial_escape[self.ctx_length[idx] as usize] -= 1;
             }
 
@@ -577,12 +545,9 @@ impl<R: Read> HscDecoder<R> {
             Ok(self.freq_char[block as usize] as u16)
         } else {
             // Escape
-            self.coder
-                .decode_update(total, total + escape, total + escape)?;
+            self.coder.decode_update(total, total + escape, total + escape)?;
 
-            if self.ctx_total_freq[idx] == 1
-                && self.initial_escape[self.ctx_length[idx] as usize] < ESCAPE_COUNTER_LIMIT
-            {
+            if self.ctx_total_freq[idx] == 1 && self.initial_escape[self.ctx_length[idx] as usize] < ESCAPE_COUNTER_LIMIT {
                 self.initial_escape[self.ctx_length[idx] as usize] += 1;
             }
 
@@ -639,8 +604,7 @@ impl<R: Read> HscDecoder<R> {
             symbol += 1;
         }
 
-        self.coder
-            .decode_update(cumulative, cumulative + 1, unmasked_count)?;
+        self.coder.decode_update(cumulative, cumulative + 1, unmasked_count)?;
 
         Ok(symbol)
     }
@@ -690,9 +654,7 @@ impl<R: Read> HscDecoder<R> {
         // Handle first block specially if it's below threshold
         if self.freq_value[ctx] < min_freq {
             let mut blk = self.freq_next[ctx];
-            while self.freq_value[blk as usize] < min_freq
-                && self.freq_next[blk as usize] != NULL_PTR
-            {
+            while self.freq_value[blk as usize] < min_freq && self.freq_next[blk as usize] != NULL_PTR {
                 blk = self.freq_next[blk as usize];
             }
 
@@ -707,11 +669,7 @@ impl<R: Read> HscDecoder<R> {
             if next == NULL_PTR {
                 self.ctx_char_count[ctx] = 0;
                 self.ctx_total_freq[ctx] = self.freq_value[ctx];
-                self.ctx_low_freq_count[ctx] = if self.ctx_total_freq[ctx] < LOW_FREQ_THRESHOLD {
-                    1
-                } else {
-                    0
-                };
+                self.ctx_low_freq_count[ctx] = if self.ctx_total_freq[ctx] < LOW_FREQ_THRESHOLD { 1 } else { 0 };
                 return;
             }
         }
@@ -719,11 +677,7 @@ impl<R: Read> HscDecoder<R> {
         // Scale down all frequencies
         self.freq_value[ctx] /= min_freq;
         self.ctx_total_freq[ctx] = self.freq_value[ctx];
-        self.ctx_low_freq_count[ctx] = if self.ctx_total_freq[ctx] < LOW_FREQ_THRESHOLD {
-            1
-        } else {
-            0
-        };
+        self.ctx_low_freq_count[ctx] = if self.ctx_total_freq[ctx] < LOW_FREQ_THRESHOLD { 1 } else { 0 };
         self.ctx_char_count[ctx] = 0;
 
         let mut prev = ctx;
@@ -899,11 +853,7 @@ impl<R: Read> HscDecoder<R> {
             // Find longest matching context
             let mut ctx_id = self.find_longest_context();
 
-            let min_order = if ctx_id == NULL_PTR {
-                0
-            } else {
-                self.ctx_length[ctx_id as usize] + 1
-            };
+            let min_order = if ctx_id == NULL_PTR { 0 } else { self.ctx_length[ctx_id as usize] + 1 };
             let mut max_order = self.current_max_order + 1;
 
             // Decode symbol (with escape fallback to shorter contexts)

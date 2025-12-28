@@ -73,12 +73,7 @@ impl Lzw {
     }
 
     /// Decompress into an existing buffer to avoid allocations.
-    pub fn decomp_into(
-        &mut self,
-        mut input: &[u8],
-        use_crunched: bool,
-        result: &mut Vec<u8>,
-    ) -> Result<()> {
+    pub fn decomp_into(&mut self, mut input: &[u8], use_crunched: bool, result: &mut Vec<u8>) -> Result<()> {
         result.clear();
         let bits = if use_crunched {
             let b = input[0];

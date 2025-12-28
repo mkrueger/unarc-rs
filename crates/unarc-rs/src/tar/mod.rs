@@ -132,16 +132,12 @@ impl<T: Read + Seek> TarArchive<T> {
                 .entries()
                 .map_err(|e| ArchiveError::io_error(format!("Failed to read TAR entries: {}", e)))?
             {
-                let entry = entry_result.map_err(|e| {
-                    ArchiveError::io_error(format!("Failed to read TAR entry: {}", e))
-                })?;
+                let entry = entry_result.map_err(|e| ArchiveError::io_error(format!("Failed to read TAR entry: {}", e)))?;
 
                 let header = entry.header();
                 let name = entry
                     .path()
-                    .map_err(|e| {
-                        ArchiveError::io_error(format!("Failed to read entry path: {}", e))
-                    })?
+                    .map_err(|e| ArchiveError::io_error(format!("Failed to read entry path: {}", e)))?
                     .to_string_lossy()
                     .to_string();
 
@@ -149,11 +145,7 @@ impl<T: Read + Seek> TarArchive<T> {
                 let mtime = header.mtime().unwrap_or(0);
                 let mode = header.mode().unwrap_or(0);
                 let entry_type = header.entry_type().into();
-                let link_name = header
-                    .link_name()
-                    .ok()
-                    .flatten()
-                    .map(|p| p.to_string_lossy().to_string());
+                let link_name = header.link_name().ok().flatten().map(|p| p.to_string_lossy().to_string());
 
                 let raw_header_position = entry.raw_header_position();
                 // Data starts after the 512-byte header

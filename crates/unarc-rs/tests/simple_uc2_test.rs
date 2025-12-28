@@ -5,7 +5,7 @@ fn test_include_bytes_loads_file() {
     let data = include_bytes!("uc2/normal.uc2");
     eprintln!("📦 include_bytes!() loaded {} bytes", data.len());
     eprintln!("📦 First 16 bytes: {:02x?}", &data[..16.min(data.len())]);
-    assert!(data.len() > 0, "include_bytes! should load the file");
+    assert!(!data.is_empty(), "include_bytes! should load the file");
     assert_eq!(&data[0..4], b"UC2\x1a", "Should start with UC2 signature");
 }
 
@@ -79,11 +79,7 @@ fn test_extract_file() {
                 eprintln!("❌ Content does not match");
             }
         } else {
-            eprintln!(
-                "❌ Size mismatch: got {} expected {}",
-                data.len(),
-                expected_size
-            );
+            eprintln!("❌ Size mismatch: got {} expected {}", data.len(), expected_size);
         }
     } else {
         eprintln!("❌ archive.read() failed: {:?}", read_result);

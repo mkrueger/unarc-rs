@@ -116,10 +116,7 @@ impl DirectoryEntry {
         convert_u32!(comment, header_bytes);
         convert_u16!(cmt_size, header_bytes);
 
-        let idx = header_bytes
-            .iter()
-            .position(|&x| x == 0)
-            .unwrap_or(FNAMESIZE);
+        let idx = header_bytes.iter().position(|&x| x == 0).unwrap_or(FNAMESIZE);
         let fname = String::from_utf8_lossy(&header_bytes[0..idx]).to_string();
         header_bytes = &header_bytes[FNAMESIZE..];
 

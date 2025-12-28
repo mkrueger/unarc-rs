@@ -103,19 +103,10 @@ impl HuffmanTree {
     }
 
     /// Recursively build subtree.
-    fn build_subtree(
-        &mut self,
-        node_data: &[i32],
-        node_idx: usize,
-        num_nodes: usize,
-        depth: usize,
-    ) -> Result<usize> {
+    fn build_subtree(&mut self, node_data: &[i32], node_idx: usize, num_nodes: usize, depth: usize) -> Result<usize> {
         // Prevent stack overflow from malformed data.
         if depth > 64 {
-            return Err(ArchiveError::decompression_failed(
-                "Distilled",
-                "tree depth exceeded",
-            ));
+            return Err(ArchiveError::decompression_failed("Distilled", "tree depth exceeded"));
         }
 
         let tree_idx = self.nodes.len();
@@ -127,10 +118,7 @@ impl HuffmanTree {
         } else {
             // Internal node.
             if node_idx + 1 >= node_data.len() {
-                return Err(ArchiveError::decompression_failed(
-                    "Distilled",
-                    format!("invalid node index: {}", node_idx),
-                ));
+                return Err(ArchiveError::decompression_failed("Distilled", format!("invalid node index: {}", node_idx)));
             }
 
             let left_child = node_data[node_idx] as usize;
@@ -153,10 +141,7 @@ impl HuffmanTree {
     /// Decode one symbol from the bitstream.
     fn decode<R: BitRead>(&self, reader: &mut R) -> Result<u16> {
         if self.nodes.is_empty() {
-            return Err(ArchiveError::decompression_failed(
-                "Distilled",
-                "empty tree",
-            ));
+            return Err(ArchiveError::decompression_failed("Distilled", "empty tree"));
         }
 
         let mut idx = 0;
@@ -175,18 +160,15 @@ impl HuffmanTree {
             }
 
             if idx >= self.nodes.len() {
-                return Err(ArchiveError::decompression_failed(
-                    "Distilled",
-                    "invalid tree traversal",
-                ));
+                return Err(ArchiveError::decompression_failed("Distilled", "invalid tree traversal"));
             }
 
             match self.nodes[idx] {
                 HuffmanNode::Leaf(sym) => return Ok(sym),
                 HuffmanNode::Branch(left, right) => {
-                    let bit = reader.read_bit().map_err(|e| {
-                        ArchiveError::decompression_failed("Distilled", format!("read error: {e}"))
-                    })?;
+                    let bit = reader
+                        .read_bit()
+                        .map_err(|e| ArchiveError::decompression_failed("Distilled", format!("read error: {e}")))?;
                     // Bit 0 = left, bit 1 = right.
                     idx = if bit { right } else { left };
                 }
@@ -228,9 +210,9 @@ fn decode_offset_symbol<R: BitRead>(reader: &mut R) -> Result<u8> {
     let mut len: u8 = 0;
 
     loop {
-        let bit = reader.read_bit().map_err(|e| {
-            ArchiveError::decompression_failed("Distilled", format!("read error: {e}"))
-        })?;
+        let bit = reader
+            .read_bit()
+            .map_err(|e| ArchiveError::decompression_failed("Distilled", format!("read error: {e}")))?;
 
         // Build code LSB-first (little-endian bit order).
         code |= (bit as u16) << len;
@@ -273,16 +255,10 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>> {
 
     // Validate header.
     if !(2..=MAX_NODES).contains(&num_nodes) {
-        return Err(ArchiveError::decompression_failed(
-            "Distilled",
-            format!("invalid node count: {num_nodes}"),
-        ));
+        return Err(ArchiveError::decompression_failed("Distilled", format!("invalid node count: {num_nodes}")));
     }
     if code_length == 0 || code_length > 16 {
-        return Err(ArchiveError::decompression_failed(
-            "Distilled",
-            format!("invalid code length: {code_length}"),
-        ));
+        return Err(ArchiveError::decompression_failed("Distilled", format!("invalid code length: {code_length}")));
     }
 
     // Read node data (packed, code_length bits each).
@@ -290,9 +266,9 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>> {
     let mut node_data = Vec::with_capacity(num_nodes);
 
     for _ in 0..num_nodes {
-        let node: u32 = reader.read_var(code_length as u32).map_err(|e| {
-            ArchiveError::decompression_failed("Distilled", format!("read error: {e}"))
-        })?;
+        let node: u32 = reader
+            .read_var(code_length as u32)
+            .map_err(|e| ArchiveError::decompression_failed("Distilled", format!("read error: {e}")))?;
         node_data.push(node as i32);
     }
 
@@ -319,9 +295,9 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>> {
             // Read extra bits based on current position.
             let extra_bits = extra_bits_for_position(output.len());
             let extra: u32 = if extra_bits > 0 {
-                reader.read_var(extra_bits).map_err(|e| {
-                    ArchiveError::decompression_failed("Distilled", format!("read error: {e}"))
-                })?
+                reader
+                    .read_var(extra_bits)
+                    .map_err(|e| ArchiveError::decompression_failed("Distilled", format!("read error: {e}")))?
             } else {
                 0
             };

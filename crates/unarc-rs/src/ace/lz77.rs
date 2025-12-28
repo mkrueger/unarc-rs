@@ -81,9 +81,11 @@ impl Dictionary {
     }
 
     fn copy_from_history(&mut self, dist: usize, len: usize) -> Result<()> {
-        let src_pos = self.data.len().checked_sub(dist).ok_or_else(|| {
-            ArchiveError::decompression_failed("lz77", "copy source out of bounds")
-        })?;
+        let src_pos = self
+            .data
+            .len()
+            .checked_sub(dist)
+            .ok_or_else(|| ArchiveError::decompression_failed("lz77", "copy source out of bounds"))?;
 
         // Copy byte by byte for overlapping regions
         for i in 0..len {
@@ -185,11 +187,7 @@ impl Lz77Decoder {
     }
 
     /// Decompress data from bit stream
-    pub fn decompress<R: Read>(
-        &mut self,
-        bs: &mut BitStream<R>,
-        want_size: usize,
-    ) -> Result<Vec<u8>> {
+    pub fn decompress<R: Read>(&mut self, bs: &mut BitStream<R>, want_size: usize) -> Result<Vec<u8>> {
         let mut have_size = 0;
 
         while have_size < want_size {
@@ -226,10 +224,7 @@ impl Lz77Decoder {
                 };
 
                 if have_size + copy_len > want_size {
-                    return Err(ArchiveError::decompression_failed(
-                        "lz77",
-                        "copy exceeds expected size",
-                    ));
+                    return Err(ArchiveError::decompression_failed("lz77", "copy exceeds expected size"));
                 }
 
                 self.dictionary.copy_from_history(copy_dist + 1, copy_len)?;

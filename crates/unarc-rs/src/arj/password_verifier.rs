@@ -113,13 +113,7 @@ impl ArjPasswordVerifier {
             decrypt_buf.extend_from_slice(&self.compressed_data);
 
             // Decrypt the data
-            decrypt_arj_data(
-                &mut decrypt_buf,
-                self.encryption_type,
-                password,
-                self.password_modifier,
-                self.file_time,
-            );
+            decrypt_arj_data(&mut decrypt_buf, self.encryption_type, password, self.password_modifier, self.file_time);
 
             // Decompress and verify
             self.decompress_and_verify(&decrypt_buf).unwrap_or(false)
@@ -130,26 +124,19 @@ impl ArjPasswordVerifier {
     fn decompress_and_verify(&self, decrypted: &[u8]) -> Result<bool> {
         let uncompressed = match self.compression_method {
             CompressionMethod::Stored => decrypted.to_vec(),
-            CompressionMethod::CompressedMost
-            | CompressionMethod::Compressed
-            | CompressionMethod::CompressedFaster => {
-                let mut decoder =
-                    DecoderAny::new_from_compression(delharc::CompressionMethod::Lh6, decrypted);
+            CompressionMethod::CompressedMost | CompressionMethod::Compressed | CompressionMethod::CompressedFaster => {
+                let mut decoder = DecoderAny::new_from_compression(delharc::CompressionMethod::Lh6, decrypted);
                 let mut decompressed_buffer = vec![0; self.original_size as usize];
                 if decoder.fill_buffer(&mut decompressed_buffer).is_err() {
                     return Ok(false);
                 }
                 decompressed_buffer
             }
-            CompressionMethod::CompressedFastest => {
-                match decode_fastest(decrypted, self.original_size as usize) {
-                    Ok(data) => data,
-                    Err(_) => return Ok(false),
-                }
-            }
-            CompressionMethod::NoDataNoCrc
-            | CompressionMethod::NoData
-            | CompressionMethod::Unknown(_) => {
+            CompressionMethod::CompressedFastest => match decode_fastest(decrypted, self.original_size as usize) {
+                Ok(data) => data,
+                Err(_) => return Ok(false),
+            },
+            CompressionMethod::NoDataNoCrc | CompressionMethod::NoData | CompressionMethod::Unknown(_) => {
                 return Ok(false);
             }
         };

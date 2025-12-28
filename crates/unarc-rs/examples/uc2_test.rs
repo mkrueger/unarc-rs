@@ -6,10 +6,7 @@ fn main() {
     let mut archive = Uc2Archive::new(file).unwrap();
 
     let entry = archive.get_next_entry().unwrap().unwrap();
-    println!(
-        "Entry: {}, method: {}, size: {}",
-        entry.name, entry.compress_info.method, entry.original_size
-    );
+    println!("Entry: {}, method: {}, size: {}", entry.name, entry.compress_info.method, entry.original_size);
 
     let result = archive.read(&entry).unwrap();
     println!("Decompressed {} bytes", result.len());

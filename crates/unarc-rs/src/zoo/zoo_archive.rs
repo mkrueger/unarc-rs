@@ -36,22 +36,19 @@ impl<T: Read + Seek> ZooArchive<T> {
             self.has_next = false;
             return Ok(());
         }
-        self.reader
-            .seek(std::io::SeekFrom::Start(header.next as u64))?;
+        self.reader.seek(std::io::SeekFrom::Start(header.next as u64))?;
         Ok(())
     }
 
     pub fn read(&mut self, header: &DirectoryEntry) -> Result<Vec<u8>> {
-        self.reader
-            .seek(std::io::SeekFrom::Start(header.offset as u64))?;
+        self.reader.seek(std::io::SeekFrom::Start(header.offset as u64))?;
         let mut compressed_buffer = vec![0; header.size_now as usize];
         self.reader.read_exact(&mut compressed_buffer)?;
 
         if header.next == 0 {
             self.has_next = false;
         } else {
-            self.reader
-                .seek(std::io::SeekFrom::Start(header.next as u64))?;
+            self.reader.seek(std::io::SeekFrom::Start(header.next as u64))?;
         }
 
         let uncompressed = match header.compression_method {
@@ -65,39 +62,26 @@ impl<T: Read + Seek> ZooArchive<T> {
                     salzweg::Endianness::LittleEndian,
                     CodeSizeStrategy::Default,
                 ) {
-                    return Err(ArchiveError::decompression_failed(
-                        &header.name,
-                        err.to_string(),
-                    ));
+                    return Err(ArchiveError::decompression_failed(&header.name, err.to_string()));
                 }
                 decompressed
             }
 
             CompressionMethod::CompressedLh5 => {
-                let mut decoder = DecoderAny::new_from_compression(
-                    delharc::CompressionMethod::Lh5,
-                    compressed_buffer.as_slice(),
-                );
+                let mut decoder = DecoderAny::new_from_compression(delharc::CompressionMethod::Lh5, compressed_buffer.as_slice());
                 let mut decompressed_buffer = vec![0; header.org_size as usize];
                 decoder.fill_buffer(&mut decompressed_buffer)?;
                 decompressed_buffer
             }
 
             CompressionMethod::Unknown(m) => {
-                return Err(ArchiveError::unsupported_method(
-                    "ZOO",
-                    format!("Unknown({})", m),
-                ));
+                return Err(ArchiveError::unsupported_method("ZOO", format!("Unknown({})", m)));
             }
         };
         let mut state = State::<ARC>::new();
         state.update(&uncompressed);
         if state.get() != header.file_crc16 {
-            Err(ArchiveError::crc_mismatch(
-                &header.name,
-                header.file_crc16 as u32,
-                state.get() as u32,
-            ))
+            Err(ArchiveError::crc_mismatch(&header.name, header.file_crc16 as u32, state.get() as u32))
         } else {
             Ok(uncompressed)
         }

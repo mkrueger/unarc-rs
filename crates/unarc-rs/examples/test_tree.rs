@@ -4,8 +4,8 @@ fn main() {
     let mut tree = vec![0u16; tl * 2];
 
     // Init leaves
-    for i in tl..2 * tl {
-        tree[i] = 1;
+    for item in tree.iter_mut().take(2 * tl).skip(tl) {
+        *item = 1;
     }
 
     // Build internal nodes
@@ -24,10 +24,7 @@ fn main() {
         let mut lt = 0;
 
         while l < tl {
-            println!(
-                "  l={}, lt={}, tree[l]={}, threshold={}",
-                l, lt, tree[l], threshold
-            );
+            println!("  l={}, lt={}, tree[l]={}, threshold={}", l, lt, tree[l], threshold);
             if lt + tree[l] <= threshold {
                 println!("    MATCH");
                 lt += tree[l];
@@ -39,10 +36,7 @@ fn main() {
         }
 
         let symbol = l - tl;
-        println!(
-            "threshold={}: symbol={}, cumulative={}",
-            threshold, symbol, lt
-        );
+        println!("threshold={}: symbol={}, cumulative={}", threshold, symbol, lt);
         println!();
     }
 }

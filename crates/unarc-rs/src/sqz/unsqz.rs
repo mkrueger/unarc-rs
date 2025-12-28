@@ -54,30 +54,25 @@ fn sqz_exe_tables() -> Result<&'static SqzExeTables> {
         //   extra byte table address: DS:0x0AF4 + sym
         //   base  word table address: DS:0x09B2 + sym*2
         // for sym=0x100..0x11F.
-        let len_extra: [u8; 32] = [
-            0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6,
-            6, 6, 6,
-        ];
+        let len_extra: [u8; 32] = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6];
 
         let len_base: [u16; 32] = [
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112,
-            128, 160, 192, 224, 256, 320, 384, 448,
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448,
         ];
 
         // Distance extra bits (32 entries) - SQZ variant
         // Extracted from SQZ.EXE offset 0x10d34 (32 bytes)
         // Note: First 5 entries (codes 0-4) have 0 extra bits, then progression starts
         let dist_extra: [u8; 0x20] = [
-            0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11,
-            12, 12, 13, 13, 0,
+            0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 0,
         ];
 
         // Distance base values - SQZ uses different progression than Deflate
         // Extracted from SQZ.EXE offset 0x10cf4 (32 words = 64 bytes)
         // Note: These differ from Deflate! E.g. code 5 → base 5, not 7
         let dist_base: [u16; 0x20] = [
-            0, 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025,
-            1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 32768,
+            0, 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
+            32768,
         ];
 
         SqzExeTables {
@@ -126,9 +121,10 @@ impl<'a> BitReaderMsb<'a> {
 
     fn ensure_bits_internal(&mut self, need: u8) -> Result<()> {
         while self.bits < need {
-            let byte = *self.data.get(self.pos).ok_or_else(|| {
-                ArchiveError::decompression_failed("SQZ", "Unexpected EOF in bitstream")
-            })?;
+            let byte = *self
+                .data
+                .get(self.pos)
+                .ok_or_else(|| ArchiveError::decompression_failed("SQZ", "Unexpected EOF in bitstream"))?;
             self.pos += 1;
             self.bitbuf = (self.bitbuf << 8) | (byte as u32);
             self.bits = self.bits.saturating_add(8);
@@ -138,10 +134,7 @@ impl<'a> BitReaderMsb<'a> {
 
     fn get_bits_u16_internal(&mut self, n: u8) -> Result<u16> {
         if n > 16 {
-            return Err(ArchiveError::decompression_failed(
-                "SQZ",
-                format!("Too many bits requested: {n}"),
-            ));
+            return Err(ArchiveError::decompression_failed("SQZ", format!("Too many bits requested: {n}")));
         }
         if n == 0 {
             return Ok(0);
@@ -150,11 +143,7 @@ impl<'a> BitReaderMsb<'a> {
         let shift = self.bits - n;
         let val = ((self.bitbuf >> shift) & ((1u32 << n) - 1)) as u16;
         self.bits -= n;
-        self.bitbuf &= if self.bits == 0 {
-            0
-        } else {
-            (1u32 << self.bits) - 1
-        };
+        self.bitbuf &= if self.bits == 0 { 0 } else { (1u32 << self.bits) - 1 };
         Ok(val)
     }
 }
@@ -183,11 +172,7 @@ impl SqzBitRead for BitReaderMsb<'_> {
         }
         self.ensure_bits_internal(n)?;
         self.bits -= n;
-        self.bitbuf &= if self.bits == 0 {
-            0
-        } else {
-            (1u32 << self.bits) - 1
-        };
+        self.bitbuf &= if self.bits == 0 { 0 } else { (1u32 << self.bits) - 1 };
         Ok(())
     }
 
@@ -197,11 +182,7 @@ impl SqzBitRead for BitReaderMsb<'_> {
             return;
         }
         self.bits -= rem;
-        self.bitbuf &= if self.bits == 0 {
-            0
-        } else {
-            (1u32 << self.bits) - 1
-        };
+        self.bitbuf &= if self.bits == 0 { 0 } else { (1u32 << self.bits) - 1 };
     }
 }
 
@@ -229,10 +210,7 @@ impl HuffmanDecoder {
         // misaligned block header, and callers rely on the error to retry with
         // alternate parsing strategies.
         if max_len == 0 {
-            return Err(ArchiveError::decompression_failed(
-                "SQZ",
-                "Empty Huffman tree",
-            ));
+            return Err(ArchiveError::decompression_failed("SQZ", "Empty Huffman tree"));
         }
 
         let max_len_usize = max_len as usize;
@@ -329,9 +307,7 @@ impl HuffmanDecoder {
             HuffmanDecoder::Tree { nodes } => {
                 let mut idx = 0usize;
                 loop {
-                    match nodes.get(idx).ok_or_else(|| {
-                        ArchiveError::decompression_failed("SQZ", "Bad Huffman node")
-                    })? {
+                    match nodes.get(idx).ok_or_else(|| ArchiveError::decompression_failed("SQZ", "Bad Huffman node"))? {
                         HuffNode::Leaf(sym) => {
                             return Ok(*sym);
                         }
@@ -351,13 +327,7 @@ impl HuffmanDecoder {
     }
 }
 
-fn read_pt_len<R: SqzBitRead + Clone>(
-    br: &mut R,
-    n_symbols: usize,
-    nbit: u8,
-    special: Option<usize>,
-    _mode: SqzPtLenMode,
-) -> Result<HuffmanDecoder> {
+fn read_pt_len<R: SqzBitRead + Clone>(br: &mut R, n_symbols: usize, nbit: u8, special: Option<usize>, _mode: SqzPtLenMode) -> Result<HuffmanDecoder> {
     // Note: SQZ.EXE (see src/sqz/exe/SQZ.EXE.ndisasm16.asm @ 0x7CE8)
     // uses the PeekSkip-style algorithm, including the special-run behavior.
 
@@ -420,18 +390,12 @@ fn read_pt_len<R: SqzBitRead + Clone>(
     HuffmanDecoder::from_bit_lengths(&pt_len).map_err(|e| {
         ArchiveError::decompression_failed(
             "SQZ",
-            format!(
-                "PT tree build failed (n={n}, n_symbols={n_symbols}, nbit={nbit}, special={special:?}, pt_len={pt_len:?}): {e}"
-            ),
+            format!("PT tree build failed (n={n}, n_symbols={n_symbols}, nbit={nbit}, special={special:?}, pt_len={pt_len:?}): {e}"),
         )
     })
 }
 
-fn read_c_len<R: SqzBitRead>(
-    br: &mut R,
-    pt: &HuffmanDecoder,
-    allow_empty: bool,
-) -> Result<HuffmanDecoder> {
+fn read_c_len<R: SqzBitRead>(br: &mut R, pt: &HuffmanDecoder, allow_empty: bool) -> Result<HuffmanDecoder> {
     const NC: usize = 0x1ff;
 
     let n = br.get_bits_u16(9)? as usize;
@@ -443,12 +407,9 @@ fn read_c_len<R: SqzBitRead>(
     let mut c_len = vec![0u8; NC];
     let mut i = 0usize;
     while i < n {
-        let sym = pt.decode(br).map_err(|e| {
-            ArchiveError::decompression_failed(
-                "SQZ",
-                format!("PT decode failed while reading C lengths (i={i}, n={n}): {e}"),
-            )
-        })?;
+        let sym = pt
+            .decode(br)
+            .map_err(|e| ArchiveError::decompression_failed("SQZ", format!("PT decode failed while reading C lengths (i={i}, n={n}): {e}")))?;
         if sym <= 2 {
             let run = match sym {
                 0 => 1usize,
@@ -490,24 +451,16 @@ fn read_c_len<R: SqzBitRead>(
             // that permissive behavior.
             return Ok(HuffmanDecoder::Constant(0));
         }
-        return Err(ArchiveError::decompression_failed(
-            "SQZ",
-            "Empty Huffman tree (all lengths zero)",
-        ));
+        return Err(ArchiveError::decompression_failed("SQZ", "Empty Huffman tree (all lengths zero)"));
     }
 
     HuffmanDecoder::from_bit_lengths(&c_len)
 }
 
-fn decode_len_code<R: SqzBitRead>(
-    br: &mut R,
-    c_dec: &HuffmanDecoder,
-    mapping: SqzLenMapping,
-    deflate_len_tables: SqzDeflateLenTables,
-) -> Result<u16> {
-    let sym = c_dec.decode(br).map_err(|e| {
-        ArchiveError::decompression_failed("SQZ", format!("C decode failed: {}", e))
-    })?;
+fn decode_len_code<R: SqzBitRead>(br: &mut R, c_dec: &HuffmanDecoder, mapping: SqzLenMapping, deflate_len_tables: SqzDeflateLenTables) -> Result<u16> {
+    let sym = c_dec
+        .decode(br)
+        .map_err(|e| ArchiveError::decompression_failed("SQZ", format!("C decode failed: {}", e)))?;
     if sym <= 0xff {
         return Ok(sym);
     }
@@ -525,13 +478,9 @@ fn decode_len_code<R: SqzBitRead>(
                     }
                     let idx = (sym - 256) as usize;
                     const LEN_BASE: [u16; 29] = [
-                        3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59,
-                        67, 83, 99, 115, 131, 163, 195, 227, 258,
+                        3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258,
                     ];
-                    const LEN_EXTRA: [u8; 29] = [
-                        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5,
-                        5, 5, 5, 0,
-                    ];
+                    const LEN_EXTRA: [u8; 29] = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
                     let base = LEN_BASE[idx];
                     let extra = LEN_EXTRA[idx];
                     let add = br.get_bits_u16(extra)?;
@@ -628,9 +577,7 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
             let next_block_index = block_index.saturating_add(1);
             let block_start = br.clone();
 
-            let parse_block = |br: &mut R,
-                               pt_len_mode: SqzPtLenMode|
-             -> Result<(u16, HuffmanDecoder, HuffmanDecoder)> {
+            let parse_block = |br: &mut R, pt_len_mode: SqzPtLenMode| -> Result<(u16, HuffmanDecoder, HuffmanDecoder)> {
                 let raw_n = br.get_bits_u16(blocksize_bits)?;
                 // Block size is stored as a bit-field. SQZ.EXE does `dec ax` after
                 // reading, meaning `n = raw_n - 1`. However, different streams
@@ -643,32 +590,17 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
                     _ => raw_n,
                 };
                 if n == 0 {
-                    return Err(ArchiveError::decompression_failed(
-                        "SQZ",
-                        "Invalid block size (0)",
-                    ));
+                    return Err(ArchiveError::decompression_failed("SQZ", "Invalid block size (0)"));
                 }
 
-                let pt_for_c = read_pt_len(br, NT, 5, Some(3), pt_len_mode).map_err(|e| {
-                    ArchiveError::decompression_failed(
-                        "SQZ",
-                        format!("block#{next_block_index} read_pt_len(CT): {e}"),
-                    )
-                })?;
+                let pt_for_c = read_pt_len(br, NT, 5, Some(3), pt_len_mode)
+                    .map_err(|e| ArchiveError::decompression_failed("SQZ", format!("block#{next_block_index} read_pt_len(CT): {e}")))?;
 
-                let c_dec = read_c_len(br, &pt_for_c, allow_empty_c_tree).map_err(|e| {
-                    ArchiveError::decompression_failed(
-                        "SQZ",
-                        format!("block#{next_block_index} read_c_len: {e}"),
-                    )
-                })?;
+                let c_dec = read_c_len(br, &pt_for_c, allow_empty_c_tree)
+                    .map_err(|e| ArchiveError::decompression_failed("SQZ", format!("block#{next_block_index} read_c_len: {e}")))?;
 
-                let p_dec = read_pt_len(br, NP, 5, None, pt_len_mode).map_err(|e| {
-                    ArchiveError::decompression_failed(
-                        "SQZ",
-                        format!("block#{next_block_index} read_pt_len(P): {e}"),
-                    )
-                })?;
+                let p_dec = read_pt_len(br, NP, 5, None, pt_len_mode)
+                    .map_err(|e| ArchiveError::decompression_failed("SQZ", format!("block#{next_block_index} read_pt_len(P): {e}")))?;
 
                 Ok((n, c_dec, p_dec))
             };
@@ -694,8 +626,7 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
             // 2) byte-alignment + current PT mode
             // 3) no byte-alignment + alternate PT mode (PeekSkip -> Sequential only)
             // 4) byte-alignment + alternate PT mode
-            let mut attempts: Vec<(bool, SqzPtLenMode)> =
-                vec![(false, pt_len_mode), (true, pt_len_mode)];
+            let mut attempts: Vec<(bool, SqzPtLenMode)> = vec![(false, pt_len_mode), (true, pt_len_mode)];
             if pt_len_mode == SqzPtLenMode::PeekSkip {
                 attempts.push((false, SqzPtLenMode::Sequential));
                 attempts.push((true, SqzPtLenMode::Sequential));
@@ -720,9 +651,7 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
             }
 
             let Some((_, n, new_c_dec, new_p_dec)) = parsed else {
-                return Err(last_err.unwrap_or_else(|| {
-                    ArchiveError::decompression_failed("SQZ", "Block parse failed")
-                }));
+                return Err(last_err.unwrap_or_else(|| ArchiveError::decompression_failed("SQZ", "Block parse failed")));
             };
 
             br = br_try;
@@ -760,14 +689,11 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
                     } else {
                         let extra = (p_sym - 1) as u8;
                         if extra > 15 {
-                            return Err(ArchiveError::decompression_failed(
-                                "SQZ",
-                                format!("Distance symbol out of range: {}", p_sym),
-                            ));
+                            return Err(ArchiveError::decompression_failed("SQZ", format!("Distance symbol out of range: {}", p_sym)));
                         }
-                        let base = 1u16.checked_shl((p_sym - 1) as u32).ok_or_else(|| {
-                            ArchiveError::decompression_failed("SQZ", "Bad distance base")
-                        })?;
+                        let base = 1u16
+                            .checked_shl((p_sym - 1) as u32)
+                            .ok_or_else(|| ArchiveError::decompression_failed("SQZ", "Bad distance base"))?;
                         let add = br.get_bits_u16(extra)?;
                         base.wrapping_add(add)
                     }
@@ -782,11 +708,7 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
                     }
                     let extra = t.dist_extra[p_sym];
                     let base = t.dist_base[p_sym];
-                    let add = if extra > 0 {
-                        br.get_bits_u16(extra)?
-                    } else {
-                        0
-                    };
+                    let add = if extra > 0 { br.get_bits_u16(extra)? } else { 0 };
                     base.saturating_add(add)
                 }
             } as usize;
@@ -812,12 +734,7 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
 ///
 /// Each compression method (1-4) uses a specific combination of length/distance
 /// mappings determined by analysis of working archives.
-pub(crate) fn unsqz_compressed(
-    buf: &[u8],
-    original_size: usize,
-    method: u8,
-    expected_crc32: u32,
-) -> Result<Vec<u8>> {
+pub(crate) fn unsqz_compressed(buf: &[u8], original_size: usize, method: u8, expected_crc32: u32) -> Result<Vec<u8>> {
     if method == 0 {
         return Ok(buf.to_vec());
     }
@@ -830,16 +747,8 @@ pub(crate) fn unsqz_compressed(
     //
     // SQZ.EXE reads PT lengths using the PeekSkip-style algorithm for all methods.
     let (len_mapping, dist_mapping, pt_len_mode) = match method {
-        1 => (
-            SqzLenMapping::SqzNative,
-            SqzDistMapping::PowerOfTwo,
-            SqzPtLenMode::PeekSkip,
-        ),
-        2 => (
-            SqzLenMapping::SqzNative,
-            SqzDistMapping::ExeTables,
-            SqzPtLenMode::PeekSkip,
-        ),
+        1 => (SqzLenMapping::SqzNative, SqzDistMapping::PowerOfTwo, SqzPtLenMode::PeekSkip),
+        2 => (SqzLenMapping::SqzNative, SqzDistMapping::ExeTables, SqzPtLenMode::PeekSkip),
         3 => (
             SqzLenMapping::DeflateLike29,
             // Method-3 distance mapping is ambiguous in the wild; we try both below.
@@ -847,16 +756,9 @@ pub(crate) fn unsqz_compressed(
             // SQZ.EXE reads PT lengths using the PeekSkip-style algorithm.
             SqzPtLenMode::PeekSkip,
         ),
-        4 => (
-            SqzLenMapping::DeflateLike29,
-            SqzDistMapping::ExeTables,
-            SqzPtLenMode::PeekSkip,
-        ),
+        4 => (SqzLenMapping::DeflateLike29, SqzDistMapping::ExeTables, SqzPtLenMode::PeekSkip),
         _ => {
-            return Err(ArchiveError::unsupported_method(
-                "SQZ",
-                format!("Compressed(method={})", method),
-            ));
+            return Err(ArchiveError::unsupported_method("SQZ", format!("Compressed(method={})", method)));
         }
     };
 
@@ -892,22 +794,14 @@ pub(crate) fn unsqz_compressed(
     if out.len() < original_size {
         return Err(ArchiveError::decompression_failed(
             "SQZ",
-            format!(
-                "SQZ decode produced too-short output: {} < expected {}",
-                out.len(),
-                original_size
-            ),
+            format!("SQZ decode produced too-short output: {} < expected {}", out.len(), original_size),
         ));
     }
 
     out.truncate(original_size);
     let actual_crc = crc32fast::hash(&out);
     if actual_crc != expected_crc32 {
-        return Err(ArchiveError::crc_mismatch(
-            "SQZ",
-            expected_crc32,
-            actual_crc,
-        ));
+        return Err(ArchiveError::crc_mismatch("SQZ", expected_crc32, actual_crc));
     }
 
     Ok(out)

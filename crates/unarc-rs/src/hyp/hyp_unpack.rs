@@ -143,10 +143,7 @@ impl HuffmanState {
     }
 
     fn read_str(&self, offset: u16) -> u16 {
-        self.str_ind_buf
-            .get(word_index(offset))
-            .copied()
-            .unwrap_or(0)
+        self.str_ind_buf.get(word_index(offset)).copied().unwrap_or(0)
     }
 
     fn write_str(&mut self, offset: u16, value: u16) {
@@ -186,10 +183,7 @@ impl HuffmanState {
     }
 
     fn get_freq(&self, offset: u16) -> u16 {
-        self.frequencys
-            .get(word_index(offset))
-            .copied()
-            .unwrap_or(0)
+        self.frequencys.get(word_index(offset)).copied().unwrap_or(0)
     }
 
     fn set_freq(&mut self, offset: u16, value: u16) {
@@ -339,10 +333,7 @@ impl HuffmanState {
 
         self.maxlocal255 = self.maxlocal.wrapping_add(0x01fe);
         self.local_offset = (4i16 + self.maxdiff - self.mindiff) as u16;
-        self.pos_offset = self
-            .local_offset
-            .wrapping_add(self.maxlocal)
-            .wrapping_add(2);
+        self.pos_offset = self.local_offset.wrapping_add(self.maxlocal).wrapping_add(2);
         self.char_offset = self.pos_offset.wrapping_add(2 * (MAX_FREQ as u16 + 1));
     }
 
@@ -611,9 +602,7 @@ fn read_smart(state: &mut HuffmanState, reader: &mut BitReader) -> Result<()> {
         }
 
         if di > state.maxlocal255 {
-            let value = di
-                .wrapping_add(state.char_offset)
-                .wrapping_sub(state.maxlocal);
+            let value = di.wrapping_add(state.char_offset).wrapping_sub(state.maxlocal);
             state.nfreq[0] = value;
         }
 
@@ -711,11 +700,7 @@ fn decode_data(state: &mut HuffmanState, output: &mut Vec<u8>, target_len: usize
     Ok(())
 }
 
-pub(crate) fn unpack_hyp(
-    compressed_buffer: &[u8],
-    original_size: usize,
-    version: u8,
-) -> Result<Vec<u8>> {
+pub(crate) fn unpack_hyp(compressed_buffer: &[u8], original_size: usize, version: u8) -> Result<Vec<u8>> {
     let mut reader = BitReader::new(compressed_buffer);
     let mut state = HuffmanState::new();
     state.version = version;

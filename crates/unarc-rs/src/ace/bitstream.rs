@@ -35,12 +35,7 @@ impl<R: Read> BitStream<R> {
         }
 
         let len = buffer.len() * 32;
-        Self {
-            reader,
-            buffer,
-            pos: 0,
-            len,
-        }
+        Self { reader, buffer, pos: 0, len }
     }
 
     /// Get bits from a 32-bit value (MSB first)
@@ -61,10 +56,7 @@ impl<R: Read> BitStream<R> {
 
         // Check if we have enough bits (with padding)
         if self.pos + bits > self.len + 31 {
-            return Err(ArchiveError::decompression_failed(
-                "bitstream",
-                "unexpected end of data",
-            ));
+            return Err(ArchiveError::decompression_failed("bitstream", "unexpected end of data"));
         }
 
         // Ensure buffer has padding word
@@ -127,9 +119,11 @@ mod tests {
     use std::io::Cursor;
 
     /// Test based on Python acefile doctest:
+    /// ```text
     /// >>> bs = BitStream(io.BytesIO(b'01234567'))
     /// >>> bs.peek_bits(31)
     /// 429463704
+    /// ```
     #[test]
     fn test_python_compatibility() {
         let data = b"01234567";

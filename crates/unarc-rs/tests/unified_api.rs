@@ -1,8 +1,6 @@
 use std::fs::File;
 use std::path::Path;
-use unarc_rs::unified::{
-    is_supported_archive, supported_extensions, ArchiveFormat, ArchiveOptions, UnifiedArchive,
-};
+use unarc_rs::unified::{is_supported_archive, supported_extensions, ArchiveFormat, ArchiveOptions, UnifiedArchive};
 
 #[test]
 fn test_arc_via_unified() {
@@ -245,54 +243,18 @@ fn test_entries_iterator() {
 
 #[test]
 fn test_format_detection() {
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.arj")),
-        Some(ArchiveFormat::Arj)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.zoo")),
-        Some(ArchiveFormat::Zoo)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.arc")),
-        Some(ArchiveFormat::Arc)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.hyp")),
-        Some(ArchiveFormat::Hyp)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.sqz")),
-        Some(ArchiveFormat::Sqz)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.sq")),
-        Some(ArchiveFormat::Sq)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.Z")),
-        Some(ArchiveFormat::Z)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.ha")),
-        Some(ArchiveFormat::Ha)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.lha")),
-        Some(ArchiveFormat::Lha)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.lzh")),
-        Some(ArchiveFormat::Lha)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.zip")),
-        Some(ArchiveFormat::Zip)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("test.rar")),
-        Some(ArchiveFormat::Rar)
-    );
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.arj")), Some(ArchiveFormat::Arj));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.zoo")), Some(ArchiveFormat::Zoo));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.arc")), Some(ArchiveFormat::Arc));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.hyp")), Some(ArchiveFormat::Hyp));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.sqz")), Some(ArchiveFormat::Sqz));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.sq")), Some(ArchiveFormat::Sq));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.Z")), Some(ArchiveFormat::Z));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.ha")), Some(ArchiveFormat::Ha));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.lha")), Some(ArchiveFormat::Lha));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.lzh")), Some(ArchiveFormat::Lha));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.zip")), Some(ArchiveFormat::Zip));
+    assert_eq!(ArchiveFormat::from_path(Path::new("test.rar")), Some(ArchiveFormat::Rar));
     assert_eq!(ArchiveFormat::from_path(Path::new("test.txt")), None);
 }
 

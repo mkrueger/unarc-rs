@@ -213,10 +213,7 @@ mod tests {
 
     #[test]
     fn test_display() {
-        assert_eq!(
-            EncryptionMethod::Zip(ZipEncryption::Aes256).to_string(),
-            "ZIP AES-256"
-        );
+        assert_eq!(EncryptionMethod::Zip(ZipEncryption::Aes256).to_string(), "ZIP AES-256");
         assert_eq!(EncryptionMethod::Ace.to_string(), "ACE Blowfish");
     }
 }

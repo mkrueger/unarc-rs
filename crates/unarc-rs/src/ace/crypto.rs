@@ -32,8 +32,7 @@ pub fn decrypt_cbc(data: &[u8], key: &[u8]) -> Vec<u8> {
     }
 
     // ACE uses big-endian Blowfish
-    let cipher: Blowfish<byteorder::BigEndian> =
-        Blowfish::new_from_slice(key).expect("Invalid key length");
+    let cipher: Blowfish<byteorder::BigEndian> = Blowfish::new_from_slice(key).expect("Invalid key length");
 
     let mut result = data.to_vec();
     let mut prev_block = [0u8; BLOCK_SIZE]; // Zero IV

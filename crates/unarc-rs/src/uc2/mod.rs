@@ -24,18 +24,8 @@ impl ExtendedHeader {
     pub fn load_from<T: Read>(reader: &mut T) -> io::Result<Self> {
         let mut header_bytes = [0u8; EXT_HEADER_SIZE];
         reader.read_exact(&mut header_bytes)?;
-        let c_dir_loc_volume = u32::from_le_bytes([
-            header_bytes[0],
-            header_bytes[1],
-            header_bytes[2],
-            header_bytes[3],
-        ]);
-        let c_dir_loc_offset = u32::from_le_bytes([
-            header_bytes[4],
-            header_bytes[5],
-            header_bytes[6],
-            header_bytes[7],
-        ]);
+        let c_dir_loc_volume = u32::from_le_bytes([header_bytes[0], header_bytes[1], header_bytes[2], header_bytes[3]]);
+        let c_dir_loc_offset = u32::from_le_bytes([header_bytes[4], header_bytes[5], header_bytes[6], header_bytes[7]]);
         // Remaining bytes (fletch, is_busy, versions, reserved) are unused
         Ok(Self {
             c_dir_loc: Location {
@@ -89,10 +79,7 @@ impl TryFrom<u8> for EntryType {
             2 => Ok(EntryType::FileEntry),
             3 => Ok(EntryType::MasterEntry),
             4 => Ok(EntryType::EndOfCdir),
-            _ => Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("invalid entry type: {}", value),
-            )),
+            _ => Err(io::Error::new(io::ErrorKind::InvalidData, format!("invalid entry type: {}", value))),
         }
     }
 }

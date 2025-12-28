@@ -11,10 +11,7 @@ pub struct SqArchive<T: Read + Seek> {
 
 impl<T: Read + Seek> SqArchive<T> {
     pub fn new(reader: T) -> Result<Self> {
-        Ok(Self {
-            reader,
-            read_header: false,
-        })
+        Ok(Self { reader, read_header: false })
     }
 
     pub fn skip(&mut self, _header: &Header) -> Result<()> {
@@ -34,11 +31,7 @@ impl<T: Read + Seek> SqArchive<T> {
         }
 
         if checksum != header.checksum {
-            Err(ArchiveError::crc_mismatch(
-                &header.name,
-                header.checksum as u32,
-                checksum as u32,
-            ))
+            Err(ArchiveError::crc_mismatch(&header.name, header.checksum as u32, checksum as u32))
         } else {
             Ok(data)
         }

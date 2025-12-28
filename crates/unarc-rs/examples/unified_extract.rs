@@ -16,11 +16,7 @@ fn main() -> Result<(), ArchiveError> {
         eprintln!();
         eprintln!("Supported formats:");
         for format in ArchiveFormat::ALL {
-            eprintln!(
-                "  {} - extensions: {:?}",
-                format.name(),
-                format.extensions()
-            );
+            eprintln!("  {} - extensions: {:?}", format.name(), format.extensions());
         }
         std::process::exit(1);
     }
@@ -33,27 +29,16 @@ fn main() -> Result<(), ArchiveError> {
     };
 
     // Detect format from extension
-    let format = ArchiveFormat::from_path(archive_path).ok_or_else(|| {
-        ArchiveError::UnsupportedFormat(format!(
-            "Unsupported archive format: {:?}",
-            archive_path.extension()
-        ))
-    })?;
+    let format = ArchiveFormat::from_path(archive_path)
+        .ok_or_else(|| ArchiveError::UnsupportedFormat(format!("Unsupported archive format: {:?}", archive_path.extension())))?;
 
-    println!(
-        "Opening {} archive: {}",
-        format.name(),
-        archive_path.display()
-    );
+    println!("Opening {} archive: {}", format.name(), archive_path.display());
 
     let file = File::open(archive_path)?;
     let mut archive = UnifiedArchive::open_with_format(file, format)?;
 
     // For single-file formats (.Z, .gz, .bz2), derive the output filename from the archive name
-    if matches!(
-        format,
-        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
-    ) {
+    if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
         if let Some(stem) = archive_path.file_stem() {
             archive.set_single_file_name(stem.to_string_lossy().to_string());
         }

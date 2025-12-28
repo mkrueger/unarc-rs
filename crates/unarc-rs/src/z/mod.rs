@@ -22,11 +22,7 @@ impl<T: Read> ZArchive<T> {
         }
         let block_mode = header[2] & BLOCK_MODE != 0;
         let max_bits = header[2] & BIT_MASK;
-        Ok(Self {
-            block_mode,
-            max_bits,
-            reader,
-        })
+        Ok(Self { block_mode, max_bits, reader })
     }
 
     pub fn skip(&mut self) -> Result<()> {
@@ -37,8 +33,7 @@ impl<T: Read> ZArchive<T> {
     pub fn read(&mut self) -> Result<Vec<u8>> {
         let mut compressed_buffer = Vec::new();
         self.reader.read_to_end(&mut compressed_buffer)?;
-        let decompressed =
-            lzw::Lzw::new(self.max_bits, self.block_mode).decomp(&compressed_buffer)?;
+        let decompressed = lzw::Lzw::new(self.max_bits, self.block_mode).decomp(&compressed_buffer)?;
         Ok(decompressed)
     }
 }

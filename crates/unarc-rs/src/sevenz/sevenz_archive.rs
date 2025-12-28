@@ -72,8 +72,7 @@ impl<T: Read + Seek> SevenZArchive<T> {
             None => sevenz_rust2::Password::empty(),
         };
 
-        let archive = sevenz_rust2::ArchiveReader::new(&mut reader, pwd)
-            .map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
+        let archive = sevenz_rust2::ArchiveReader::new(&mut reader, pwd).map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
 
         // Detect which blocks use AES encryption
         let encrypted_blocks = Self::get_encrypted_blocks(archive.archive());
@@ -179,11 +178,7 @@ impl<T: Read + Seek> SevenZArchive<T> {
     }
 
     /// Read and decompress an entry's data with a specific password
-    pub fn read_with_password(
-        &mut self,
-        header: &SevenZFileHeader,
-        password: Option<String>,
-    ) -> Result<Vec<u8>> {
+    pub fn read_with_password(&mut self, header: &SevenZFileHeader, password: Option<String>) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
         }
@@ -194,8 +189,7 @@ impl<T: Read + Seek> SevenZArchive<T> {
             None => sevenz_rust2::Password::empty(),
         };
 
-        let mut archive = sevenz_rust2::ArchiveReader::new(&mut self.reader, pwd)
-            .map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
+        let mut archive = sevenz_rust2::ArchiveReader::new(&mut self.reader, pwd).map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
 
         // Find and extract the file by name
         archive
@@ -281,15 +275,9 @@ impl<T: Read + Seek> SevenZArchive<T> {
     ///
     /// This reads the entire archive into memory and returns a standalone
     /// verifier that can be used from multiple threads with rayon.
-    pub fn create_password_verifier(
-        &mut self,
-        header: &SevenZFileHeader,
-    ) -> Result<super::password_verifier::SevenZPasswordVerifier> {
+    pub fn create_password_verifier(&mut self, header: &SevenZFileHeader) -> Result<super::password_verifier::SevenZPasswordVerifier> {
         if !header.is_encrypted {
-            return Err(ArchiveError::unsupported_method(
-                "7z",
-                "entry is not encrypted",
-            ));
+            return Err(ArchiveError::unsupported_method("7z", "entry is not encrypted"));
         }
 
         // Read the entire archive into memory

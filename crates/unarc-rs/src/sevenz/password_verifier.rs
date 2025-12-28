@@ -37,12 +37,7 @@ impl SevenZPasswordVerifier {
     /// * `file_name` - Name of the encrypted file to test against
     /// * `expected_crc` - The CRC32 from the header
     /// * `original_size` - The uncompressed size
-    pub fn new(
-        archive_data: Vec<u8>,
-        file_name: String,
-        expected_crc: u32,
-        original_size: u64,
-    ) -> Self {
+    pub fn new(archive_data: Vec<u8>, file_name: String, expected_crc: u32, original_size: u64) -> Self {
         Self {
             archive_data: Arc::from(archive_data.into_boxed_slice()),
             file_name,

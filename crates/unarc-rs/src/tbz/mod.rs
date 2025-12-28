@@ -30,9 +30,9 @@ impl TbzArchive {
         // Decompress the bzip2 data
         let mut decoder = BzDecoder::new(reader);
         let mut decompressed = Vec::new();
-        decoder.read_to_end(&mut decompressed).map_err(|e| {
-            crate::error::ArchiveError::io_error(format!("Failed to decompress bzip2: {}", e))
-        })?;
+        decoder
+            .read_to_end(&mut decompressed)
+            .map_err(|e| crate::error::ArchiveError::io_error(format!("Failed to decompress bzip2: {}", e)))?;
 
         // Create a cursor for the decompressed data
         let cursor = Cursor::new(decompressed);

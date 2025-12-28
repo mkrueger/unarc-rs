@@ -29,13 +29,7 @@ impl HuffmanTable {
         }
     }
 
-    fn build_with_codes(
-        &mut self,
-        lengths: &[u8],
-        num_literals: usize,
-        num_dists: usize,
-        dist_codes: &[u32],
-    ) -> io::Result<()> {
+    fn build_with_codes(&mut self, lengths: &[u8], num_literals: usize, num_dists: usize, dist_codes: &[u32]) -> io::Result<()> {
         let codes = &dist_codes[..num_dists.min(dist_codes.len())];
         self.fill(lengths, num_literals, codes)
     }
@@ -67,17 +61,10 @@ impl HuffmanTable {
 
                 let span = 1usize << (MAX_CODE_BITS - len);
                 if pos + span > LOOKUP_SIZE {
-                    return Err(io::Error::new(
-                        ErrorKind::InvalidData,
-                        "invalid Huffman table",
-                    ));
+                    return Err(io::Error::new(ErrorKind::InvalidData, "invalid Huffman table"));
                 }
 
-                let value = if symbol < num_literals {
-                    symbol as u32
-                } else {
-                    codes[symbol - num_literals]
-                } | ((len as u32) << 24);
+                let value = if symbol < num_literals { symbol as u32 } else { codes[symbol - num_literals] } | ((len as u32) << 24);
 
                 self.entries[pos..pos + span].fill(value);
                 pos += span;
@@ -100,10 +87,7 @@ impl HuffmanTable {
         let entry = self.entries[index];
         let bits_used = (entry >> 24) as u8;
         if bits_used == 0 {
-            return Err(io::Error::new(
-                ErrorKind::InvalidData,
-                "invalid Huffman entry",
-            ));
+            return Err(io::Error::new(ErrorKind::InvalidData, "invalid Huffman entry"));
         }
         bits.skip_bits(bits_used as u32)?;
         Ok(entry & 0x00FF_FFFF)
@@ -133,10 +117,7 @@ impl<'a> Uc2BitReader<'a> {
     fn fill_cache(&mut self, n: u32) -> io::Result<()> {
         while self.cache_bits < n {
             if self.pos + 1 >= self.data.len() {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "truncated data",
-                ));
+                return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "truncated data"));
             }
             // Read 16-bit little-endian word
             let word = u16::from_le_bytes([self.data[self.pos], self.data[self.pos + 1]]) as u32;
@@ -207,10 +188,7 @@ impl CircularBuffer {
         if SUPERMASTER.len() != 49152 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!(
-                    "SuperMaster has wrong size: {} (expected 49152)",
-                    SUPERMASTER.len()
-                ),
+                format!("SuperMaster has wrong size: {} (expected 49152)", SUPERMASTER.len()),
             ));
         }
 
@@ -267,10 +245,7 @@ fn get_default_lengths() -> [u8; NUM_LD_SYM + NUM_LEN_SYM] {
 }
 
 /// Decode tree lengths using delta-coded Huffman tree  
-fn decode_tree_lengths(
-    bits: &mut Uc2BitReader,
-    symprev: &mut [u8; NUM_LD_SYM + NUM_LEN_SYM],
-) -> io::Result<[u8; NUM_LD_SYM + NUM_LEN_SYM]> {
+fn decode_tree_lengths(bits: &mut Uc2BitReader, symprev: &mut [u8; NUM_LD_SYM + NUM_LEN_SYM]) -> io::Result<[u8; NUM_LD_SYM + NUM_LEN_SYM]> {
     let mut lengths = [0u8; NUM_LD_SYM + NUM_LEN_SYM];
 
     // Read tree type flag (1 bit)
@@ -297,9 +272,8 @@ fn decode_tree_lengths(
     // Decode the delta stream
     const NUM_SYMBOLS: usize = NUM_LD_SYM + NUM_LEN_SYM; // 344 symbols total
 
-    let num_syms = NUM_SYMBOLS - NUM_LO_ASCII - NUM_HI_BYTE
-        + if tree_type & 1 != 0 { NUM_LO_ASCII } else { 0 }
-        + if tree_type & 2 != 0 { NUM_HI_BYTE } else { 0 };
+    let num_syms =
+        NUM_SYMBOLS - NUM_LO_ASCII - NUM_HI_BYTE + if tree_type & 1 != 0 { NUM_LO_ASCII } else { 0 } + if tree_type & 2 != 0 { NUM_HI_BYTE } else { 0 };
 
     let mut stream = Vec::with_capacity(num_syms);
     let mut val = 0u8;
@@ -386,11 +360,7 @@ fn decompress_block(
             let base_dist = ld_entry & 0xFFFF;
             let extra_bits_count = (ld_entry >> 20) & 0xF;
 
-            let extra_bits_value = if extra_bits_count > 0 {
-                bits.read_bits(extra_bits_count)?
-            } else {
-                0
-            };
+            let extra_bits_value = if extra_bits_count > 0 { bits.read_bits(extra_bits_count)? } else { 0 };
             let distance = base_dist + extra_bits_value;
 
             // Decode length first (C code reads length before EOB check)
@@ -419,11 +389,7 @@ fn create_circular_buffer(dict: MasterDict) -> io::Result<CircularBuffer> {
     }
 }
 
-fn decompress_impl(
-    compressed: &[u8],
-    expected_size: Option<usize>,
-    dict: MasterDict,
-) -> io::Result<Vec<u8>> {
+fn decompress_impl(compressed: &[u8], expected_size: Option<usize>, dict: MasterDict) -> io::Result<Vec<u8>> {
     let mut bits = Uc2BitReader::new(compressed);
     let mut circ_buf = create_circular_buffer(dict)?;
     let mut output = Vec::with_capacity(expected_size.unwrap_or(0));
@@ -439,24 +405,12 @@ fn decompress_impl(
         let lengths = decode_tree_lengths(&mut bits, &mut symprev)?;
 
         let mut ld_table = HuffmanTable::new();
-        ld_table.build_with_codes(
-            &lengths[..NUM_LD_SYM],
-            NUM_BYTE_SYM,
-            NUM_DIST_SYM,
-            &PACKED_DIST_CODES,
-        )?;
+        ld_table.build_with_codes(&lengths[..NUM_LD_SYM], NUM_BYTE_SYM, NUM_DIST_SYM, &PACKED_DIST_CODES)?;
 
         let mut len_table = HuffmanTable::new();
         len_table.build_lengths(&lengths[NUM_LD_SYM..], NUM_LEN_SYM)?;
 
-        let _ = decompress_block(
-            &mut bits,
-            &ld_table,
-            &len_table,
-            &mut circ_buf,
-            &mut output,
-            max_output,
-        )?;
+        let _ = decompress_block(&mut bits, &ld_table, &len_table, &mut circ_buf, &mut output, max_output)?;
 
         if let Some(limit) = expected_size {
             if output.len() >= limit {
@@ -469,11 +423,7 @@ fn decompress_impl(
         if output.len() < limit {
             return Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
-                format!(
-                    "decompressed output shorter than expected ({} < {})",
-                    output.len(),
-                    limit
-                ),
+                format!("decompressed output shorter than expected ({} < {})", output.len(), limit),
             ));
         }
         if output.len() > limit {
@@ -485,11 +435,7 @@ fn decompress_impl(
 }
 
 /// UC2 decompression with arbitrary dictionary configuration
-pub fn decompress_with_dict<'a>(
-    compressed: &[u8],
-    expected_size: usize,
-    dict: MasterDict<'a>,
-) -> io::Result<Vec<u8>> {
+pub fn decompress_with_dict<'a>(compressed: &[u8], expected_size: usize, dict: MasterDict<'a>) -> io::Result<Vec<u8>> {
     decompress_impl(compressed, Some(expected_size), dict)
 }
 

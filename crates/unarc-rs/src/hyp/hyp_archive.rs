@@ -15,8 +15,7 @@ impl<T: Read + Seek> HypArchive<T> {
     }
 
     pub fn skip(&mut self, header: &Header) -> Result<()> {
-        self.reader
-            .seek(SeekFrom::Current(header.compressed_size as i64))?;
+        self.reader.seek(SeekFrom::Current(header.compressed_size as i64))?;
         Ok(())
     }
 
@@ -32,11 +31,7 @@ impl<T: Read + Seek> HypArchive<T> {
 
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,
-            CompressionMethod::Compressed => hyp_unpack::unpack_hyp(
-                &compressed_buffer,
-                header.original_size as usize,
-                header.version,
-            )?,
+            CompressionMethod::Compressed => hyp_unpack::unpack_hyp(&compressed_buffer, header.original_size as usize, header.version)?,
         };
         Ok(uncompressed)
     }

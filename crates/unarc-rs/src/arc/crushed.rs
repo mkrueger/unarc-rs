@@ -93,16 +93,10 @@ impl CrushedState {
 
         // Initialize literal entries (0-255).
         for (i, entry) in table.iter_mut().enumerate().take(256) {
-            *entry = LzwEntry {
-                parent: -1,
-                byte: i as u8,
-            };
+            *entry = LzwEntry { parent: -1, byte: i as u8 };
         }
         // Entry 256 = EOF (unused but reserved).
-        table[256] = LzwEntry {
-            parent: -1,
-            byte: 0,
-        };
+        table[256] = LzwEntry { parent: -1, byte: 0 };
 
         // Initialize usage counters.
         let mut usage = vec![0u8; TABLE_SIZE];
@@ -209,24 +203,24 @@ impl CrushedState {
     fn read_symbol<R: BitRead>(&self, reader: &mut R) -> Result<usize> {
         let sym = if self.literal_mode {
             // Mode with 1-bit prefix: 0 = literal, 1 = string.
-            let is_string = reader.read_bit().map_err(|e| {
-                ArchiveError::decompression_failed("Crushed", format!("read error: {e}"))
-            })?;
+            let is_string = reader
+                .read_bit()
+                .map_err(|e| ArchiveError::decompression_failed("Crushed", format!("read error: {e}")))?;
             if is_string {
-                let code: u16 = reader.read_var(self.code_bits).map_err(|e| {
-                    ArchiveError::decompression_failed("Crushed", format!("read error: {e}"))
-                })?;
+                let code: u16 = reader
+                    .read_var(self.code_bits)
+                    .map_err(|e| ArchiveError::decompression_failed("Crushed", format!("read error: {e}")))?;
                 code as usize + 256
             } else {
-                reader.read::<8, u8>().map_err(|e| {
-                    ArchiveError::decompression_failed("Crushed", format!("read error: {e}"))
-                })? as usize
+                reader
+                    .read::<8, u8>()
+                    .map_err(|e| ArchiveError::decompression_failed("Crushed", format!("read error: {e}")))? as usize
             }
         } else {
             // Direct coding: values < 0x100 are XOR'd with 0xFF.
-            let code: u16 = reader.read_var(self.code_bits).map_err(|e| {
-                ArchiveError::decompression_failed("Crushed", format!("read error: {e}"))
-            })?;
+            let code: u16 = reader
+                .read_var(self.code_bits)
+                .map_err(|e| ArchiveError::decompression_failed("Crushed", format!("read error: {e}")))?;
             let code = code as usize;
             if code < 0x100 {
                 code ^ 0xFF
@@ -243,9 +237,9 @@ impl CrushedState {
 
         // Handle KwKwK case (sym == table_size).
         if sym == self.table_size {
-            let prev = self.prev_sym.ok_or_else(|| {
-                ArchiveError::decompression_failed("Crushed", "KwKwK without previous symbol")
-            })?;
+            let prev = self
+                .prev_sym
+                .ok_or_else(|| ArchiveError::decompression_failed("Crushed", "KwKwK without previous symbol"))?;
 
             // Decode previous string with safety limit.
             let mut s = prev;
@@ -273,10 +267,7 @@ impl CrushedState {
         }
 
         if sym >= TABLE_SIZE {
-            return Err(ArchiveError::decompression_failed(
-                "Crushed",
-                format!("invalid symbol {sym}"),
-            ));
+            return Err(ArchiveError::decompression_failed("Crushed", format!("invalid symbol {sym}")));
         }
 
         // Normal decode: walk parent chain.
@@ -390,10 +381,7 @@ pub fn decompress(input: &[u8]) -> Result<Vec<u8>> {
 
         // Validate symbol.
         if sym >= TABLE_SIZE {
-            return Err(ArchiveError::decompression_failed(
-                "Crushed",
-                format!("invalid symbol {sym}"),
-            ));
+            return Err(ArchiveError::decompression_failed("Crushed", format!("invalid symbol {sym}")));
         }
         if sym > state.table_size {
             return Err(ArchiveError::decompression_failed(

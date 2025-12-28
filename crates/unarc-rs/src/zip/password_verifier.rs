@@ -38,13 +38,7 @@ impl ZipPasswordVerifier {
     /// * `expected_crc` - The CRC32 from the header
     /// * `original_size` - The uncompressed size
     /// * `entry_name` - Name of the entry (for debugging)
-    pub fn new(
-        archive_data: Vec<u8>,
-        file_index: usize,
-        expected_crc: u32,
-        original_size: u64,
-        entry_name: String,
-    ) -> Self {
+    pub fn new(archive_data: Vec<u8>, file_index: usize, expected_crc: u32, original_size: u64, entry_name: String) -> Self {
         Self {
             archive_data: Arc::from(archive_data.into_boxed_slice()),
             file_index,

@@ -43,38 +43,14 @@ use crate::encryption::ArjEncryption;
 /// GOST 28147-89 S-boxes (CryptoPro-A parameter set)
 /// Source: RFC 4357, Section 11.2
 const SBOX: [[u8; 16]; 8] = [
-    [
-        0x01, 0x0F, 0x0D, 0x00, 0x05, 0x07, 0x0A, 0x04, 0x09, 0x02, 0x03, 0x0E, 0x06, 0x0B, 0x08,
-        0x0C,
-    ],
-    [
-        0x0D, 0x0B, 0x04, 0x01, 0x03, 0x0F, 0x05, 0x09, 0x00, 0x0A, 0x0E, 0x07, 0x06, 0x08, 0x02,
-        0x0C,
-    ],
-    [
-        0x04, 0x0B, 0x0A, 0x00, 0x07, 0x02, 0x01, 0x0D, 0x03, 0x06, 0x08, 0x05, 0x09, 0x0C, 0x0F,
-        0x0E,
-    ],
-    [
-        0x06, 0x0C, 0x07, 0x01, 0x05, 0x0F, 0x0D, 0x08, 0x04, 0x0A, 0x09, 0x0E, 0x00, 0x03, 0x0B,
-        0x02,
-    ],
-    [
-        0x07, 0x0D, 0x0A, 0x01, 0x00, 0x08, 0x09, 0x0F, 0x0E, 0x04, 0x06, 0x0C, 0x0B, 0x02, 0x05,
-        0x03,
-    ],
-    [
-        0x05, 0x08, 0x01, 0x0D, 0x0A, 0x03, 0x04, 0x02, 0x0E, 0x0F, 0x0C, 0x07, 0x06, 0x00, 0x09,
-        0x0B,
-    ],
-    [
-        0x0E, 0x0B, 0x04, 0x0C, 0x06, 0x0D, 0x0F, 0x0A, 0x02, 0x03, 0x08, 0x01, 0x00, 0x07, 0x05,
-        0x09,
-    ],
-    [
-        0x04, 0x0A, 0x09, 0x02, 0x0D, 0x08, 0x00, 0x0E, 0x06, 0x0B, 0x01, 0x0C, 0x07, 0x0F, 0x05,
-        0x03,
-    ],
+    [0x01, 0x0F, 0x0D, 0x00, 0x05, 0x07, 0x0A, 0x04, 0x09, 0x02, 0x03, 0x0E, 0x06, 0x0B, 0x08, 0x0C],
+    [0x0D, 0x0B, 0x04, 0x01, 0x03, 0x0F, 0x05, 0x09, 0x00, 0x0A, 0x0E, 0x07, 0x06, 0x08, 0x02, 0x0C],
+    [0x04, 0x0B, 0x0A, 0x00, 0x07, 0x02, 0x01, 0x0D, 0x03, 0x06, 0x08, 0x05, 0x09, 0x0C, 0x0F, 0x0E],
+    [0x06, 0x0C, 0x07, 0x01, 0x05, 0x0F, 0x0D, 0x08, 0x04, 0x0A, 0x09, 0x0E, 0x00, 0x03, 0x0B, 0x02],
+    [0x07, 0x0D, 0x0A, 0x01, 0x00, 0x08, 0x09, 0x0F, 0x0E, 0x04, 0x06, 0x0C, 0x0B, 0x02, 0x05, 0x03],
+    [0x05, 0x08, 0x01, 0x0D, 0x0A, 0x03, 0x04, 0x02, 0x0E, 0x0F, 0x0C, 0x07, 0x06, 0x00, 0x09, 0x0B],
+    [0x0E, 0x0B, 0x04, 0x0C, 0x06, 0x0D, 0x0F, 0x0A, 0x02, 0x03, 0x08, 0x01, 0x00, 0x07, 0x05, 0x09],
+    [0x04, 0x0A, 0x09, 0x02, 0x0D, 0x08, 0x00, 0x0E, 0x06, 0x0B, 0x01, 0x0C, 0x07, 0x0F, 0x05, 0x03],
 ];
 
 // ============================================================================
@@ -200,8 +176,7 @@ impl Gost40 {
     /// Password bytes are accumulated with bit shifting for mixing.
     fn build_key_from_password(password: &str) -> [u32; 8] {
         let mut key = [0u32; 8];
-        let key_bytes: &mut [u8] =
-            unsafe { std::slice::from_raw_parts_mut(key.as_mut_ptr() as *mut u8, 32) };
+        let key_bytes: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(key.as_mut_ptr() as *mut u8, 32) };
 
         let pwd_bytes = password.as_bytes();
         if pwd_bytes.is_empty() {
@@ -212,8 +187,7 @@ impl Gost40 {
         for round in 0..64 {
             // Only use first 5 bytes of key (40 bits)
             let byte_idx = round % 5;
-            key_bytes[byte_idx] =
-                key_bytes[byte_idx].wrapping_add(pwd_bytes[pwd_idx] << (round % 7));
+            key_bytes[byte_idx] = key_bytes[byte_idx].wrapping_add(pwd_bytes[pwd_idx] << (round % 7));
             pwd_idx += 1;
             if pwd_idx >= pwd_bytes.len() {
                 pwd_idx = 0;
@@ -272,8 +246,7 @@ impl Gost40 {
 
         // Key strengthening: repeatedly encrypt the key material
         for _ in 0..KEY_ITERATIONS {
-            let work_bytes: &mut [u8] =
-                unsafe { std::slice::from_raw_parts_mut(work_key.as_mut_ptr() as *mut u8, 32) };
+            let work_bytes: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(work_key.as_mut_ptr() as *mut u8, 32) };
             self.cfb_encrypt(work_bytes);
         }
 
@@ -285,8 +258,7 @@ impl Gost40 {
         for chunk in data.chunks_mut(8) {
             self.feedback = self.encrypt_block(&self.feedback);
 
-            let fb_bytes: &[u8] =
-                unsafe { std::slice::from_raw_parts(self.feedback.as_ptr() as *const u8, 8) };
+            let fb_bytes: &[u8] = unsafe { std::slice::from_raw_parts(self.feedback.as_ptr() as *const u8, 8) };
 
             for (i, byte) in chunk.iter_mut().enumerate() {
                 let encrypted = *byte ^ fb_bytes[i];
@@ -336,9 +308,7 @@ impl Gost40 {
                     self.feedback = self.encrypt_block(&self.feedback);
                 }
 
-                let fb_bytes: &mut [u8] = unsafe {
-                    std::slice::from_raw_parts_mut(self.feedback.as_mut_ptr() as *mut u8, 8)
-                };
+                let fb_bytes: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(self.feedback.as_mut_ptr() as *mut u8, 8) };
 
                 let ciphertext = *byte;
                 *byte = ciphertext ^ fb_bytes[self.byte_offset];
@@ -399,13 +369,7 @@ pub fn garble_decrypt(data: &mut [u8], password: &str, modifier: u8) {
 /// * `password` - The encryption password
 /// * `modifier` - Modifier byte from ARJ header
 /// * `file_time` - File timestamp (used as IV for GOST40)
-pub fn decrypt_arj_data(
-    data: &mut [u8],
-    encryption_type: Option<ArjEncryption>,
-    password: &str,
-    modifier: u8,
-    file_time: u32,
-) {
+pub fn decrypt_arj_data(data: &mut [u8], encryption_type: Option<ArjEncryption>, password: &str, modifier: u8, file_time: u32) {
     match encryption_type {
         None => {}
         Some(ArjEncryption::Garble) => {
@@ -455,18 +419,9 @@ mod tests {
 
     #[test]
     fn test_encryption_type_from_version() {
-        assert_eq!(
-            ArjEncryption::from_version(0, true),
-            Some(ArjEncryption::Garble)
-        );
-        assert_eq!(
-            ArjEncryption::from_version(1, true),
-            Some(ArjEncryption::Garble)
-        );
-        assert_eq!(
-            ArjEncryption::from_version(2, true),
-            Some(ArjEncryption::Gost40)
-        );
+        assert_eq!(ArjEncryption::from_version(0, true), Some(ArjEncryption::Garble));
+        assert_eq!(ArjEncryption::from_version(1, true), Some(ArjEncryption::Garble));
+        assert_eq!(ArjEncryption::from_version(2, true), Some(ArjEncryption::Gost40));
         assert_eq!(ArjEncryption::from_version(0, false), None);
     }
 }

@@ -47,10 +47,7 @@ fn extract_method3() {
     assert_eq!("method3.arj", archive.get_name());
     let entry = archive.get_next_entry().unwrap().unwrap();
     assert_eq!("LICENSE", entry.name);
-    assert_eq!(
-        CompressionMethod::CompressedFaster,
-        entry.compression_method
-    );
+    assert_eq!(CompressionMethod::CompressedFaster, entry.compression_method);
     let result = archive.read(&entry).unwrap();
     assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
@@ -62,10 +59,7 @@ fn extract_method4() {
     assert_eq!("method4.arj", archive.get_name());
     let entry = archive.get_next_entry().unwrap().unwrap();
     assert_eq!("LICENSE", entry.name);
-    assert_eq!(
-        CompressionMethod::CompressedFastest,
-        entry.compression_method
-    );
+    assert_eq!(CompressionMethod::CompressedFastest, entry.compression_method);
     let result = archive.read(&entry).unwrap();
     assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
@@ -104,8 +98,12 @@ fn extract_multi_volume() {
         while let Some(entry) = archive.get_next_entry().unwrap() {
             println!(
                 "Entry: {}, is_volume: {}, is_ext_file: {}, compressed: {}, original: {}, original_for_volumes: {}, crc: {:08X}",
-                entry.name, entry.is_volume(), entry.is_ext_file(),
-                entry.compressed_size, entry.original_size, entry.original_size_even_for_volumes,
+                entry.name,
+                entry.is_volume(),
+                entry.is_ext_file(),
+                entry.compressed_size,
+                entry.original_size,
+                entry.original_size_even_for_volumes,
                 entry.original_crc32
             );
             archive.skip(&entry).unwrap();
@@ -120,8 +118,12 @@ fn extract_multi_volume() {
         while let Some(entry) = archive.get_next_entry().unwrap() {
             println!(
                 "Entry: {}, is_volume: {}, is_ext_file: {}, compressed: {}, original: {}, original_for_volumes: {}, crc: {:08X}",
-                entry.name, entry.is_volume(), entry.is_ext_file(),
-                entry.compressed_size, entry.original_size, entry.original_size_even_for_volumes,
+                entry.name,
+                entry.is_volume(),
+                entry.is_ext_file(),
+                entry.compressed_size,
+                entry.original_size,
+                entry.original_size_even_for_volumes,
                 entry.original_crc32
             );
             archive.skip(&entry).unwrap();
@@ -136,8 +138,12 @@ fn extract_multi_volume() {
         while let Some(entry) = archive.get_next_entry().unwrap() {
             println!(
                 "Entry: {}, is_volume: {}, is_ext_file: {}, compressed: {}, original: {}, original_for_volumes: {}, crc: {:08X}",
-                entry.name, entry.is_volume(), entry.is_ext_file(),
-                entry.compressed_size, entry.original_size, entry.original_size_even_for_volumes,
+                entry.name,
+                entry.is_volume(),
+                entry.is_ext_file(),
+                entry.compressed_size,
+                entry.original_size,
+                entry.original_size_even_for_volumes,
                 entry.original_crc32
             );
             archive.skip(&entry).unwrap();
@@ -145,11 +151,7 @@ fn extract_multi_volume() {
     }
 
     // Create volume provider
-    let volume_provider = TestVolumeProvider {
-        volume0,
-        volume1,
-        volume2,
-    };
+    let volume_provider = TestVolumeProvider { volume0, volume1, volume2 };
 
     // Open the first volume
     let file = Cursor::new(volume0);
@@ -161,9 +163,5 @@ fn extract_multi_volume() {
 
     // Try to read - this should work with multi-volume support
     let result = archive.read(&entry);
-    assert!(
-        result.is_ok(),
-        "Failed to read multi-volume entry: {:?}",
-        result.err()
-    );
+    assert!(result.is_ok(), "Failed to read multi-volume entry: {:?}", result.err());
 }

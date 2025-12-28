@@ -44,15 +44,8 @@ fn extract_m3() {
         entry.original_size, entry.compressed_size, entry.method
     );
     let result = archive.read(&entry).unwrap();
-    eprintln!(
-        "Decompressed {} bytes, expected {}",
-        result.len(),
-        entry.original_size
-    );
-    eprintln!(
-        "Expected LICENSE size: {}",
-        include_bytes!("../../../LICENSE").len()
-    );
+    eprintln!("Decompressed {} bytes, expected {}", result.len(), entry.original_size);
+    eprintln!("Expected LICENSE size: {}", include_bytes!("../../../LICENSE").len());
     assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
 

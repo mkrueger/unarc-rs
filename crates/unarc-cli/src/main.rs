@@ -115,11 +115,7 @@ fn main() {
 }
 
 /// Open an archive, automatically handling multi-volume split archives
-fn open_archive_auto(
-    archive_path: &Path,
-    format: ArchiveFormat,
-    options: ArchiveOptions,
-) -> Result<Box<dyn ArchiveReader>, ArchiveError> {
+fn open_archive_auto(archive_path: &Path, format: ArchiveFormat, options: ArchiveOptions) -> Result<Box<dyn ArchiveReader>, ArchiveError> {
     // Check if this is a multi-volume split archive (ZIP .001/.z01 or 7z .001)
     if let Some(pattern) = FileVolumeProvider::detect_pattern(archive_path) {
         match pattern {
@@ -167,11 +163,7 @@ fn open_archive_auto(
 /// Trait for abstracting archive operations
 trait ArchiveReader {
     fn next_entry_box(&mut self) -> Result<Option<unarc_rs::unified::ArchiveEntry>, ArchiveError>;
-    fn read_with_options_box(
-        &mut self,
-        entry: &unarc_rs::unified::ArchiveEntry,
-        options: &ArchiveOptions,
-    ) -> Result<Vec<u8>, ArchiveError>;
+    fn read_with_options_box(&mut self, entry: &unarc_rs::unified::ArchiveEntry, options: &ArchiveOptions) -> Result<Vec<u8>, ArchiveError>;
     fn skip_box(&mut self, entry: &unarc_rs::unified::ArchiveEntry) -> Result<(), ArchiveError>;
     fn set_single_file_name_box(&mut self, name: String);
 }
@@ -180,11 +172,7 @@ impl<T: std::io::Read + std::io::Seek> ArchiveReader for UnifiedArchive<T> {
     fn next_entry_box(&mut self) -> Result<Option<unarc_rs::unified::ArchiveEntry>, ArchiveError> {
         self.next_entry()
     }
-    fn read_with_options_box(
-        &mut self,
-        entry: &unarc_rs::unified::ArchiveEntry,
-        options: &ArchiveOptions,
-    ) -> Result<Vec<u8>, ArchiveError> {
+    fn read_with_options_box(&mut self, entry: &unarc_rs::unified::ArchiveEntry, options: &ArchiveOptions) -> Result<Vec<u8>, ArchiveError> {
         self.read_with_options(entry, options)
     }
     fn skip_box(&mut self, entry: &unarc_rs::unified::ArchiveEntry) -> Result<(), ArchiveError> {
@@ -209,10 +197,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     let mut archive = open_archive_auto(archive_path, format, ArchiveOptions::new())?;
 
     // For single-file formats, derive the filename from the archive name
-    if matches!(
-        format,
-        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
-    ) {
+    if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
         if let Some(stem) = archive_path.file_stem() {
             archive.set_single_file_name_box(stem.to_string_lossy().to_string());
         }
@@ -260,8 +245,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
 
         // Skip to next entry (don't decompress)
         if let Err(e) = archive.skip_box(&entry) {
-            if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof)
-            {
+            if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
                 return Err(e);
             }
             break;
@@ -270,10 +254,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
 
     println!("{}", "-".repeat(105));
     let total_ratio = if total_original > 0 {
-        format!(
-            "{:>6.1}%",
-            (total_compressed as f64 / total_original as f64) * 100.0
-        )
+        format!("{:>6.1}%", (total_compressed as f64 / total_original as f64) * 100.0)
     } else {
         "   N/A".to_string()
     };
@@ -284,10 +265,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
         format!("{} file(s)", count)
     };
 
-    println!(
-        "{:<40} {:>12} {:>12} {:>8}",
-        summary, total_compressed, total_original, total_ratio
-    );
+    println!("{:<40} {:>12} {:>12} {:>8}", summary, total_compressed, total_original, total_ratio);
 
     Ok(())
 }
@@ -345,9 +323,7 @@ impl FileVolumeProvider {
 
         match ext.as_str() {
             // Numeric extensions like .001, .002
-            s if s.len() == 3 && s.chars().all(|c| c.is_ascii_digit()) => {
-                Some(VolumePattern::Numeric3)
-            }
+            s if s.len() == 3 && s.chars().all(|c| c.is_ascii_digit()) => Some(VolumePattern::Numeric3),
             // ZIP and WinZip split: .zip, .z01, .z02
             "zip" => Some(VolumePattern::WinZip),
             s if s.starts_with('z') && s.len() == 3 => Some(VolumePattern::WinZip),
@@ -359,9 +335,7 @@ impl FileVolumeProvider {
             s if s.starts_with('c') && s.len() == 3 => Some(VolumePattern::Ace),
             // ARJ style: .arj, .a01, .a02
             "arj" => Some(VolumePattern::Arj),
-            s if s.starts_with('a') && s.len() == 3 && s != "ace" && s != "arj" => {
-                Some(VolumePattern::Arj)
-            }
+            s if s.starts_with('a') && s.len() == 3 && s != "ace" && s != "arj" => Some(VolumePattern::Arj),
             _ => None,
         }
     }
@@ -426,30 +400,16 @@ impl FileVolumeProvider {
                 if !name.starts_with(&base_name) {
                     return false;
                 }
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                ext == "zip"
-                    || (ext.starts_with('z')
-                        && ext.len() == 3
-                        && ext[1..].chars().all(|c| c.is_ascii_digit()))
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                ext == "zip" || (ext.starts_with('z') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()))
             }
             VolumePattern::RarOld => {
                 // base.rar, base.r00, base.r01, ...
                 if !name.starts_with(&base_name) {
                     return false;
                 }
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                ext == "rar"
-                    || (ext.starts_with('r')
-                        && ext.len() == 3
-                        && ext[1..].chars().all(|c| c.is_ascii_digit()))
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                ext == "rar" || (ext.starts_with('r') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()))
             }
             VolumePattern::RarNew => {
                 // base.part1.rar, base.part2.rar, ...
@@ -474,30 +434,16 @@ impl FileVolumeProvider {
                 if !name.starts_with(&base_name) {
                     return false;
                 }
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                ext == "ace"
-                    || (ext.starts_with('c')
-                        && ext.len() == 3
-                        && ext[1..].chars().all(|c| c.is_ascii_digit()))
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                ext == "ace" || (ext.starts_with('c') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()))
             }
             VolumePattern::Arj => {
                 // base.arj, base.a01, base.a02, ...
                 if !name.starts_with(&base_name) {
                     return false;
                 }
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                ext == "arj"
-                    || (ext.starts_with('a')
-                        && ext.len() == 3
-                        && ext[1..].chars().all(|c| c.is_ascii_digit()))
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                ext == "arj" || (ext.starts_with('a') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()))
             }
         }
     }
@@ -516,11 +462,7 @@ impl FileVolumeProvider {
                 ext.parse().unwrap_or(u32::MAX)
             }
             VolumePattern::WinZip => {
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
                 if ext == "zip" {
                     0
                 } else if let Some(stripped) = ext.strip_prefix('z') {
@@ -530,11 +472,7 @@ impl FileVolumeProvider {
                 }
             }
             VolumePattern::RarOld => {
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
                 if ext == "rar" {
                     0
                 } else if let Some(stripped) = ext.strip_prefix('r') {
@@ -555,11 +493,7 @@ impl FileVolumeProvider {
                 u32::MAX
             }
             VolumePattern::Ace => {
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
                 if ext == "ace" {
                     0
                 } else if let Some(stripped) = ext.strip_prefix('c') {
@@ -570,11 +504,7 @@ impl FileVolumeProvider {
                 }
             }
             VolumePattern::Arj => {
-                let ext = path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
                 if ext == "arj" {
                     0
                 } else if let Some(stripped) = ext.strip_prefix('a') {
@@ -644,19 +574,10 @@ impl VolumeProvider for FileVolumeProvider {
     }
 }
 
-fn cmd_extract(
-    archive_path: &Path,
-    output_dir: &Path,
-    force: bool,
-    password: Option<&str>,
-) -> Result<(), ArchiveError> {
+fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Option<&str>) -> Result<(), ArchiveError> {
     let format = detect_format(archive_path)?;
 
-    println!(
-        "Extracting {} archive: {}",
-        format.name(),
-        archive_path.display()
-    );
+    println!("Extracting {} archive: {}", format.name(), archive_path.display());
 
     // Set up options with password
     let options = match password {
@@ -670,10 +591,7 @@ fn cmd_extract(
     let mut archive = open_archive_auto(archive_path, format, options.clone())?;
 
     // For single-file formats, derive the output filename from the archive name
-    if matches!(
-        format,
-        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
-    ) {
+    if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
         if let Some(stem) = archive_path.file_stem() {
             archive.set_single_file_name_box(stem.to_string_lossy().to_string());
         }
@@ -690,14 +608,10 @@ fn cmd_extract(
 
         // Check if file exists
         if output_path.exists() && !force {
-            eprintln!(
-                "  Skipping {} (already exists, use -f to overwrite)",
-                entry.name()
-            );
+            eprintln!("  Skipping {} (already exists, use -f to overwrite)", entry.name());
             // Still need to skip the entry data
             if let Err(e) = archive.skip_box(&entry) {
-                if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof)
-                {
+                if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
                     return Err(e);
                 }
             }
@@ -736,28 +650,14 @@ fn cmd_extract(
 
 fn cmd_formats() -> Result<(), ArchiveError> {
     println!("Supported archive formats:\n");
-    println!(
-        "{:<12} {:<25} {:<18} Aliases",
-        "Extension", "Format", "Magic Bytes"
-    );
+    println!("{:<12} {:<25} {:<18} Aliases", "Extension", "Format", "Magic Bytes");
     println!("{}", "-".repeat(80));
 
     for format in ArchiveFormat::ALL {
         let extensions = format.extensions();
-        let primary = extensions
-            .first()
-            .map(|s| format!(".{}", s))
-            .unwrap_or_default();
-        let aliases: Vec<String> = extensions
-            .iter()
-            .skip(1)
-            .map(|s| format!(".{}", s))
-            .collect();
-        let aliases_str = if aliases.is_empty() {
-            String::new()
-        } else {
-            aliases.join(", ")
-        };
+        let primary = extensions.first().map(|s| format!(".{}", s)).unwrap_or_default();
+        let aliases: Vec<String> = extensions.iter().skip(1).map(|s| format!(".{}", s)).collect();
+        let aliases_str = if aliases.is_empty() { String::new() } else { aliases.join(", ") };
         let magic = format
             .preambles()
             .map(|preambles| {
@@ -781,19 +681,8 @@ fn cmd_formats() -> Result<(), ArchiveError> {
             })
             .unwrap_or_else(|| "-".to_string());
         let offset = format.preamble_offset();
-        let offset_str = if offset > 0 {
-            format!("@{}", offset)
-        } else {
-            String::new()
-        };
-        println!(
-            "{:<12} {:<25} {:<20}{} {}",
-            primary,
-            format.name(),
-            magic,
-            offset_str,
-            aliases_str
-        );
+        let offset_str = if offset > 0 { format!("@{}", offset) } else { String::new() };
+        println!("{:<12} {:<25} {:<20}{} {}", primary, format.name(), magic, offset_str, aliases_str);
     }
 
     Ok(())
@@ -807,12 +696,7 @@ fn detect_format(path: &Path) -> Result<ArchiveFormat, ArchiveError> {
     }
 
     // Fall back to extension only
-    ArchiveFormat::from_path(path).ok_or_else(|| {
-        ArchiveError::UnsupportedFormat(format!(
-            "Unsupported or unrecognized archive format: {:?}",
-            path.extension()
-        ))
-    })
+    ArchiveFormat::from_path(path).ok_or_else(|| ArchiveError::UnsupportedFormat(format!("Unsupported or unrecognized archive format: {:?}", path.extension())))
 }
 
 pub fn truncate(s: &str, max_len: usize) -> String {

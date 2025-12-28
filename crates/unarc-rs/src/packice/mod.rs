@@ -45,10 +45,7 @@ pub fn is_pack_ice(data: &[u8]) -> bool {
         return false;
     }
     let hdr = u32::from_be_bytes(data[0..4].try_into().unwrap());
-    if matches!(
-        hdr,
-        FOURCC_ICE1 | FOURCC_ICE2 | FOURCC_TMM | FOURCC_TSM | FOURCC_SHE
-    ) {
+    if matches!(hdr, FOURCC_ICE1 | FOURCC_ICE2 | FOURCC_TMM | FOURCC_TSM | FOURCC_SHE) {
         return true;
     }
     // Check footer for v0
@@ -144,10 +141,7 @@ struct BackwardInputStream<'a> {
 impl<'a> BackwardInputStream<'a> {
     fn new(data: &'a [u8], start_offset: usize, end_offset: usize) -> Result<Self> {
         if start_offset > end_offset || end_offset > data.len() {
-            return Err(ArchiveError::decompression_failed(
-                "PackIce",
-                "invalid input bounds",
-            ));
+            return Err(ArchiveError::decompression_failed("PackIce", "invalid input bounds"));
         }
         Ok(Self {
             data,
@@ -158,10 +152,7 @@ impl<'a> BackwardInputStream<'a> {
 
     fn read_u8(&mut self) -> Result<u8> {
         if self.pos <= self.low {
-            return Err(ArchiveError::decompression_failed(
-                "PackIce",
-                "unexpected end of input",
-            ));
+            return Err(ArchiveError::decompression_failed("PackIce", "unexpected end of input"));
         }
         self.pos -= 1;
         Ok(self.data[self.pos])
@@ -192,11 +183,7 @@ struct MsbBitReader<'a> {
 
 impl<'a> MsbBitReader<'a> {
     fn new(input: BackwardInputStream<'a>) -> Self {
-        Self {
-            input,
-            buf: 0,
-            len: 0,
-        }
+        Self { input, buf: 0, len: 0 }
     }
 
     fn reset(&mut self, buf_content: u32, buf_len: u8) {
@@ -209,10 +196,7 @@ impl<'a> MsbBitReader<'a> {
         F: FnMut(&mut BackwardInputStream<'a>) -> Result<(u32, u8)>,
     {
         if count > 32 {
-            return Err(ArchiveError::decompression_failed(
-                "PackIce",
-                "bit count too large",
-            ));
+            return Err(ArchiveError::decompression_failed("PackIce", "bit count too large"));
         }
         let mut ret: u32 = 0;
         while count > 0 {
@@ -223,11 +207,7 @@ impl<'a> MsbBitReader<'a> {
             }
             let max_count = (count as u8).min(self.len);
             self.len -= max_count;
-            let mask = if max_count == 32 {
-                u32::MAX
-            } else {
-                (1u32 << max_count) - 1
-            };
+            let mask = if max_count == 32 { u32::MAX } else { (1u32 << max_count) - 1 };
             ret = (ret << max_count) | ((self.buf >> self.len) & mask);
             count -= max_count as u32;
         }
@@ -266,18 +246,12 @@ struct BackwardOutputStream<'a> {
 
 impl<'a> BackwardOutputStream<'a> {
     fn new(out: &'a mut [u8]) -> Self {
-        Self {
-            pos: out.len(),
-            out,
-        }
+        Self { pos: out.len(), out }
     }
 
     fn write_byte(&mut self, b: u8) -> Result<()> {
         if self.pos == 0 {
-            return Err(ArchiveError::decompression_failed(
-                "PackIce",
-                "output overflow",
-            ));
+            return Err(ArchiveError::decompression_failed("PackIce", "output overflow"));
         }
         self.pos -= 1;
         self.out[self.pos] = b;
@@ -290,26 +264,18 @@ impl<'a> BackwardOutputStream<'a> {
 
     fn copy(&mut self, distance: usize, count: usize) -> Result<()> {
         if distance == 0 {
-            return Err(ArchiveError::decompression_failed(
-                "PackIce",
-                "invalid distance",
-            ));
+            return Err(ArchiveError::decompression_failed("PackIce", "invalid distance"));
         }
         for _ in 0..count {
             if self.pos == 0 {
-                return Err(ArchiveError::decompression_failed(
-                    "PackIce",
-                    "output overflow",
-                ));
+                return Err(ArchiveError::decompression_failed("PackIce", "output overflow"));
             }
-            let src = self.pos.checked_add(distance).ok_or_else(|| {
-                ArchiveError::decompression_failed("PackIce", "distance overflow")
-            })?;
+            let src = self
+                .pos
+                .checked_add(distance)
+                .ok_or_else(|| ArchiveError::decompression_failed("PackIce", "distance overflow"))?;
             if src >= self.out.len() {
-                return Err(ArchiveError::decompression_failed(
-                    "PackIce",
-                    "invalid back-reference",
-                ));
+                return Err(ArchiveError::decompression_failed("PackIce", "invalid back-reference"));
             }
             let b = self.out[src];
             self.pos -= 1;
@@ -341,19 +307,13 @@ impl VariableLengthCodeDecoder {
                 length = length.wrapping_add(1u32 << v);
             }
         }
-        Self {
-            bit_lengths,
-            offsets,
-        }
+        Self { bit_lengths, offsets }
     }
 
     fn decode(&self, br: &mut MsbBitReader<'_>, use_bytes: bool, base: u32) -> Result<u32> {
         let base = base as usize;
         if base >= self.bit_lengths.len() {
-            return Err(ArchiveError::decompression_failed(
-                "PackIce",
-                "bad VLC base",
-            ));
+            return Err(ArchiveError::decompression_failed("PackIce", "bad VLC base"));
         }
         let bl = self.bit_lengths[base];
         Ok(self.offsets[base] + read_bits(br, use_bytes, bl as u32)?)
@@ -370,10 +330,7 @@ impl VariableLengthCodeDecoder {
                 return Ok(self.offsets[i] - (i as u32) + tmp);
             }
         }
-        Err(ArchiveError::decompression_failed(
-            "PackIce",
-            "bad VLC cascade",
-        ))
+        Err(ArchiveError::decompression_failed("PackIce", "bad VLC cascade"))
     }
 }
 
@@ -385,12 +342,7 @@ fn read_bits(br: &mut MsbBitReader<'_>, use_bytes: bool, count: u32) -> Result<u
     }
 }
 
-fn decompress_internal(
-    data: &[u8],
-    header: &Header,
-    use_bytes: bool,
-    out: &mut [u8],
-) -> Result<()> {
+fn decompress_internal(data: &[u8], header: &Header, use_bytes: bool, out: &mut [u8]) -> Result<()> {
     let (start_offset, end_offset) = if header.ver == 0 {
         (0usize, header.packed_end)
     } else {
@@ -402,11 +354,7 @@ fn decompress_internal(
 
     // anchor-bit handling
     {
-        let value = if use_bytes {
-            br.read_u8()? as u32
-        } else {
-            br.read_be32()?
-        };
+        let value = if use_bytes { br.read_u8()? as u32 } else { br.read_be32()? };
         let mut tmp = value;
         let mut count: u32 = 0;
         while tmp != 0 {
@@ -491,10 +439,7 @@ fn decompress_internal(
 
         let picture_size = picture_size as usize;
         if out.len() < picture_size {
-            return Err(ArchiveError::decompression_failed(
-                "PackIce",
-                "bad picture size",
-            ));
+            return Err(ArchiveError::decompression_failed("PackIce", "bad picture size"));
         }
 
         let start = out.len() - picture_size;
@@ -518,10 +463,7 @@ fn decompress_internal(
     }
 
     if !br.input_eof() {
-        return Err(ArchiveError::decompression_failed(
-            "PackIce",
-            "trailing input",
-        ));
+        return Err(ArchiveError::decompression_failed("PackIce", "trailing input"));
     }
 
     Ok(())

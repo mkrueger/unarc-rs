@@ -42,12 +42,7 @@ impl Header {
             compression_method: match compression_method {
                 STORED => CompressionMethod::Stored,
                 COMPRESSED => CompressionMethod::Compressed,
-                _ => {
-                    return Err(ArchiveError::unsupported_method(
-                        "HYP",
-                        format!("0x{:04X}", compression_method),
-                    ))
-                }
+                _ => return Err(ArchiveError::unsupported_method("HYP", format!("0x{:04X}", compression_method))),
             },
             version,
             compressed_size,

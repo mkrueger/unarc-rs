@@ -40,8 +40,7 @@ pub struct ZipArchive<T: Read + Seek> {
 impl<T: Read + Seek> ZipArchive<T> {
     /// Create a new ZIP archive reader
     pub fn new(reader: T) -> Result<Self> {
-        let archive = zip::ZipArchive::new(reader)
-            .map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
+        let archive = zip::ZipArchive::new(reader).map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
 
         Ok(Self {
             archive,
@@ -126,11 +125,7 @@ impl<T: Read + Seek> ZipArchive<T> {
     }
 
     /// Read and decompress an entry's data with a specific password
-    pub fn read_with_password(
-        &mut self,
-        header: &ZipFileHeader,
-        password: Option<&[u8]>,
-    ) -> Result<Vec<u8>> {
+    pub fn read_with_password(&mut self, header: &ZipFileHeader, password: Option<&[u8]>) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
         }
@@ -139,21 +134,17 @@ impl<T: Read + Seek> ZipArchive<T> {
 
         if header.is_encrypted {
             // Use decryption
-            let password =
-                password.ok_or_else(|| ArchiveError::encryption_required(&header.name, "ZIP"))?;
+            let password = password.ok_or_else(|| ArchiveError::encryption_required(&header.name, "ZIP"))?;
 
-            let mut file = self
-                .archive
-                .by_index_decrypt(header.index, password)
-                .map_err(|e| {
-                    // Check if it's a password error
-                    let msg = e.to_string();
-                    if msg.contains("password") || msg.contains("decrypt") {
-                        ArchiveError::invalid_password(&header.name, "ZIP")
-                    } else {
-                        ArchiveError::external_library("zip", msg)
-                    }
-                })?;
+            let mut file = self.archive.by_index_decrypt(header.index, password).map_err(|e| {
+                // Check if it's a password error
+                let msg = e.to_string();
+                if msg.contains("password") || msg.contains("decrypt") {
+                    ArchiveError::invalid_password(&header.name, "ZIP")
+                } else {
+                    ArchiveError::external_library("zip", msg)
+                }
+            })?;
 
             file.read_to_end(&mut data)?;
         } else {
@@ -173,16 +164,9 @@ impl<T: Read + Seek> ZipArchive<T> {
     /// # Arguments
     /// * `header` - The encrypted file header
     /// * `archive_data` - The complete archive data (needed since we can't re-read from the internal reader)
-    pub fn create_password_verifier(
-        &self,
-        header: &ZipFileHeader,
-        archive_data: Vec<u8>,
-    ) -> Result<super::password_verifier::ZipPasswordVerifier> {
+    pub fn create_password_verifier(&self, header: &ZipFileHeader, archive_data: Vec<u8>) -> Result<super::password_verifier::ZipPasswordVerifier> {
         if !header.is_encrypted {
-            return Err(ArchiveError::unsupported_method(
-                "ZIP",
-                "entry is not encrypted",
-            ));
+            return Err(ArchiveError::unsupported_method("ZIP", "entry is not encrypted"));
         }
 
         Ok(super::password_verifier::ZipPasswordVerifier::new(

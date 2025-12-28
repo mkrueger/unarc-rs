@@ -14,10 +14,7 @@ fn test_ace1_archive() {
     let mut found_files = Vec::new();
 
     while let Ok(Some(entry)) = archive.get_next_entry() {
-        println!(
-            "Entry: {} ({} -> {} bytes)",
-            entry.filename, entry.packed_size, entry.original_size
-        );
+        println!("Entry: {} ({} -> {} bytes)", entry.filename, entry.packed_size, entry.original_size);
         found_files.push(entry.filename.clone());
 
         if !entry.is_directory() {
@@ -62,9 +59,7 @@ impl VolumeProvider for AceTestVolumeProvider {
         } else {
             format!("tests/ace/multi/unarc.c{:02}", volume_number - 1)
         };
-        File::open(&path)
-            .ok()
-            .map(|f| Box::new(f) as Box<dyn Read + Send>)
+        File::open(&path).ok().map(|f| Box::new(f) as Box<dyn Read + Send>)
     }
 }
 
@@ -86,12 +81,7 @@ fn test_ace_multivolume() {
 
         if !entry.is_directory() {
             let data = archive.read(&entry).expect("Failed to decompress");
-            assert_eq!(
-                data.len(),
-                entry.original_size as usize,
-                "Size mismatch for {}",
-                entry.filename
-            );
+            assert_eq!(data.len(), entry.original_size as usize, "Size mismatch for {}", entry.filename);
             total_size += data.len();
         }
     }

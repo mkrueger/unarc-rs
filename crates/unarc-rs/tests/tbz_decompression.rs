@@ -12,10 +12,7 @@ fn extract_tbz() {
     let reader = BufReader::new(file);
     let mut archive = TbzArchive::new(reader).expect("Failed to create TBZ archive");
 
-    let header = archive
-        .get_next_entry()
-        .expect("Failed to get entry")
-        .expect("No entry found");
+    let header = archive.get_next_entry().expect("Failed to get entry").expect("No entry found");
 
     assert_eq!(header.name, "LICENSE");
     assert_eq!(header.size, LICENSE_CONTENT.len() as u64);
@@ -30,10 +27,7 @@ fn extract_tbz_with_tbz2_extension() {
     let reader = BufReader::new(file);
     let mut archive = TbzArchive::new(reader).expect("Failed to create TBZ archive");
 
-    let header = archive
-        .get_next_entry()
-        .expect("Failed to get entry")
-        .expect("No entry found");
+    let header = archive.get_next_entry().expect("Failed to get entry").expect("No entry found");
 
     assert_eq!(header.name, "LICENSE");
     let data = archive.read(&header).expect("Failed to read entry");
@@ -51,15 +45,11 @@ fn tbz_entry_count() {
 
 #[test]
 fn test_tbz_via_unified_tar_bz2() {
-    let mut archive =
-        ArchiveFormat::open_path("tests/tbz/license.tar.bz2").expect("Failed to open archive");
+    let mut archive = ArchiveFormat::open_path("tests/tbz/license.tar.bz2").expect("Failed to open archive");
 
     assert_eq!(archive.format(), ArchiveFormat::Tbz);
 
-    let entry = archive
-        .next_entry()
-        .expect("Failed to get entry")
-        .expect("No entry found");
+    let entry = archive.next_entry().expect("Failed to get entry").expect("No entry found");
 
     assert_eq!(entry.name(), "LICENSE");
     assert_eq!(entry.original_size(), LICENSE_CONTENT.len() as u64);
@@ -70,15 +60,11 @@ fn test_tbz_via_unified_tar_bz2() {
 
 #[test]
 fn test_tbz_via_unified_tbz2() {
-    let mut archive =
-        ArchiveFormat::open_path("tests/tbz/license.tbz2").expect("Failed to open archive");
+    let mut archive = ArchiveFormat::open_path("tests/tbz/license.tbz2").expect("Failed to open archive");
 
     assert_eq!(archive.format(), ArchiveFormat::Tbz);
 
-    let entry = archive
-        .next_entry()
-        .expect("Failed to get entry")
-        .expect("No entry found");
+    let entry = archive.next_entry().expect("Failed to get entry").expect("No entry found");
 
     assert_eq!(entry.name(), "LICENSE");
     let data = archive.read(&entry).expect("Failed to read entry");

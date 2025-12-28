@@ -29,10 +29,7 @@ impl Lzw {
     /// * `max_bits` - Maximum bits per code (9-16), from .Z file header
     /// * `block_mode` - If true, handle CLEAR codes (code 256) for table reset
     pub fn new(max_bits: u8, block_mode: bool) -> Self {
-        Lzw {
-            max_bits,
-            block_mode,
-        }
+        Lzw { max_bits, block_mode }
     }
 
     /// Decompress LZW-compressed data
@@ -46,11 +43,7 @@ impl Lzw {
         let mut input_pos: usize = 0;
 
         // Read next code from input stream
-        let read_code = |n_bits: usize,
-                         buf: &mut u64,
-                         buflen: &mut usize,
-                         input_pos: &mut usize|
-         -> Option<usize> {
+        let read_code = |n_bits: usize, buf: &mut u64, buflen: &mut usize, input_pos: &mut usize| -> Option<usize> {
             while *buflen < n_bits {
                 if *input_pos >= input.len() {
                     return None;

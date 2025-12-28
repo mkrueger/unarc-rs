@@ -37,10 +37,7 @@ pub fn decode_fastest(data: &[u8], original_size: usize) -> Result<Vec<u8>> {
             let rep_count = len as usize + THRESHOLD - 1;
             let back_ptr = decode_val(&mut r, 9, 13)? as usize;
             if back_ptr > res.len() - 1 {
-                return Err(ArchiveError::decompression_failed(
-                    "ARJ",
-                    "invalid back pointer in LZ77 stream",
-                ));
+                return Err(ArchiveError::decompression_failed("ARJ", "invalid back pointer in LZ77 stream"));
             }
             let mut i = res.len() - 1 - back_ptr;
             for _ in 0..rep_count {

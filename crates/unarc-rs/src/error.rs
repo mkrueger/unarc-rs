@@ -148,9 +148,7 @@ impl ArchiveError {
 
     /// Create an invalid header error
     pub fn invalid_header(format: impl Into<String>) -> Self {
-        Self::InvalidHeader {
-            format: format.into(),
-        }
+        Self::InvalidHeader { format: format.into() }
     }
 
     /// Create a corrupted entry error
@@ -163,11 +161,7 @@ impl ArchiveError {
     }
 
     /// Create a corrupted entry error with entry name
-    pub fn corrupted_entry_named(
-        format: impl Into<String>,
-        entry_name: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
+    pub fn corrupted_entry_named(format: impl Into<String>, entry_name: impl Into<String>, reason: impl Into<String>) -> Self {
         Self::CorruptedEntry {
             format: format.into(),
             entry_name: entry_name.into(),

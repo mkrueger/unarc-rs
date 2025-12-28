@@ -13,14 +13,10 @@ fn test_multi_volume_7z_extraction() {
     ];
 
     // Open the multi-volume 7z archive
-    let mut archive = ArchiveFormat::open_multi_volume_7z(&volumes, ArchiveOptions::new())
-        .expect("Failed to open multi-volume 7z archive");
+    let mut archive = ArchiveFormat::open_multi_volume_7z(&volumes, ArchiveOptions::new()).expect("Failed to open multi-volume 7z archive");
 
     // Get the first entry
-    let entry = archive
-        .next_entry()
-        .expect("Failed to get next entry")
-        .expect("Expected at least one entry");
+    let entry = archive.next_entry().expect("Failed to get next entry").expect("Expected at least one entry");
 
     println!("Entry name: {}", entry.name());
     println!("Original size: {}", entry.original_size());
@@ -50,8 +46,7 @@ fn test_multi_volume_7z_list() {
     ];
 
     // Open the multi-volume 7z archive
-    let mut archive = ArchiveFormat::open_multi_volume_7z(&volumes, ArchiveOptions::new())
-        .expect("Failed to open multi-volume 7z archive");
+    let mut archive = ArchiveFormat::open_multi_volume_7z(&volumes, ArchiveOptions::new()).expect("Failed to open multi-volume 7z archive");
 
     // Count entries using iterator
     let mut count = 0;

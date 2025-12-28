@@ -36,8 +36,7 @@ impl<T: Read + Seek> HaArchive<T> {
     }
 
     pub fn skip(&mut self, header: &FileHeader) -> Result<()> {
-        self.reader
-            .seek(SeekFrom::Current(header.compressed_size as i64))?;
+        self.reader.seek(SeekFrom::Current(header.compressed_size as i64))?;
         Ok(())
     }
 
@@ -51,17 +50,11 @@ impl<T: Read + Seek> HaArchive<T> {
             CompressionMethod::Asc => decompress_asc(Cursor::new(compressed))?,
             CompressionMethod::Hsc => decompress_hsc(Cursor::new(compressed))?,
             CompressionMethod::Special => {
-                log::debug!(
-                    "Skipping special file '{}' (symlink, device, fifo, or socket)",
-                    header.full_path()
-                );
+                log::debug!("Skipping special file '{}' (symlink, device, fifo, or socket)", header.full_path());
                 Vec::new()
             }
             CompressionMethod::Unknown(m) => {
-                return Err(ArchiveError::unsupported_method(
-                    "HA",
-                    format!("Unknown({})", m),
-                ));
+                return Err(ArchiveError::unsupported_method("HA", format!("Unknown({})", m)));
             }
         };
 
@@ -72,11 +65,7 @@ impl<T: Read + Seek> HaArchive<T> {
             let calculated_crc = hasher.finalize();
 
             if calculated_crc != header.crc32 {
-                return Err(ArchiveError::crc_mismatch(
-                    header.full_path(),
-                    header.crc32,
-                    calculated_crc,
-                ));
+                return Err(ArchiveError::crc_mismatch(header.full_path(), header.crc32, calculated_crc));
             }
         }
 

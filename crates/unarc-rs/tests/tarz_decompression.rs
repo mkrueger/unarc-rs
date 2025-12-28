@@ -17,10 +17,7 @@ fn test_tarz_basic() {
     let mut archive = TarZArchive::new(cursor).expect("Failed to open TAR.Z archive");
 
     // Get the first entry
-    let entry = archive
-        .get_next_entry()
-        .expect("Failed to read entry")
-        .expect("Expected at least one entry");
+    let entry = archive.get_next_entry().expect("Failed to read entry").expect("Expected at least one entry");
 
     assert_eq!(entry.name, "LICENSE");
     assert!(entry.size > 0);
@@ -34,10 +31,7 @@ fn test_tarz_read_content() {
     let cursor = Cursor::new(data);
     let mut archive = TarZArchive::new(cursor).expect("Failed to open TAR.Z archive");
 
-    let entry = archive
-        .get_next_entry()
-        .expect("Failed to read entry")
-        .expect("Expected at least one entry");
+    let entry = archive.get_next_entry().expect("Failed to read entry").expect("Expected at least one entry");
 
     let content = archive.read(&entry).expect("Failed to read content");
     assert_eq!(include_bytes!("../../../LICENSE"), content.as_slice());
@@ -49,14 +43,9 @@ fn test_tarz_unified_api() {
 
     let data = read_test_file("license.tar.Z");
     let cursor = Cursor::new(data);
-    let mut archive = ArchiveFormat::TarZ
-        .open(cursor)
-        .expect("Failed to open TAR.Z archive");
+    let mut archive = ArchiveFormat::TarZ.open(cursor).expect("Failed to open TAR.Z archive");
 
-    let entry = archive
-        .next_entry()
-        .expect("Failed to read entry")
-        .expect("Expected at least one entry");
+    let entry = archive.next_entry().expect("Failed to read entry").expect("Expected at least one entry");
 
     assert_eq!(entry.name(), "LICENSE");
 
@@ -70,24 +59,12 @@ fn test_tarz_format_detection() {
     use unarc_rs::unified::ArchiveFormat;
 
     // Test .tar.Z detection
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("archive.tar.Z")),
-        Some(ArchiveFormat::TarZ)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("archive.tar.z")),
-        Some(ArchiveFormat::TarZ)
-    );
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("/path/to/file.tar.Z")),
-        Some(ArchiveFormat::TarZ)
-    );
+    assert_eq!(ArchiveFormat::from_path(Path::new("archive.tar.Z")), Some(ArchiveFormat::TarZ));
+    assert_eq!(ArchiveFormat::from_path(Path::new("archive.tar.z")), Some(ArchiveFormat::TarZ));
+    assert_eq!(ArchiveFormat::from_path(Path::new("/path/to/file.tar.Z")), Some(ArchiveFormat::TarZ));
 
     // Make sure .Z alone is still detected as plain Z format
-    assert_eq!(
-        ArchiveFormat::from_path(Path::new("file.Z")),
-        Some(ArchiveFormat::Z)
-    );
+    assert_eq!(ArchiveFormat::from_path(Path::new("file.Z")), Some(ArchiveFormat::Z));
 }
 
 #[test]

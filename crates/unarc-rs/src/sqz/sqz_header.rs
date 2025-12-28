@@ -47,9 +47,6 @@ impl SqzHeader {
         convert_u8!(os, header_bytes);
         convert_u8!(flags, header_bytes);
 
-        Ok(Self {
-            os: os.into(),
-            flags,
-        })
+        Ok(Self { os: os.into(), flags })
     }
 }

@@ -40,12 +40,7 @@ impl RarPasswordVerifier {
     /// * `file_name` - Name of the encrypted file to test against
     /// * `expected_crc` - The CRC32 from the header
     /// * `original_size` - The uncompressed size
-    pub fn new(
-        archive_path: PathBuf,
-        file_name: String,
-        expected_crc: u32,
-        original_size: u64,
-    ) -> Self {
+    pub fn new(archive_path: PathBuf, file_name: String, expected_crc: u32, original_size: u64) -> Self {
         Self {
             archive_path: Arc::new(archive_path),
             file_name,
@@ -70,9 +65,7 @@ impl RarPasswordVerifier {
     /// with matching CRC and size, `false` otherwise.
     pub fn verify(&self, password: &str) -> bool {
         // Open archive with password
-        let archive = match unrar::Archive::with_password(&*self.archive_path, password)
-            .open_for_processing()
-        {
+        let archive = match unrar::Archive::with_password(&*self.archive_path, password).open_for_processing() {
             Ok(a) => a,
             Err(_) => return false,
         };

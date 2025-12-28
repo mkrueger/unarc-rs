@@ -101,12 +101,8 @@ impl<R: Read> ArithmeticDecoder<R> {
         let scale = total as u32;
 
         // Narrow interval to [new_low, new_high]
-        let new_high = self
-            .low
-            .wrapping_add(((range * cum_high as u32 / scale) - 1) as u16);
-        let new_low = self
-            .low
-            .wrapping_add((range * cum_low as u32 / scale) as u16);
+        let new_high = self.low.wrapping_add(((range * cum_high as u32 / scale) - 1) as u16);
+        let new_low = self.low.wrapping_add((range * cum_low as u32 / scale) as u16);
 
         self.high = new_high;
         self.low = new_low;

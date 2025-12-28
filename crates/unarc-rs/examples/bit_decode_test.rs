@@ -38,10 +38,7 @@ fn main() {
         bits_left -= bits_from_word;
         preview &= (1 << 13) - 1; // Keep only 13 bits
 
-        println!(
-            "After skip(13): preview=0x{:04x} ({:013b}), bits_left={}",
-            preview, preview, bits_left
-        );
+        println!("After skip(13): preview=0x{:04x} ({:013b}), bits_left={}", preview, preview, bits_left);
     }
 
     // Now get(1) for has_block
@@ -61,10 +58,7 @@ fn main() {
         preview |= new_bit;
         bits_left -= 1;
 
-        println!(
-            "After get(1): preview=0x{:04x} ({:013b}), bits_left={}",
-            preview, preview, bits_left
-        );
+        println!("After get(1): preview=0x{:04x} ({:013b}), bits_left={}", preview, preview, bits_left);
     }
 
     // Now get(1) for has_tree

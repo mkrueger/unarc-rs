@@ -83,10 +83,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
             return Err(ArchiveError::corrupted_entry_named(
                 "UC2",
                 "CDIR",
-                format!(
-                    "unexpected CDIR master prefix: {}",
-                    compress_info.master_prefix
-                ),
+                format!("unexpected CDIR master prefix: {}", compress_info.master_prefix),
             ));
         }
 
@@ -144,10 +141,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
                     let location = read_location(&mut cursor)?;
 
                     if location.volume > 1 {
-                        return Err(ArchiveError::unsupported_method(
-                            "UC2",
-                            "multi-volume archives",
-                        ));
+                        return Err(ArchiveError::unsupported_method("UC2", "multi-volume archives"));
                     }
 
                     let mut name = decode_dos_name(&dos_name);
@@ -183,10 +177,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
                     let location = read_location(&mut cursor)?;
 
                     if location.volume > 1 {
-                        return Err(ArchiveError::unsupported_method(
-                            "UC2",
-                            "multi-volume master entries",
-                        ));
+                        return Err(ArchiveError::unsupported_method("UC2", "multi-volume master entries"));
                     }
 
                     masters.insert(
@@ -220,11 +211,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
         }
 
         let Some(record) = self.masters.get(&id) else {
-            return Err(ArchiveError::corrupted_entry_named(
-                "UC2",
-                "master",
-                format!("master {} not found in CDIR", id),
-            ));
+            return Err(ArchiveError::corrupted_entry_named("UC2", "master", format!("master {} not found in CDIR", id)));
         };
 
         if record.data.is_some() {
@@ -251,18 +238,8 @@ impl<T: Read + Seek> Uc2Archive<T> {
                     .masters
                     .get(&parent)
                     .and_then(|m| m.data.as_ref())
-                    .ok_or_else(|| {
-                        ArchiveError::corrupted_entry_named(
-                            "UC2",
-                            "master",
-                            "missing parent master",
-                        )
-                    })?;
-                decompress::decompress_with_dict(
-                    &compressed,
-                    size,
-                    MasterDict::Custom(slice.as_slice()),
-                )?
+                    .ok_or_else(|| ArchiveError::corrupted_entry_named("UC2", "master", "missing parent master"))?;
+                decompress::decompress_with_dict(&compressed, size, MasterDict::Custom(slice.as_slice()))?
             }
         };
 
@@ -292,32 +269,16 @@ impl<T: Read + Seek> Uc2Archive<T> {
         let dict = entry.compress_info.master_prefix;
 
         let output = match dict {
-            0 => decompress::decompress_with_dict(
-                &compressed,
-                original_size,
-                MasterDict::SuperMaster,
-            )?,
-            1 => {
-                decompress::decompress_with_dict(&compressed, original_size, MasterDict::NoMaster)?
-            }
+            0 => decompress::decompress_with_dict(&compressed, original_size, MasterDict::SuperMaster)?,
+            1 => decompress::decompress_with_dict(&compressed, original_size, MasterDict::NoMaster)?,
             master_id => {
                 self.ensure_master(master_id)?;
                 let slice = self
                     .masters
                     .get(&master_id)
                     .and_then(|m| m.data.as_ref())
-                    .ok_or_else(|| {
-                        ArchiveError::corrupted_entry_named(
-                            "UC2",
-                            &entry.name,
-                            "missing master data",
-                        )
-                    })?;
-                decompress::decompress_with_dict(
-                    &compressed,
-                    original_size,
-                    MasterDict::Custom(slice.as_slice()),
-                )?
+                    .ok_or_else(|| ArchiveError::corrupted_entry_named("UC2", &entry.name, "missing master data"))?;
+                decompress::decompress_with_dict(&compressed, original_size, MasterDict::Custom(slice.as_slice()))?
             }
         };
 
@@ -350,11 +311,7 @@ fn read_header<T: Read + Seek>(reader: &mut T) -> Result<(u32, bool)> {
     convert_u32!(archive_len, header_bytes);
     convert_u32!(archive_len2, header_bytes);
     if archive_len.wrapping_add(AMAG) != archive_len2 {
-        return Err(ArchiveError::corrupted_entry_named(
-            "UC2",
-            "header",
-            "file header is damaged",
-        ));
+        return Err(ArchiveError::corrupted_entry_named("UC2", "header", "file header is damaged"));
     }
     convert_u8!(damage_protected_flag, header_bytes);
     Ok((archive_len, damage_protected_flag != 0))
@@ -399,16 +356,8 @@ fn read_location(cursor: &mut &[u8]) -> Result<Location> {
 }
 
 fn decode_dos_name(raw: &[u8; 11]) -> String {
-    let prefix_len = raw[..8]
-        .iter()
-        .rposition(|&b| b != b' ')
-        .map(|idx| idx + 1)
-        .unwrap_or(0);
-    let suffix_len = raw[8..]
-        .iter()
-        .rposition(|&b| b != b' ')
-        .map(|idx| idx + 1)
-        .unwrap_or(0);
+    let prefix_len = raw[..8].iter().rposition(|&b| b != b' ').map(|idx| idx + 1).unwrap_or(0);
+    let suffix_len = raw[8..].iter().rposition(|&b| b != b' ').map(|idx| idx + 1).unwrap_or(0);
 
     let mut name = String::new();
     if prefix_len > 0 {

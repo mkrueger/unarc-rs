@@ -10,10 +10,7 @@ use crate::unified::VolumeProvider;
 use super::bitstream::BitStream;
 use super::crc16::ace_crc16;
 use super::crypto::decrypt_ace_data;
-use super::header::{
-    header_flags, header_type, CompressionQuality, CompressionType, FileHeader, HostOs, MainHeader,
-    ACE_MAGIC,
-};
+use super::header::{header_flags, header_type, CompressionQuality, CompressionType, FileHeader, HostOs, MainHeader, ACE_MAGIC};
 use super::lz77::Lz77Decoder;
 
 /// ACE archive reader
@@ -103,11 +100,7 @@ impl<R: Read + Seek> AceArchive<R> {
         // Verify CRC
         let calculated_crc = ace_crc16(&header_data);
         if calculated_crc != header_crc {
-            return Err(ArchiveError::crc_mismatch(
-                "ACE main header",
-                header_crc as u32,
-                calculated_crc as u32,
-            ));
+            return Err(ArchiveError::crc_mismatch("ACE main header", header_crc as u32, calculated_crc as u32));
         }
 
         let header_type = header_data[0];
@@ -127,12 +120,7 @@ impl<R: Read + Seek> AceArchive<R> {
         let host_os = HostOs::from(header_data[12]);
         let volume_number = header_data[13];
 
-        let datetime = DosDateTime::from(u32::from_le_bytes([
-            header_data[14],
-            header_data[15],
-            header_data[16],
-            header_data[17],
-        ]));
+        let datetime = DosDateTime::from(u32::from_le_bytes([header_data[14], header_data[15], header_data[16], header_data[17]]));
 
         // Skip reserved1 (8 bytes)
         let mut pos = 26;
@@ -198,11 +186,7 @@ impl<R: Read + Seek> AceArchive<R> {
 
             // Verify CRC
             if ace_crc16(&header_data) != header_crc {
-                return Err(ArchiveError::crc_mismatch(
-                    "ACE file header",
-                    header_crc as u32,
-                    0,
-                ));
+                return Err(ArchiveError::crc_mismatch("ACE file header", header_crc as u32, 0));
             }
 
             let header_type = header_data[0];
@@ -228,12 +212,7 @@ impl<R: Read + Seek> AceArchive<R> {
                             0
                         }
                     } else if header_data.len() >= 7 {
-                        u32::from_le_bytes([
-                            header_data[3],
-                            header_data[4],
-                            header_data[5],
-                            header_data[6],
-                        ]) as u64
+                        u32::from_le_bytes([header_data[3], header_data[4], header_data[5], header_data[6]]) as u64
                     } else {
                         0
                     };
@@ -267,18 +246,8 @@ impl<R: Read + Seek> AceArchive<R> {
                 ]);
                 (packed, original, 19)
             } else {
-                let packed = u32::from_le_bytes([
-                    header_data[3],
-                    header_data[4],
-                    header_data[5],
-                    header_data[6],
-                ]) as u64;
-                let original = u32::from_le_bytes([
-                    header_data[7],
-                    header_data[8],
-                    header_data[9],
-                    header_data[10],
-                ]) as u64;
+                let packed = u32::from_le_bytes([header_data[3], header_data[4], header_data[5], header_data[6]]) as u64;
+                let original = u32::from_le_bytes([header_data[7], header_data[8], header_data[9], header_data[10]]) as u64;
                 (packed, original, 11)
             };
 
@@ -289,19 +258,9 @@ impl<R: Read + Seek> AceArchive<R> {
                 header_data[pos + 3],
             ]));
 
-            let attributes = u32::from_le_bytes([
-                header_data[pos + 4],
-                header_data[pos + 5],
-                header_data[pos + 6],
-                header_data[pos + 7],
-            ]);
+            let attributes = u32::from_le_bytes([header_data[pos + 4], header_data[pos + 5], header_data[pos + 6], header_data[pos + 7]]);
 
-            let crc32 = u32::from_le_bytes([
-                header_data[pos + 8],
-                header_data[pos + 9],
-                header_data[pos + 10],
-                header_data[pos + 11],
-            ]);
+            let crc32 = u32::from_le_bytes([header_data[pos + 8], header_data[pos + 9], header_data[pos + 10], header_data[pos + 11]]);
 
             let compression_type = CompressionType::from(header_data[pos + 12]);
             let compression_quality = CompressionQuality::from(header_data[pos + 13]);
@@ -311,17 +270,13 @@ impl<R: Read + Seek> AceArchive<R> {
             let mut fpos = pos + 18;
 
             // Read filename
-            let filename_len =
-                u16::from_le_bytes([header_data[fpos], header_data[fpos + 1]]) as usize;
+            let filename_len = u16::from_le_bytes([header_data[fpos], header_data[fpos + 1]]) as usize;
             fpos += 2;
-            let filename =
-                String::from_utf8_lossy(&header_data[fpos..fpos + filename_len]).to_string();
+            let filename = String::from_utf8_lossy(&header_data[fpos..fpos + filename_len]).to_string();
             fpos += filename_len;
 
             // Read comment if present
-            let comment = if header_flags & header_flags::COMMENT != 0
-                && fpos + 2 <= header_data.len()
-            {
+            let comment = if header_flags & header_flags::COMMENT != 0 && fpos + 2 <= header_data.len() {
                 let len = u16::from_le_bytes([header_data[fpos], header_data[fpos + 1]]) as usize;
                 fpos += 2;
                 if fpos + len <= header_data.len() {
@@ -357,8 +312,7 @@ impl<R: Read + Seek> AceArchive<R> {
 
     /// Skip a file entry
     pub fn skip(&mut self, header: &FileHeader) -> Result<()> {
-        self.reader
-            .seek(SeekFrom::Start(header.data_offset + header.packed_size))?;
+        self.reader.seek(SeekFrom::Start(header.data_offset + header.packed_size))?;
         Ok(())
     }
 
@@ -368,11 +322,7 @@ impl<R: Read + Seek> AceArchive<R> {
     }
 
     /// Read and decompress a file entry with a specific password
-    pub fn read_with_password(
-        &mut self,
-        header: &FileHeader,
-        password: Option<String>,
-    ) -> Result<Vec<u8>> {
+    pub fn read_with_password(&mut self, header: &FileHeader, password: Option<String>) -> Result<Vec<u8>> {
         // Check if file continues across volumes
         if header.is_continued_to_next() {
             return self.read_multi_volume(header, password);
@@ -387,8 +337,7 @@ impl<R: Read + Seek> AceArchive<R> {
 
         // Decrypt if encrypted
         let data = if header.is_encrypted() {
-            let pwd = password
-                .ok_or_else(|| ArchiveError::encryption_required(&header.filename, "ACE"))?;
+            let pwd = password.ok_or_else(|| ArchiveError::encryption_required(&header.filename, "ACE"))?;
             decrypt_ace_data(&compressed, &pwd)
         } else {
             compressed
@@ -397,14 +346,9 @@ impl<R: Read + Seek> AceArchive<R> {
         // Decompress based on type
         let decompressed = match header.compression_type {
             CompressionType::Stored => data,
-            CompressionType::Lz77 | CompressionType::Blocked => {
-                self.decompress_lz77(header, &data)?
-            }
+            CompressionType::Lz77 | CompressionType::Blocked => self.decompress_lz77(header, &data)?,
             CompressionType::Unknown(n) => {
-                return Err(ArchiveError::unsupported_method(
-                    "ACE",
-                    format!("Unknown compression type {}", n),
-                ));
+                return Err(ArchiveError::unsupported_method("ACE", format!("Unknown compression type {}", n)));
             }
         };
 
@@ -412,40 +356,26 @@ impl<R: Read + Seek> AceArchive<R> {
         if decompressed.len() != header.original_size as usize {
             return Err(ArchiveError::decompression_failed(
                 &header.filename,
-                format!(
-                    "size mismatch: expected {}, got {}",
-                    header.original_size,
-                    decompressed.len()
-                ),
+                format!("size mismatch: expected {}, got {}", header.original_size, decompressed.len()),
             ));
         }
 
         // Verify CRC (ACE uses inverted CRC32)
         let crc = !crc32fast::hash(&decompressed);
         if crc != header.crc32 {
-            return Err(ArchiveError::crc_mismatch(
-                &header.filename,
-                header.crc32,
-                crc,
-            ));
+            return Err(ArchiveError::crc_mismatch(&header.filename, header.crc32, crc));
         }
 
         Ok(decompressed)
     }
 
     /// Read and decompress a multi-volume file
-    fn read_multi_volume(
-        &mut self,
-        header: &FileHeader,
-        password: Option<String>,
-    ) -> Result<Vec<u8>> {
+    fn read_multi_volume(&mut self, header: &FileHeader, password: Option<String>) -> Result<Vec<u8>> {
         let volume_provider = match &self.volume_provider {
             Some(provider) => provider.clone(),
             None => {
                 self.skip(header)?;
-                return Err(ArchiveError::io_error(
-                    "Multi-volume archive requires a volume provider",
-                ));
+                return Err(ArchiveError::io_error("Multi-volume archive requires a volume provider"));
             }
         };
 
@@ -467,9 +397,7 @@ impl<R: Read + Seek> AceArchive<R> {
 
         // Decrypt if needed
         let segment_data = if header.is_encrypted() {
-            let pwd = password
-                .clone()
-                .ok_or_else(|| ArchiveError::encryption_required(&filename, "ACE"))?;
+            let pwd = password.clone().ok_or_else(|| ArchiveError::encryption_required(&filename, "ACE"))?;
             decrypt_ace_data(&segment, &pwd)
         } else {
             segment
@@ -500,11 +428,7 @@ impl<R: Read + Seek> AceArchive<R> {
 
             // Verify it's a continuation
             if !cont_header.is_continued_from_prev() {
-                return Err(ArchiveError::corrupted_entry_named(
-                    "ACE",
-                    &filename,
-                    "expected continuation header",
-                ));
+                return Err(ArchiveError::corrupted_entry_named("ACE", &filename, "expected continuation header"));
             }
 
             // Read this segment's data
@@ -513,9 +437,7 @@ impl<R: Read + Seek> AceArchive<R> {
 
             // Decrypt if needed
             let segment_data = if cont_header.is_encrypted() {
-                let pwd = password
-                    .clone()
-                    .ok_or_else(|| ArchiveError::encryption_required(&filename, "ACE"))?;
+                let pwd = password.clone().ok_or_else(|| ArchiveError::encryption_required(&filename, "ACE"))?;
                 decrypt_ace_data(&segment, &pwd)
             } else {
                 segment
@@ -542,10 +464,7 @@ impl<R: Read + Seek> AceArchive<R> {
                 self.lz77.decompress(&mut bs, expected_size as usize)?
             }
             CompressionType::Unknown(n) => {
-                return Err(ArchiveError::unsupported_method(
-                    "ACE",
-                    format!("Unknown compression type {}", n),
-                ));
+                return Err(ArchiveError::unsupported_method("ACE", format!("Unknown compression type {}", n)));
             }
         };
 
@@ -553,11 +472,7 @@ impl<R: Read + Seek> AceArchive<R> {
         if decompressed.len() != expected_size as usize {
             return Err(ArchiveError::decompression_failed(
                 &filename,
-                format!(
-                    "size mismatch: expected {}, got {}",
-                    expected_size,
-                    decompressed.len()
-                ),
+                format!("size mismatch: expected {}, got {}", expected_size, decompressed.len()),
             ));
         }
 
@@ -586,26 +501,18 @@ impl<R: Read + Seek> AceArchive<R> {
 
         // Verify CRC
         if ace_crc16(&header_data) != header_crc {
-            return Err(ArchiveError::crc_mismatch(
-                "ACE volume main header",
-                header_crc as u32,
-                0,
-            ));
+            return Err(ArchiveError::crc_mismatch("ACE volume main header", header_crc as u32, 0));
         }
 
         // Verify it's a main header with magic
         let header_type = header_data[0];
         if header_type != header_type::MAIN {
-            return Err(ArchiveError::invalid_header(
-                "ACE: expected main header in volume",
-            ));
+            return Err(ArchiveError::invalid_header("ACE: expected main header in volume"));
         }
 
         // Check for magic bytes
         if header_data.len() < 10 || &header_data[3..10] != ACE_MAGIC {
-            return Err(ArchiveError::invalid_header(
-                "ACE: magic not found in volume",
-            ));
+            return Err(ArchiveError::invalid_header("ACE: magic not found in volume"));
         }
 
         // Main header has been consumed, return empty buffer
@@ -629,11 +536,7 @@ impl<R: Read + Seek> AceArchive<R> {
 
         // Verify CRC
         if ace_crc16(&header_data) != header_crc {
-            return Err(ArchiveError::crc_mismatch(
-                "ACE file header",
-                header_crc as u32,
-                0,
-            ));
+            return Err(ArchiveError::crc_mismatch("ACE file header", header_crc as u32, 0));
         }
 
         let header_type = header_data[0];
@@ -668,18 +571,8 @@ impl<R: Read + Seek> AceArchive<R> {
             ]);
             (packed, original, 19)
         } else {
-            let packed = u32::from_le_bytes([
-                header_data[3],
-                header_data[4],
-                header_data[5],
-                header_data[6],
-            ]) as u64;
-            let original = u32::from_le_bytes([
-                header_data[7],
-                header_data[8],
-                header_data[9],
-                header_data[10],
-            ]) as u64;
+            let packed = u32::from_le_bytes([header_data[3], header_data[4], header_data[5], header_data[6]]) as u64;
+            let original = u32::from_le_bytes([header_data[7], header_data[8], header_data[9], header_data[10]]) as u64;
             (packed, original, 11)
         };
 
@@ -690,19 +583,9 @@ impl<R: Read + Seek> AceArchive<R> {
             header_data[pos + 3],
         ]));
 
-        let attributes = u32::from_le_bytes([
-            header_data[pos + 4],
-            header_data[pos + 5],
-            header_data[pos + 6],
-            header_data[pos + 7],
-        ]);
+        let attributes = u32::from_le_bytes([header_data[pos + 4], header_data[pos + 5], header_data[pos + 6], header_data[pos + 7]]);
 
-        let crc32 = u32::from_le_bytes([
-            header_data[pos + 8],
-            header_data[pos + 9],
-            header_data[pos + 10],
-            header_data[pos + 11],
-        ]);
+        let crc32 = u32::from_le_bytes([header_data[pos + 8], header_data[pos + 9], header_data[pos + 10], header_data[pos + 11]]);
 
         let compression_type = CompressionType::from(header_data[pos + 12]);
         let compression_quality = CompressionQuality::from(header_data[pos + 13]);
@@ -768,10 +651,7 @@ impl<R: Read + Seek> AceArchive<R> {
     /// Note: For solid archives, parallel password testing is not supported
     /// since the LZ77 decoder state must be maintained across files.
     /// This will return an error for solid archives.
-    pub fn create_password_verifier(
-        &mut self,
-        header: &FileHeader,
-    ) -> Result<super::password_verifier::AcePasswordVerifier> {
+    pub fn create_password_verifier(&mut self, header: &FileHeader) -> Result<super::password_verifier::AcePasswordVerifier> {
         if self.is_solid() {
             return Err(ArchiveError::unsupported_method(
                 "ACE",
@@ -780,10 +660,7 @@ impl<R: Read + Seek> AceArchive<R> {
         }
 
         if !header.is_encrypted() {
-            return Err(ArchiveError::unsupported_method(
-                "ACE",
-                "entry is not encrypted",
-            ));
+            return Err(ArchiveError::unsupported_method("ACE", "entry is not encrypted"));
         }
 
         // Seek to and read the compressed data

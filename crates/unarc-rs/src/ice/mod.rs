@@ -46,10 +46,7 @@ impl IceArchive {
 
         let data = Self::try_decompress(compressed_data, original_size)?;
 
-        Ok(Self {
-            original_size,
-            data,
-        })
+        Ok(Self { original_size, data })
     }
 
     /// Try to decompress data using various LHA methods
@@ -71,9 +68,9 @@ impl IceArchive {
         let mut decoder = Lh1Decoder::new(cursor);
         let mut decompressed = vec![0u8; expected_size as usize];
 
-        decoder.fill_buffer(&mut decompressed).map_err(|e| {
-            crate::error::ArchiveError::decompression_failed("ICE", format!("{:?}", e))
-        })?;
+        decoder
+            .fill_buffer(&mut decompressed)
+            .map_err(|e| crate::error::ArchiveError::decompression_failed("ICE", format!("{:?}", e)))?;
 
         // Verify decompressed size matches expected
         if decompressed.len() as u32 != expected_size {

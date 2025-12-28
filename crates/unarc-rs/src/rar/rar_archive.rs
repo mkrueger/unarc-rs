@@ -106,9 +106,9 @@ impl<T: Read + Seek> RarArchive<T> {
     }
 
     fn parse_entries_from_path(path: &std::path::Path) -> Result<Vec<RarFileHeader>> {
-        let archive = unrar::Archive::new(path).open_for_listing().map_err(|e| {
-            ArchiveError::external_library("unrar", format!("Failed to open RAR archive: {:?}", e))
-        })?;
+        let archive = unrar::Archive::new(path)
+            .open_for_listing()
+            .map_err(|e| ArchiveError::external_library("unrar", format!("Failed to open RAR archive: {:?}", e)))?;
 
         let mut entries = Vec::new();
         for entry_result in archive {
@@ -125,11 +125,7 @@ impl<T: Read + Seek> RarArchive<T> {
                         name: entry.filename.to_string_lossy().to_string(),
                         compressed_size: entry.unpacked_size, // unrar doesn't expose packed size in listing mode
                         original_size: entry.unpacked_size,
-                        compression_method: if entry.is_file() {
-                            "Compressed".to_string()
-                        } else {
-                            "Directory".to_string()
-                        },
+                        compression_method: if entry.is_file() { "Compressed".to_string() } else { "Directory".to_string() },
                         date_time,
                         crc32: entry.file_crc,
                         is_directory: entry.is_directory(),
@@ -137,10 +133,7 @@ impl<T: Read + Seek> RarArchive<T> {
                     });
                 }
                 Err(e) => {
-                    return Err(ArchiveError::external_library(
-                        "unrar",
-                        format!("Failed to read RAR entry: {:?}", e),
-                    ));
+                    return Err(ArchiveError::external_library("unrar", format!("Failed to read RAR entry: {:?}", e)));
                 }
             }
         }
@@ -170,11 +163,7 @@ impl<T: Read + Seek> RarArchive<T> {
     }
 
     /// Read and decompress an entry's data with a specific password
-    pub fn read_with_password(
-        &mut self,
-        header: &RarFileHeader,
-        password: Option<String>,
-    ) -> Result<Vec<u8>> {
+    pub fn read_with_password(&mut self, header: &RarFileHeader, password: Option<String>) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
         }
@@ -185,29 +174,18 @@ impl<T: Read + Seek> RarArchive<T> {
         }
 
         // Create temp directory for extraction
-        let temp_dir =
-            std::env::temp_dir().join(format!("unarc_rar_extract_{}", std::process::id()));
+        let temp_dir = std::env::temp_dir().join(format!("unarc_rar_extract_{}", std::process::id()));
         std::fs::create_dir_all(&temp_dir)?;
 
         // Open archive for processing with optional password
         let archive = if let Some(ref pwd) = password {
             unrar::Archive::with_password(&self.archive_path, pwd)
                 .open_for_processing()
-                .map_err(|e| {
-                    ArchiveError::external_library(
-                        "unrar",
-                        format!("Failed to open RAR for extraction: {:?}", e),
-                    )
-                })?
+                .map_err(|e| ArchiveError::external_library("unrar", format!("Failed to open RAR for extraction: {:?}", e)))?
         } else {
             unrar::Archive::new(&self.archive_path)
                 .open_for_processing()
-                .map_err(|e| {
-                    ArchiveError::external_library(
-                        "unrar",
-                        format!("Failed to open RAR for extraction: {:?}", e),
-                    )
-                })?
+                .map_err(|e| ArchiveError::external_library("unrar", format!("Failed to open RAR for extraction: {:?}", e)))?
         };
 
         // Find and extract the specific file
@@ -221,31 +199,22 @@ impl<T: Read + Seek> RarArchive<T> {
 
                     if entry_name == header.name {
                         // Extract this file
-                        let (data, _next) = header_cursor.read().map_err(|e| {
-                            ArchiveError::decompression_failed(
-                                &header.name,
-                                format!("Failed to extract file: {:?}", e),
-                            )
-                        })?;
+                        let (data, _next) = header_cursor
+                            .read()
+                            .map_err(|e| ArchiveError::decompression_failed(&header.name, format!("Failed to extract file: {:?}", e)))?;
                         result_data = Some(data);
                         break;
                     } else {
                         // Skip this file
-                        current = header_cursor.skip().map_err(|e| {
-                            ArchiveError::external_library(
-                                "unrar",
-                                format!("Failed to skip file: {:?}", e),
-                            )
-                        })?;
+                        current = header_cursor
+                            .skip()
+                            .map_err(|e| ArchiveError::external_library("unrar", format!("Failed to skip file: {:?}", e)))?;
                     }
                 }
                 Ok(None) => break,
                 Err(e) => {
                     let _ = std::fs::remove_dir_all(&temp_dir);
-                    return Err(ArchiveError::external_library(
-                        "unrar",
-                        format!("Failed to read RAR header: {:?}", e),
-                    ));
+                    return Err(ArchiveError::external_library("unrar", format!("Failed to read RAR header: {:?}", e)));
                 }
             }
         }
@@ -253,9 +222,7 @@ impl<T: Read + Seek> RarArchive<T> {
         // Clean up temp directory
         let _ = std::fs::remove_dir_all(&temp_dir);
 
-        result_data.ok_or_else(|| {
-            ArchiveError::corrupted_entry_named("RAR", &header.name, "File not found in archive")
-        })
+        result_data.ok_or_else(|| ArchiveError::corrupted_entry_named("RAR", &header.name, "File not found in archive"))
     }
 }
 
@@ -273,15 +240,9 @@ impl<T: Read + Seek> RarArchive<T> {
     ///
     /// Returns a standalone verifier that can be used from multiple threads with rayon.
     /// Note: RAR verification requires re-opening the archive file for each attempt.
-    pub fn create_password_verifier(
-        &self,
-        header: &RarFileHeader,
-    ) -> Result<super::password_verifier::RarPasswordVerifier> {
+    pub fn create_password_verifier(&self, header: &RarFileHeader) -> Result<super::password_verifier::RarPasswordVerifier> {
         if !header.is_encrypted {
-            return Err(ArchiveError::unsupported_method(
-                "RAR",
-                "entry is not encrypted",
-            ));
+            return Err(ArchiveError::unsupported_method("RAR", "entry is not encrypted"));
         }
 
         Ok(super::password_verifier::RarPasswordVerifier::new(

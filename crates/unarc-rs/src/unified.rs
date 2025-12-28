@@ -335,9 +335,7 @@ impl ArchiveFormat {
             return Some(ArchiveFormat::TarZ);
         }
 
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .and_then(Self::from_extension)
+        path.extension().and_then(|ext| ext.to_str()).and_then(Self::from_extension)
     }
 
     /// Returns the typical file extension for this format
@@ -545,11 +543,7 @@ impl ArchiveFormat {
 
         // Pack-Ice: several 4-byte IDs at offset 0
         if data.len() >= 4
-            && (data.starts_with(b"ICE!")
-                || data.starts_with(b"Ice!")
-                || data.starts_with(b"TMM!")
-                || data.starts_with(b"TSM!")
-                || data.starts_with(b"SHE!"))
+            && (data.starts_with(b"ICE!") || data.starts_with(b"Ice!") || data.starts_with(b"TMM!") || data.starts_with(b"TSM!") || data.starts_with(b"SHE!"))
         {
             return Some(ArchiveFormat::PackIce);
         }
@@ -620,11 +614,7 @@ impl ArchiveFormat {
         }
 
         // LHA/LZH: "-lh" or "-lz" at offset 2
-        if data.len() >= 5
-            && data[2] == b'-'
-            && data[3] == b'l'
-            && (data[4] == b'h' || data[4] == b'z')
-        {
+        if data.len() >= 5 && data[2] == b'-' && data[3] == b'l' && (data[4] == b'h' || data[4] == b'z') {
             return Some(ArchiveFormat::Lha);
         }
 
@@ -639,9 +629,7 @@ impl ArchiveFormat {
             // Check for valid TAR: name ends with null, reasonable checksum area
             let has_null_in_name = data[..100].contains(&0);
             let checksum_area = &data[148..156];
-            let is_checksum_space_or_digit = checksum_area
-                .iter()
-                .all(|&b| b == b' ' || b == b'0' || (b'1'..=b'7').contains(&b));
+            let is_checksum_space_or_digit = checksum_area.iter().all(|&b| b == b' ' || b == b'0' || (b'1'..=b'7').contains(&b));
             if has_null_in_name && is_checksum_space_or_digit {
                 // Could be TAR, but this is a weak heuristic
                 // Only return TAR if nothing else matched
@@ -681,10 +669,7 @@ impl ArchiveFormat {
     /// let mut file = File::open(path).unwrap();
     /// let format = ArchiveFormat::detect(&mut file, Some(path)).unwrap();
     /// ```
-    pub fn detect<R: Read + Seek>(
-        reader: &mut R,
-        path: Option<&Path>,
-    ) -> std::io::Result<Option<Self>> {
+    pub fn detect<R: Read + Seek>(reader: &mut R, path: Option<&Path>) -> std::io::Result<Option<Self>> {
         // First try content-based detection
         if let Some(format) = Self::detect_from_reader(reader)? {
             return Ok(Some(format));
@@ -734,21 +719,13 @@ impl ArchiveFormat {
     /// ```
     pub fn open_path<P: AsRef<Path>>(path: P) -> Result<UnifiedArchive<BufReader<File>>> {
         let path = path.as_ref();
-        let format = Self::from_path(path).ok_or_else(|| {
-            ArchiveError::UnsupportedFormat(format!(
-                "Unsupported archive format: {}",
-                path.display()
-            ))
-        })?;
+        let format = Self::from_path(path).ok_or_else(|| ArchiveError::UnsupportedFormat(format!("Unsupported archive format: {}", path.display())))?;
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         let mut archive = format.open(reader)?;
 
         // For single-file formats (.Z, .gz, .bz2), derive the output filename from the archive name
-        if matches!(
-            format,
-            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
-        ) {
+        if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 archive.set_single_file_name(stem.to_string());
             }
@@ -768,11 +745,7 @@ impl ArchiveFormat {
     /// let options = ArchiveOptions::new().with_password("secret");
     /// let mut archive = ArchiveFormat::Zip.open_with_options(file, options).unwrap();
     /// ```
-    pub fn open_with_options<T: Read + Seek>(
-        self,
-        reader: T,
-        options: ArchiveOptions,
-    ) -> Result<UnifiedArchive<T>> {
+    pub fn open_with_options<T: Read + Seek>(self, reader: T, options: ArchiveOptions) -> Result<UnifiedArchive<T>> {
         UnifiedArchive::open_with_format_and_options(reader, self, options)
     }
 
@@ -788,26 +761,15 @@ impl ArchiveFormat {
     ///
     /// let mut archive = ArchiveFormat::open_path_with_options("encrypted.zip", options).unwrap();
     /// ```
-    pub fn open_path_with_options<P: AsRef<Path>>(
-        path: P,
-        options: ArchiveOptions,
-    ) -> Result<UnifiedArchive<BufReader<File>>> {
+    pub fn open_path_with_options<P: AsRef<Path>>(path: P, options: ArchiveOptions) -> Result<UnifiedArchive<BufReader<File>>> {
         let path = path.as_ref();
-        let format = Self::from_path(path).ok_or_else(|| {
-            ArchiveError::UnsupportedFormat(format!(
-                "Unsupported archive format: {}",
-                path.display()
-            ))
-        })?;
+        let format = Self::from_path(path).ok_or_else(|| ArchiveError::UnsupportedFormat(format!("Unsupported archive format: {}", path.display())))?;
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         let mut archive = format.open_with_options(reader, options)?;
 
         // For single-file formats (.Z, .gz, .bz2), derive the output filename from the archive name
-        if matches!(
-            format,
-            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2
-        ) {
+        if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 archive.set_single_file_name(stem.to_string());
             }
@@ -843,14 +805,9 @@ impl ArchiveFormat {
     ///     println!("File: {}", entry.name());
     /// }
     /// ```
-    pub fn open_multi_volume_zip<P: AsRef<Path>>(
-        paths: &[P],
-        options: ArchiveOptions,
-    ) -> Result<UnifiedArchive<MultiVolumeReader>> {
+    pub fn open_multi_volume_zip<P: AsRef<Path>>(paths: &[P], options: ArchiveOptions) -> Result<UnifiedArchive<MultiVolumeReader>> {
         if paths.is_empty() {
-            return Err(ArchiveError::io_error(
-                "No volume files provided for multi-volume ZIP archive",
-            ));
+            return Err(ArchiveError::io_error("No volume files provided for multi-volume ZIP archive"));
         }
 
         // Get sizes of all volumes
@@ -861,8 +818,7 @@ impl ArchiveFormat {
         }
 
         // Create volume provider from file paths
-        let paths_owned: Vec<std::path::PathBuf> =
-            paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
+        let paths_owned: Vec<std::path::PathBuf> = paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
         let volume_provider = Arc::new(FileVolumeProvider { paths: paths_owned });
 
         // Create the multi-volume reader
@@ -910,14 +866,9 @@ impl ArchiveFormat {
     ///     println!("File: {}", entry.name());
     /// }
     /// ```
-    pub fn open_multi_volume_7z<P: AsRef<Path>>(
-        paths: &[P],
-        options: ArchiveOptions,
-    ) -> Result<UnifiedArchive<MultiVolumeReader>> {
+    pub fn open_multi_volume_7z<P: AsRef<Path>>(paths: &[P], options: ArchiveOptions) -> Result<UnifiedArchive<MultiVolumeReader>> {
         if paths.is_empty() {
-            return Err(ArchiveError::io_error(
-                "No volume files provided for multi-volume 7z archive",
-            ));
+            return Err(ArchiveError::io_error("No volume files provided for multi-volume 7z archive"));
         }
 
         // Get sizes of all volumes
@@ -928,8 +879,7 @@ impl ArchiveFormat {
         }
 
         // Create volume provider from file paths
-        let paths_owned: Vec<std::path::PathBuf> =
-            paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
+        let paths_owned: Vec<std::path::PathBuf> = paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
         let volume_provider = Arc::new(FileVolumeProvider { paths: paths_owned });
 
         // Create the multi-volume reader
@@ -955,11 +905,9 @@ struct FileVolumeProvider {
 
 impl VolumeProvider for FileVolumeProvider {
     fn open_volume(&self, volume_number: u32) -> Option<Box<dyn Read + Send>> {
-        self.paths.get(volume_number as usize).and_then(|path| {
-            File::open(path)
-                .ok()
-                .map(|f| Box::new(BufReader::new(f)) as Box<dyn Read + Send>)
-        })
+        self.paths
+            .get(volume_number as usize)
+            .and_then(|path| File::open(path).ok().map(|f| Box::new(BufReader::new(f)) as Box<dyn Read + Send>))
     }
 }
 
@@ -1066,8 +1014,7 @@ impl ArchiveEntry {
 
     /// Returns true if this entry is stored without compression
     pub fn is_stored(&self) -> bool {
-        self.compression_method.to_lowercase().contains("stored")
-            || self.compression_method.to_lowercase().contains("unpacked")
+        self.compression_method.to_lowercase().contains("stored") || self.compression_method.to_lowercase().contains("unpacked")
     }
 
     /// Returns the encryption method used for this entry
@@ -1169,9 +1116,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Gz => ArchiveInner::Gz(GzArchive::new(reader)?, false),
             ArchiveFormat::Bz2 => ArchiveInner::Bz2(Bz2Archive::new(reader)?, false),
             ArchiveFormat::Ice => ArchiveInner::Ice(IceArchive::new(reader)?, false),
-            ArchiveFormat::PackIce => {
-                ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false)
-            }
+            ArchiveFormat::PackIce => ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false),
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
             ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
             ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
@@ -1204,11 +1149,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// let options = ArchiveOptions::new().with_password("secret");
     /// let archive = UnifiedArchive::open_with_format_and_options(file, ArchiveFormat::Zip, options).unwrap();
     /// ```
-    pub fn open_with_format_and_options(
-        reader: T,
-        format: ArchiveFormat,
-        options: ArchiveOptions,
-    ) -> Result<Self> {
+    pub fn open_with_format_and_options(reader: T, format: ArchiveFormat, options: ArchiveOptions) -> Result<Self> {
         let password = options.password().map(|s| s.to_string());
 
         let inner = match format {
@@ -1246,9 +1187,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Gz => ArchiveInner::Gz(GzArchive::new(reader)?, false),
             ArchiveFormat::Bz2 => ArchiveInner::Bz2(Bz2Archive::new(reader)?, false),
             ArchiveFormat::Ice => ArchiveInner::Ice(IceArchive::new(reader)?, false),
-            ArchiveFormat::PackIce => {
-                ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false)
-            }
+            ArchiveFormat::PackIce => ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false),
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
             ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
             ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
@@ -1448,10 +1387,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 } else {
                     *read = true;
-                    let name = self
-                        .single_file_name
-                        .clone()
-                        .unwrap_or_else(|| "compressed".to_string());
+                    let name = self.single_file_name.clone().unwrap_or_else(|| "compressed".to_string());
                     Ok(Some(ArchiveEntry {
                         name,
                         compressed_size: 0, // Would need to seek to get this
@@ -1469,10 +1405,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 } else {
                     *read = true;
-                    let name = self
-                        .single_file_name
-                        .clone()
-                        .unwrap_or_else(|| "compressed".to_string());
+                    let name = self.single_file_name.clone().unwrap_or_else(|| "compressed".to_string());
                     Ok(Some(ArchiveEntry {
                         name,
                         compressed_size: 0, // Would need to seek to get this
@@ -1490,10 +1423,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 } else {
                     *read = true;
-                    let name = self
-                        .single_file_name
-                        .clone()
-                        .unwrap_or_else(|| "compressed".to_string());
+                    let name = self.single_file_name.clone().unwrap_or_else(|| "compressed".to_string());
                     Ok(Some(ArchiveEntry {
                         name,
                         compressed_size: 0, // Would need to seek to get this
@@ -1511,10 +1441,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 } else {
                     *read = true;
-                    let name = self
-                        .single_file_name
-                        .clone()
-                        .unwrap_or_else(|| "compressed".to_string());
+                    let name = self.single_file_name.clone().unwrap_or_else(|| "compressed".to_string());
                     Ok(Some(ArchiveEntry {
                         name,
                         compressed_size: 0, // Not stored in ICE format
@@ -1532,10 +1459,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 } else {
                     *read = true;
-                    let name = self
-                        .single_file_name
-                        .clone()
-                        .unwrap_or_else(|| "compressed".to_string());
+                    let name = self.single_file_name.clone().unwrap_or_else(|| "compressed".to_string());
                     Ok(Some(ArchiveEntry {
                         name,
                         compressed_size: 0, // Not stored in Pack-Ice format
@@ -1782,9 +1706,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.read(header),
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.read(header),
             (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.read(header),
-            _ => Err(ArchiveError::IndexMismatch(
-                "Entry does not belong to this archive".to_string(),
-            )),
+            _ => Err(ArchiveError::IndexMismatch("Entry does not belong to this archive".to_string())),
         }
     }
 
@@ -1839,32 +1761,16 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     ///     println!("Read {} bytes from {}", data.len(), entry.name());
     /// }
     /// ```
-    pub fn read_with_options(
-        &mut self,
-        entry: &ArchiveEntry,
-        options: &ArchiveOptions,
-    ) -> Result<Vec<u8>> {
+    pub fn read_with_options(&mut self, entry: &ArchiveEntry, options: &ArchiveOptions) -> Result<Vec<u8>> {
         let password = options.password().map(|s| s.to_string());
 
         match (&mut self.inner, &entry.index) {
-            (ArchiveInner::Ace(archive), EntryIndex::Ace(header)) => {
-                archive.read_with_password(header, password)
-            }
-            (ArchiveInner::Arc(archive), EntryIndex::Arc(header)) => {
-                archive.read_with_password(header, password)
-            }
-            (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => {
-                archive.read_with_password(header, password.as_ref().map(|s| s.as_bytes()))
-            }
-            (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => {
-                archive.read_with_password(header, password)
-            }
-            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => {
-                archive.read_with_password(header, password)
-            }
-            (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => {
-                archive.read_with_password(header, password)
-            }
+            (ArchiveInner::Ace(archive), EntryIndex::Ace(header)) => archive.read_with_password(header, password),
+            (ArchiveInner::Arc(archive), EntryIndex::Arc(header)) => archive.read_with_password(header, password),
+            (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.read_with_password(header, password.as_ref().map(|s| s.as_bytes())),
+            (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.read_with_password(header, password),
+            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.read_with_password(header, password),
+            (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => archive.read_with_password(header, password),
             // Other formats don't support encryption, use normal read
             _ => self.read(entry),
         }
@@ -1874,12 +1780,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     ///
     /// This combines the memory efficiency of `read_to` with the flexibility
     /// of per-read options.
-    pub fn read_to_with_options<W: Write>(
-        &mut self,
-        entry: &ArchiveEntry,
-        writer: &mut W,
-        options: &ArchiveOptions,
-    ) -> Result<u64> {
+    pub fn read_to_with_options<W: Write>(&mut self, entry: &ArchiveEntry, writer: &mut W, options: &ArchiveOptions) -> Result<u64> {
         let data = self.read_with_options(entry, options)?;
         writer.write_all(&data)?;
         Ok(data.len() as u64)
@@ -1912,9 +1813,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.skip(header),
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.skip(header),
             (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.skip(header),
-            _ => Err(ArchiveError::IndexMismatch(
-                "Entry does not belong to this archive".to_string(),
-            )),
+            _ => Err(ArchiveError::IndexMismatch("Entry does not belong to this archive".to_string())),
         }
     }
 
@@ -1978,10 +1877,7 @@ pub fn is_supported_archive(path: &Path) -> bool {
 /// assert!(exts.contains(&"zoo"));
 /// ```
 pub fn supported_extensions() -> Vec<&'static str> {
-    ArchiveFormat::ALL
-        .iter()
-        .flat_map(|f| f.extensions().iter().copied())
-        .collect()
+    ArchiveFormat::ALL.iter().flat_map(|f| f.extensions().iter().copied()).collect()
 }
 
 #[cfg(test)]
@@ -1990,73 +1886,28 @@ mod tests {
 
     #[test]
     fn test_format_from_extension() {
-        assert_eq!(
-            ArchiveFormat::from_extension("arj"),
-            Some(ArchiveFormat::Arj)
-        );
-        assert_eq!(
-            ArchiveFormat::from_extension("ARJ"),
-            Some(ArchiveFormat::Arj)
-        );
-        assert_eq!(
-            ArchiveFormat::from_extension("zoo"),
-            Some(ArchiveFormat::Zoo)
-        );
-        assert_eq!(
-            ArchiveFormat::from_extension("arc"),
-            Some(ArchiveFormat::Arc)
-        );
+        assert_eq!(ArchiveFormat::from_extension("arj"), Some(ArchiveFormat::Arj));
+        assert_eq!(ArchiveFormat::from_extension("ARJ"), Some(ArchiveFormat::Arj));
+        assert_eq!(ArchiveFormat::from_extension("zoo"), Some(ArchiveFormat::Zoo));
+        assert_eq!(ArchiveFormat::from_extension("arc"), Some(ArchiveFormat::Arc));
         assert_eq!(ArchiveFormat::from_extension("sq"), Some(ArchiveFormat::Sq));
-        assert_eq!(
-            ArchiveFormat::from_extension("sq2"),
-            Some(ArchiveFormat::Sq)
-        );
-        assert_eq!(
-            ArchiveFormat::from_extension("qqq"),
-            Some(ArchiveFormat::Sq)
-        );
-        assert_eq!(
-            ArchiveFormat::from_extension("bqk"),
-            Some(ArchiveFormat::Sq)
-        ); // ?Q? pattern
-        assert_eq!(
-            ArchiveFormat::from_extension("sqz"),
-            Some(ArchiveFormat::Sqz)
-        );
+        assert_eq!(ArchiveFormat::from_extension("sq2"), Some(ArchiveFormat::Sq));
+        assert_eq!(ArchiveFormat::from_extension("qqq"), Some(ArchiveFormat::Sq));
+        assert_eq!(ArchiveFormat::from_extension("bqk"), Some(ArchiveFormat::Sq)); // ?Q? pattern
+        assert_eq!(ArchiveFormat::from_extension("sqz"), Some(ArchiveFormat::Sqz));
         assert_eq!(ArchiveFormat::from_extension("Z"), Some(ArchiveFormat::Z));
-        assert_eq!(
-            ArchiveFormat::from_extension("hyp"),
-            Some(ArchiveFormat::Hyp)
-        );
+        assert_eq!(ArchiveFormat::from_extension("hyp"), Some(ArchiveFormat::Hyp));
         assert_eq!(ArchiveFormat::from_extension("txt"), None);
-        assert_eq!(
-            ArchiveFormat::from_extension("zip"),
-            Some(ArchiveFormat::Zip)
-        );
-        assert_eq!(
-            ArchiveFormat::from_extension("rar"),
-            Some(ArchiveFormat::Rar)
-        );
-        assert_eq!(
-            ArchiveFormat::from_extension("7z"),
-            Some(ArchiveFormat::SevenZ)
-        );
+        assert_eq!(ArchiveFormat::from_extension("zip"), Some(ArchiveFormat::Zip));
+        assert_eq!(ArchiveFormat::from_extension("rar"), Some(ArchiveFormat::Rar));
+        assert_eq!(ArchiveFormat::from_extension("7z"), Some(ArchiveFormat::SevenZ));
     }
 
     #[test]
     fn test_format_from_path() {
-        assert_eq!(
-            ArchiveFormat::from_path(Path::new("test.arj")),
-            Some(ArchiveFormat::Arj)
-        );
-        assert_eq!(
-            ArchiveFormat::from_path(Path::new("/path/to/archive.zoo")),
-            Some(ArchiveFormat::Zoo)
-        );
-        assert_eq!(
-            ArchiveFormat::from_path(Path::new("C:\\files\\data.arc")),
-            Some(ArchiveFormat::Arc)
-        );
+        assert_eq!(ArchiveFormat::from_path(Path::new("test.arj")), Some(ArchiveFormat::Arj));
+        assert_eq!(ArchiveFormat::from_path(Path::new("/path/to/archive.zoo")), Some(ArchiveFormat::Zoo));
+        assert_eq!(ArchiveFormat::from_path(Path::new("C:\\files\\data.arc")), Some(ArchiveFormat::Arc));
         assert_eq!(ArchiveFormat::from_path(Path::new("noext")), None);
     }
 
@@ -2094,34 +1945,16 @@ mod tests {
         assert_eq!(ArchiveFormat::from_extension("GZ"), Some(ArchiveFormat::Gz));
 
         // Test .bz2 as single file format
-        assert_eq!(
-            ArchiveFormat::from_extension("bz2"),
-            Some(ArchiveFormat::Bz2)
-        );
-        assert_eq!(
-            ArchiveFormat::from_extension("BZ2"),
-            Some(ArchiveFormat::Bz2)
-        );
+        assert_eq!(ArchiveFormat::from_extension("bz2"), Some(ArchiveFormat::Bz2));
+        assert_eq!(ArchiveFormat::from_extension("BZ2"), Some(ArchiveFormat::Bz2));
 
         // Test path detection
-        assert_eq!(
-            ArchiveFormat::from_path(Path::new("file.gz")),
-            Some(ArchiveFormat::Gz)
-        );
-        assert_eq!(
-            ArchiveFormat::from_path(Path::new("file.bz2")),
-            Some(ArchiveFormat::Bz2)
-        );
+        assert_eq!(ArchiveFormat::from_path(Path::new("file.gz")), Some(ArchiveFormat::Gz));
+        assert_eq!(ArchiveFormat::from_path(Path::new("file.bz2")), Some(ArchiveFormat::Bz2));
 
         // Test .tar.gz still detects as Tgz (tar archive)
-        assert_eq!(
-            ArchiveFormat::from_path(Path::new("file.tar.gz")),
-            Some(ArchiveFormat::Tgz)
-        );
-        assert_eq!(
-            ArchiveFormat::from_path(Path::new("file.tar.bz2")),
-            Some(ArchiveFormat::Tbz)
-        );
+        assert_eq!(ArchiveFormat::from_path(Path::new("file.tar.gz")), Some(ArchiveFormat::Tgz));
+        assert_eq!(ArchiveFormat::from_path(Path::new("file.tar.bz2")), Some(ArchiveFormat::Tbz));
     }
 
     #[test]
@@ -2181,33 +2014,15 @@ mod tests {
     #[test]
     fn test_preambles() {
         // Test formats with single preamble
-        assert_eq!(
-            ArchiveFormat::Arj.preambles(),
-            Some(&[&[0x60u8, 0xEA][..]][..])
-        );
-        assert_eq!(
-            ArchiveFormat::Sqz.preambles(),
-            Some(&[b"HLSQZ".as_slice()][..])
-        );
+        assert_eq!(ArchiveFormat::Arj.preambles(), Some(&[&[0x60u8, 0xEA][..]][..]));
+        assert_eq!(ArchiveFormat::Sqz.preambles(), Some(&[b"HLSQZ".as_slice()][..]));
         assert_eq!(ArchiveFormat::Ha.preambles(), Some(&[b"HA".as_slice()][..]));
 
         // Test formats with multiple preambles
-        assert_eq!(
-            ArchiveFormat::Sq.preambles(),
-            Some(&[&[0x76u8, 0xFF][..], &[0xFAu8, 0xFF][..]][..])
-        );
-        assert_eq!(
-            ArchiveFormat::Hyp.preambles(),
-            Some(&[b"HP".as_slice(), b"ST".as_slice()][..])
-        );
-        assert_eq!(
-            ArchiveFormat::Lha.preambles(),
-            Some(&[b"-lh".as_slice(), b"-lz".as_slice()][..])
-        );
-        assert_eq!(
-            ArchiveFormat::Zip.preambles(),
-            Some(&[b"PK\x03\x04".as_slice(), b"PK\x05\x06".as_slice()][..])
-        );
+        assert_eq!(ArchiveFormat::Sq.preambles(), Some(&[&[0x76u8, 0xFF][..], &[0xFAu8, 0xFF][..]][..]));
+        assert_eq!(ArchiveFormat::Hyp.preambles(), Some(&[b"HP".as_slice(), b"ST".as_slice()][..]));
+        assert_eq!(ArchiveFormat::Lha.preambles(), Some(&[b"-lh".as_slice(), b"-lz".as_slice()][..]));
+        assert_eq!(ArchiveFormat::Zip.preambles(), Some(&[b"PK\x03\x04".as_slice(), b"PK\x05\x06".as_slice()][..]));
 
         // Test formats with offset > 0
         assert_eq!(ArchiveFormat::Lha.preamble_offset(), 2);
@@ -2222,22 +2037,13 @@ mod tests {
     #[test]
     fn test_detect_from_bytes() {
         // Test ZIP detection
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(b"PK\x03\x04rest of data"),
-            Some(ArchiveFormat::Zip)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"PK\x03\x04rest of data"), Some(ArchiveFormat::Zip));
 
         // Test ARJ detection
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(&[0x60, 0xEA, 0x00, 0x00]),
-            Some(ArchiveFormat::Arj)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(&[0x60, 0xEA, 0x00, 0x00]), Some(ArchiveFormat::Arj));
 
         // Test RAR detection
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(b"Rar!\x1a\x07\x00rest"),
-            Some(ArchiveFormat::Rar)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"Rar!\x1a\x07\x00rest"), Some(ArchiveFormat::Rar));
 
         // Test 7z detection
         assert_eq!(
@@ -2246,66 +2052,36 @@ mod tests {
         );
 
         // Test gzip detection
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(&[0x1F, 0x8B, 0x08, 0x00]),
-            Some(ArchiveFormat::Gz)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(&[0x1F, 0x8B, 0x08, 0x00]), Some(ArchiveFormat::Gz));
 
         // Test bzip2 detection
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(b"BZh9data"),
-            Some(ArchiveFormat::Bz2)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"BZh9data"), Some(ArchiveFormat::Bz2));
 
         // Test SQZ detection
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(b"HLSQZrest"),
-            Some(ArchiveFormat::Sqz)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"HLSQZrest"), Some(ArchiveFormat::Sqz));
 
         // Test HA detection
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(b"HArest"),
-            Some(ArchiveFormat::Ha)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"HArest"), Some(ArchiveFormat::Ha));
 
         // Test ARC detection (0x1A + method 1-11)
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(&[0x1A, 0x02, 0x00]),
-            Some(ArchiveFormat::Arc)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(&[0x1A, 0x02, 0x00]), Some(ArchiveFormat::Arc));
 
         // Test ZOO detection
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(b"ZOO 2.10 Archive."),
-            Some(ArchiveFormat::Zoo)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"ZOO 2.10 Archive."), Some(ArchiveFormat::Zoo));
 
         // Test ACE detection (magic at offset 7)
         let mut ace_data = vec![0u8; 20];
         ace_data[7..14].copy_from_slice(b"**ACE**");
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(&ace_data),
-            Some(ArchiveFormat::Ace)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(&ace_data), Some(ArchiveFormat::Ace));
 
         // Test LHA detection (magic at offset 2)
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(b"\x00\x00-lh5-rest"),
-            Some(ArchiveFormat::Lha)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"\x00\x00-lh5-rest"), Some(ArchiveFormat::Lha));
 
         // Test UC2 detection
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(b"UC2\x1arest"),
-            Some(ArchiveFormat::Uc2)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"UC2\x1arest"), Some(ArchiveFormat::Uc2));
 
         // Test UE2 (UltraCrypt) detection as UC2
-        assert_eq!(
-            ArchiveFormat::detect_from_bytes(b"UE2\x01rest"),
-            Some(ArchiveFormat::Uc2)
-        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"UE2\x01rest"), Some(ArchiveFormat::Uc2));
 
         // Test unknown format
         assert_eq!(ArchiveFormat::detect_from_bytes(b"random data here"), None);

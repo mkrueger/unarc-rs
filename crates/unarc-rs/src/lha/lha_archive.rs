@@ -51,8 +51,7 @@ impl LhaFileHeader {
 
             // DOS date format: bits 0-4: day, 5-8: month, 9-15: year-1980
             // DOS time format: bits 0-4: second/2, 5-10: minute, 11-15: hour
-            let dos_date =
-                ((year.saturating_sub(1980) & 0x7F) << 9) | ((month & 0xF) << 5) | (day & 0x1F);
+            let dos_date = ((year.saturating_sub(1980) & 0x7F) << 9) | ((month & 0xF) << 5) | (day & 0x1F);
             let dos_time = ((hour & 0x1F) << 11) | ((minute & 0x3F) << 5) | ((second / 2) & 0x1F);
 
             DosDateTime::new((dos_date << 16) | dos_time)
@@ -92,10 +91,7 @@ impl<T: Read> LhaArchive<T> {
 
         Ok(Self {
             reader: Some(lha_reader),
-            current_header: Some(LhaFileHeader {
-                is_supported,
-                ..header
-            }),
+            current_header: Some(LhaFileHeader { is_supported, ..header }),
             finished: false,
         })
     }
@@ -116,10 +112,7 @@ impl<T: Read> LhaArchive<T> {
             if reader.next_file()? {
                 let header = LhaFileHeader::from_lha_header(reader.header());
                 let is_supported = reader.is_decoder_supported();
-                return Ok(Some(LhaFileHeader {
-                    is_supported,
-                    ..header
-                }));
+                return Ok(Some(LhaFileHeader { is_supported, ..header }));
             }
         }
 
@@ -138,10 +131,7 @@ impl<T: Read> LhaArchive<T> {
                 // Queue up the next header
                 let header = LhaFileHeader::from_lha_header(reader.header());
                 let is_supported = reader.is_decoder_supported();
-                self.current_header = Some(LhaFileHeader {
-                    is_supported,
-                    ..header
-                });
+                self.current_header = Some(LhaFileHeader { is_supported, ..header });
             }
         }
         Ok(())
@@ -154,10 +144,7 @@ impl<T: Read> LhaArchive<T> {
         }
 
         if !header.is_supported {
-            return Err(ArchiveError::unsupported_method(
-                "LHA",
-                &header.compression_method,
-            ));
+            return Err(ArchiveError::unsupported_method("LHA", &header.compression_method));
         }
 
         if let Some(ref mut reader) = self.reader {
@@ -174,18 +161,12 @@ impl<T: Read> LhaArchive<T> {
                 // Queue up the next header
                 let next_header = LhaFileHeader::from_lha_header(reader.header());
                 let is_supported = reader.is_decoder_supported();
-                self.current_header = Some(LhaFileHeader {
-                    is_supported,
-                    ..next_header
-                });
+                self.current_header = Some(LhaFileHeader { is_supported, ..next_header });
             }
 
             Ok(data)
         } else {
-            Err(ArchiveError::decompression_failed(
-                &header.name,
-                "Archive reader not available",
-            ))
+            Err(ArchiveError::decompression_failed(&header.name, "Archive reader not available"))
         }
     }
 }
