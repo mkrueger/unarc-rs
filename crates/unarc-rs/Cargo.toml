@@ -1,6 +1,6 @@
 [package]
 name = "unarc-rs"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "Universal archive extraction & decompression library for retro + modern formats (7z, ZIP, RAR, LHA/LZH, TAR, ARJ, ARC/PAK, ZOO, HA, UC2, SQ/SQ2, SQZ, HYP, gz, bz2, Z)."
 authors = ["Mike Krüger <mkrueger@posteo.de>"]

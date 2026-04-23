@@ -163,6 +163,7 @@ impl Lzw {
         output.push(finchar);
 
         // Main decompression loop
+        #[allow(clippy::while_let_loop)]
         loop {
             let incode = match getcode!() {
                 Some(c) => c,
