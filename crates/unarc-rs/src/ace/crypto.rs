@@ -3,7 +3,7 @@
 //! ACE uses Blowfish in CBC mode for encryption.
 //! The key is derived from the password using SHA-1.
 
-use blowfish::cipher::{BlockDecrypt, KeyInit};
+use blowfish::cipher::{Array, BlockCipherDecrypt, KeyInit};
 use blowfish::Blowfish;
 use sha1::{Digest, Sha1};
 
@@ -42,7 +42,7 @@ pub fn decrypt_cbc(data: &[u8], key: &[u8]) -> Vec<u8> {
         let encrypted_block: [u8; BLOCK_SIZE] = chunk.try_into().unwrap();
 
         // Decrypt block
-        let mut block = blowfish::cipher::generic_array::GenericArray::clone_from_slice(chunk);
+        let mut block = Array::try_from(&*chunk).expect("block size mismatch");
         cipher.decrypt_block(&mut block);
 
         // XOR with previous ciphertext (CBC mode)
