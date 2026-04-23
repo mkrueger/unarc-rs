@@ -650,8 +650,8 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
 
 fn cmd_formats() -> Result<(), ArchiveError> {
     println!("Supported archive formats:\n");
-    println!("{:<12} {:<25} {:<18} Aliases", "Extension", "Format", "Magic Bytes");
-    println!("{}", "-".repeat(80));
+    println!("{:<12} {:<28} {:<33} {:<8} Aliases", "Extension", "Format", "Magic Bytes", "Offset");
+    println!("{}", "-".repeat(95));
 
     for format in ArchiveFormat::ALL {
         let extensions = format.extensions();
@@ -682,7 +682,7 @@ fn cmd_formats() -> Result<(), ArchiveError> {
             .unwrap_or_else(|| "-".to_string());
         let offset = format.preamble_offset();
         let offset_str = if offset > 0 { format!("@{}", offset) } else { String::new() };
-        println!("{:<12} {:<25} {:<20}{} {}", primary, format.name(), magic, offset_str, aliases_str);
+        println!("{:<12} {:<28} {:<33} {:<8} {}", primary, format.name(), magic, offset_str, aliases_str);
     }
 
     Ok(())
