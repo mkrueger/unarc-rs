@@ -39,10 +39,9 @@ pub fn decode_fastest(data: &[u8], original_size: usize) -> Result<Vec<u8>> {
             if back_ptr > res.len() - 1 {
                 return Err(ArchiveError::decompression_failed("ARJ", "invalid back pointer in LZ77 stream"));
             }
-            let mut i = res.len() - 1 - back_ptr;
-            for _ in 0..rep_count {
+            let start = res.len() - 1 - back_ptr;
+            for i in start..start + rep_count {
                 res.push(res[i]);
-                i += 1;
             }
         }
     }

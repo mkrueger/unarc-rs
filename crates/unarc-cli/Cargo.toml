@@ -1,12 +1,12 @@
 [package]
 name = "unarc-cli"
-version = "0.6.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Universal Archive Extractor - CLI tool for extracting various archive formats"
-authors = ["Mike Krüger <mkrueger@posteo.de>"]
-homepage = "https://github.com/mkrueger/unarc-rs"
-repository = "https://github.com/mkrueger/unarc-rs"
-license = "MIT OR Apache-2.0"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "unarc"

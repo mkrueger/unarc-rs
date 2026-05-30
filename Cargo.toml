@@ -1,12 +1,9 @@
 [workspace]
 resolver = "2"
-members = [
-    "crates/unarc-rs",
-    "crates/unarc-cli",
-]
+members = ["crates/unarc-rs", "crates/unarc-cli"]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.6.1"
 edition = "2021"
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 homepage = "https://github.com/mkrueger/unarc-rs"
@@ -18,4 +15,3 @@ all = "warn"
 pedantic = "warn"
 nursery = "warn"
 unwrap_used = "warn"
-

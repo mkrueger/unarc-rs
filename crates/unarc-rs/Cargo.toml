@@ -1,12 +1,12 @@
 [package]
 name = "unarc-rs"
-version = "0.6.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Universal archive extraction & decompression library for retro + modern formats (7z, ZIP, RAR, LHA/LZH, TAR, ARJ, ARC/PAK, ZOO, HA, UC2, SQ/SQ2, SQZ, HYP, gz, bz2, Z)."
-authors = ["Mike Krüger <mkrueger@posteo.de>"]
-homepage = "https://github.com/mkrueger/unarc-rs"
-repository = "https://github.com/mkrueger/unarc-rs"
-license = "MIT OR Apache-2.0"
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 log = "0.4.29"
