@@ -9,16 +9,16 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-log = "0.4.29"
+log = "0.4.33"
 crc32fast = "1.5.0"
 crc16 = "0.4.0"
-chrono = "0.4.44"
-delharc = "0.6.1"
+chrono = "0.4.45"
+delharc = "0.8.0"
 salzweg = "0.1.4"
 bitstream-io = "4.10.0"
-zip = { version = "8.5", features = ["legacy-zip", "aes-crypto"] }
+zip = { version = "8.6.0", features = ["legacy-zip", "aes-crypto"] }
 unrar = "0.5.8"
-sevenz-rust2 = "0.20"
+sevenz-rust2 = "0.21.4"
 thiserror = "2.0"
 tar = "0.4"
 flate2 = "1.1"
