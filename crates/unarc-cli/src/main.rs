@@ -574,6 +574,29 @@ impl VolumeProvider for FileVolumeProvider {
     }
 }
 
+/// Turns an archive entry name into a safe relative path below the output directory.
+/// Returns `None` for names that escape the output directory or carry no usable component.
+fn sanitize_entry_path(name: &str) -> Option<PathBuf> {
+    let mut result = PathBuf::new();
+    for (index, part) in name.split(['/', '\\']).enumerate() {
+        let part = if index == 0 {
+            // Drop a DOS drive prefix such as "C:" on the first component
+            match part.as_bytes() {
+                [_, b':', rest @ ..] => std::str::from_utf8(rest).unwrap_or(part),
+                _ => part,
+            }
+        } else {
+            part
+        };
+        match part {
+            "" | "." => continue,
+            ".." => return None,
+            _ => result.push(part),
+        }
+    }
+    if result.as_os_str().is_empty() { None } else { Some(result) }
+}
+
 fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Option<&str>) -> Result<(), ArchiveError> {
     let format = detect_format(archive_path)?;
 
@@ -604,7 +627,30 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
     let mut errors = 0;
 
     while let Some(entry) = archive.next_entry_box()? {
-        let output_path = output_dir.join(entry.file_name());
+        let relative_path = match sanitize_entry_path(entry.name()) {
+            Some(path) => path,
+            None => {
+                eprintln!("  Skipping {} (unsafe path)", entry.name());
+                if let Err(e) = archive.skip_box(&entry) {
+                    if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
+                        return Err(e);
+                    }
+                }
+                errors += 1;
+                continue;
+            }
+        };
+        let output_path = output_dir.join(&relative_path);
+
+        if entry.is_directory() {
+            fs::create_dir_all(&output_path)?;
+            if let Err(e) = archive.skip_box(&entry) {
+                if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
+                    return Err(e);
+                }
+            }
+            continue;
+        }
 
         // Check if file exists
         if output_path.exists() && !force {

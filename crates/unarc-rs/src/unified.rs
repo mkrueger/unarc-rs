@@ -41,7 +41,7 @@ use crate::ace::{AceArchive, FileHeader as AceFileHeader};
 use crate::arc::arc_archive::ArcArchive;
 use crate::arc::local_file_header::LocalFileHeader as ArcHeader;
 use crate::arj::arj_archive::ArjArchive;
-use crate::arj::local_file_header::LocalFileHeader as ArjHeader;
+use crate::arj::local_file_header::{FileType as ArjFileType, LocalFileHeader as ArjHeader};
 use crate::bz2::Bz2Archive;
 use crate::date_time::DosDateTime;
 use crate::encryption::{EncryptionMethod, RarEncryption, ZipEncryption};
@@ -1015,6 +1015,14 @@ impl ArchiveEntry {
     /// Returns true if this entry is stored without compression
     pub fn is_stored(&self) -> bool {
         self.compression_method.to_lowercase().contains("stored") || self.compression_method.to_lowercase().contains("unpacked")
+    }
+
+    /// Returns true if this entry describes a directory rather than a file
+    pub fn is_directory(&self) -> bool {
+        match &self.index {
+            EntryIndex::Arj(header) => header.file_type == ArjFileType::Directory,
+            _ => self.name.ends_with('/') || self.name.ends_with('\\'),
+        }
     }
 
     /// Returns the encryption method used for this entry
