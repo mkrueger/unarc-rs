@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/unarc-rs", "crates/unarc-cli"]
 
 [workspace.package]
-version = "0.6.1"
+version = "0.6.2"
 edition = "2021"
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 homepage = "https://github.com/mkrueger/unarc-rs"
