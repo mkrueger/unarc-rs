@@ -15,6 +15,7 @@ pub mod gz;
 pub mod ha;
 pub mod hyp;
 pub mod ice;
+pub mod jar;
 pub mod lha;
 pub mod packice;
 pub mod rar;

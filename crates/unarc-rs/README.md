@@ -21,6 +21,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **ARC/PAK** | `.arc`, `.pak` | Full support | XOR ✓ | — |
 | **ZOO** | `.zoo` | Full support | — | — |
 | **HA** | `.ha` | Full support | — | — |
+| **JAR (DOS)** | `.j` | m1–m4, solid, word/binary transforms | — | — |
 | **UC2** | `.uc2` | Full support | — | — |
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support | — | — |
 | **SQZ** | `.sqz` | Full support | — | — |

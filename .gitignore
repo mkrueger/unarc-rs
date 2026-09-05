@@ -13,3 +13,7 @@ Cargo.lock
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+
+# Local JAR reverse-engineering references; never ship with the decoder.
+/crates/unarc-rs/src/jar/exe/
+/crates/unarc-rs/src/jar/disasm/

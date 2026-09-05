@@ -52,6 +52,7 @@ use crate::ha::header::FileHeader as HaHeader;
 use crate::hyp::header::Header as HypHeader;
 use crate::hyp::hyp_archive::HypArchive;
 use crate::ice::IceArchive;
+use crate::jar::jar_archive::{JarArchive, JarEntry};
 use crate::lha::lha_archive::{LhaArchiveSeekable, LhaFileHeader};
 use crate::packice::PackIceArchive;
 use crate::rar::rar_archive::{RarArchive, RarFileHeader};
@@ -223,6 +224,8 @@ pub enum ArchiveFormat {
     Hyp,
     /// HA (Harri Archiver) format (.ha)
     Ha,
+    /// JAR (Just Another aRchiver) format (.j) - ARJ Software, Inc.
+    Jar,
     /// LHA/LZH archive format (.lha, .lzh)
     Lha,
     /// ZIP archive format (.zip)
@@ -259,6 +262,7 @@ impl ArchiveFormat {
         ArchiveFormat::PackIce,
         ArchiveFormat::Hyp,
         ArchiveFormat::Ha,
+        ArchiveFormat::Jar,
         ArchiveFormat::Uc2,
         ArchiveFormat::Lha,
         ArchiveFormat::Zip,
@@ -288,6 +292,8 @@ impl ArchiveFormat {
             "pi9" => Some(ArchiveFormat::PackIce),
             // PAK uses same format as ARC with additional compression methods
             "pak" => Some(ArchiveFormat::Arc),
+            // JAR archives use .j extension (not to be confused with Java .jar)
+            "j" => Some(ArchiveFormat::Jar),
             "uc2" => Some(ArchiveFormat::Uc2),
             "ue2" => Some(ArchiveFormat::Uc2),
             "hyp" => Some(ArchiveFormat::Hyp),
@@ -354,6 +360,7 @@ impl ArchiveFormat {
             ArchiveFormat::PackIce => "pi9",
             ArchiveFormat::Hyp => "hyp",
             ArchiveFormat::Ha => "ha",
+            ArchiveFormat::Jar => "j",
             ArchiveFormat::Uc2 => "uc2",
             ArchiveFormat::Lha => "lha",
             ArchiveFormat::Zip => "zip",
@@ -382,6 +389,7 @@ impl ArchiveFormat {
             ArchiveFormat::PackIce => "Pack-Ice (Atari ST)",
             ArchiveFormat::Hyp => "HYP (Hyper)",
             ArchiveFormat::Ha => "HA (Harri Archiver)",
+            ArchiveFormat::Jar => "JAR (Just Another aRchiver)",
             ArchiveFormat::Uc2 => "UC2 (Ultra Compressor II)",
             ArchiveFormat::Lha => "LHA/LZH",
             ArchiveFormat::Zip => "ZIP",
@@ -410,6 +418,7 @@ impl ArchiveFormat {
             ArchiveFormat::PackIce => &["pi9"],
             ArchiveFormat::Hyp => &["hyp"],
             ArchiveFormat::Ha => &["ha"],
+            ArchiveFormat::Jar => &["j"],
             // UE2 is UltraCrypt-encrypted UC2 (detected, but not decrypted).
             ArchiveFormat::Uc2 => &["uc2", "ue2"],
             ArchiveFormat::Lha => &["lha", "lzh"],
@@ -463,6 +472,8 @@ impl ArchiveFormat {
             ArchiveFormat::Hyp => Some(&[b"HP", b"ST"]),
             // HA: "HA"
             ArchiveFormat::Ha => Some(&[b"HA"]),
+            // JAR: "\x1aJar" at offset 0x0E (Just Another aRchiver)
+            ArchiveFormat::Jar => Some(&[b"\x1aJar"]),
             // UC2: "UC2\x1A" (normal) or "UE2" (UltraCrypt-encrypted)
             ArchiveFormat::Uc2 => Some(&[b"UC2\x1a", b"UE2"]),
             // LHA: "-lh" or "-lz" at offset 2
@@ -486,12 +497,13 @@ impl ArchiveFormat {
 
     /// Returns the offset where the magic bytes are located.
     ///
-    /// Most formats have magic at offset 0, but some (like LHA, ACE, TAR) have it elsewhere.
+    /// Most formats have magic at offset 0, but some (like LHA, ACE, TAR, JAR) have it elsewhere.
     pub fn preamble_offset(&self) -> usize {
         match self {
-            ArchiveFormat::Lha => 2,   // "-lh" or "-lz" at offset 2
-            ArchiveFormat::Ace => 7,   // "**ACE**" at offset 7
-            ArchiveFormat::Tar => 257, // "ustar" at offset 257
+            ArchiveFormat::Lha => 2,    // "-lh" or "-lz" at offset 2
+            ArchiveFormat::Ace => 7,    // "**ACE**" at offset 7
+            ArchiveFormat::Jar => 0x0E, // "\x1aJar" at offset 0x0E
+            ArchiveFormat::Tar => 257,  // "ustar" at offset 257
             _ => 0,
         }
     }
@@ -586,6 +598,11 @@ impl ArchiveFormat {
         // ARJ: 0x60 0xEA (2 bytes)
         if data.len() >= 2 && data[0] == 0x60 && data[1] == 0xEA {
             return Some(ArchiveFormat::Arj);
+        }
+
+        // JAR: "\x1aJar" at offset 0x0E (Just Another aRchiver, not Java)
+        if data.len() >= 0x12 && &data[0x0E..0x12] == b"\x1aJar" {
+            return Some(ArchiveFormat::Jar);
         }
 
         // HA: "HA" (2 bytes)
@@ -953,6 +970,7 @@ enum EntryIndex {
     PackIce,
     Hyp(HypHeader),
     Ha(HaHeader),
+    Jar(JarEntry),
     Uc2(Uc2Header),
     Lha(LhaFileHeader),
     Zip(ZipFileHeader),
@@ -1021,6 +1039,7 @@ impl ArchiveEntry {
     pub fn is_directory(&self) -> bool {
         match &self.index {
             EntryIndex::Arj(header) => header.file_type == ArjFileType::Directory,
+            EntryIndex::Jar(header) => header.is_directory,
             _ => self.name.ends_with('/') || self.name.ends_with('\\'),
         }
     }
@@ -1077,6 +1096,7 @@ enum ArchiveInner<T: Read + Seek> {
     PackIce(PackIceArchive, bool), // bool = already read (Atari ST)
     Hyp(HypArchive<T>),
     Ha(HaArchive<T>),
+    Jar(JarArchive<T>),            // JAR (Just Another aRchiver) - solid archive
     Uc2(Uc2Archive<T>),
     Lha(LhaArchiveSeekable<T>),
     Zip(ZipArchive<T>),
@@ -1127,6 +1147,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::PackIce => ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false),
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
             ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
+            ArchiveFormat::Jar => ArchiveInner::Jar(JarArchive::new(reader)?),
             ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
             ArchiveFormat::Lha => ArchiveInner::Lha(LhaArchiveSeekable::new(reader)?),
             ArchiveFormat::Zip => ArchiveInner::Zip(ZipArchive::new(reader)?),
@@ -1198,6 +1219,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::PackIce => ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false),
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
             ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
+            ArchiveFormat::Jar => ArchiveInner::Jar(JarArchive::new(reader)?),
             ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
             ArchiveFormat::Lha => ArchiveInner::Lha(LhaArchiveSeekable::new(reader)?),
             ArchiveFormat::Zip => {
@@ -1512,6 +1534,18 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 }
             }
+            ArchiveInner::Jar(archive) => {
+                Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
+                    name: header.name.clone(),
+                    compressed_size: u64::from(header.compressed_size),
+                    original_size: u64::from(header.original_size),
+                    compression_method: "JAR Huffman/LZ/words".to_string(),
+                    modified_time: Some(DosDateTime::new((u32::from(header.modification_date) << 16) | u32::from(header.modification_time))),
+                    crc: u64::from(header.crc32),
+                    encryption: EncryptionMethod::None,
+                    index: EntryIndex::Jar(header),
+                }))
+            }
             ArchiveInner::Uc2(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
                     Ok(Some(ArchiveEntry {
@@ -1705,6 +1739,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::PackIce(archive, _), EntryIndex::PackIce) => archive.read(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.read(header),
             (ArchiveInner::Ha(archive), EntryIndex::Ha(header)) => archive.read(header),
+            (ArchiveInner::Jar(archive), EntryIndex::Jar(header)) => archive.read_entry(header),
             (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.read(header),
             (ArchiveInner::Lha(archive), EntryIndex::Lha(header)) => archive.read(header),
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.read(header),
@@ -1812,6 +1847,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::PackIce(archive, _), EntryIndex::PackIce) => archive.skip(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.skip(header),
             (ArchiveInner::Ha(archive), EntryIndex::Ha(header)) => archive.skip(header),
+            (ArchiveInner::Jar(_), EntryIndex::Jar(_)) => Ok(()),
             (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.skip(header),
             (ArchiveInner::Lha(archive), EntryIndex::Lha(header)) => archive.skip(header),
             (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.skip(header),
