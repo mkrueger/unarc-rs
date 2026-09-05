@@ -687,6 +687,7 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
     println!();
     if errors > 0 {
         println!("Extracted {} file(s), {} error(s)", count, errors);
+        return Err(ArchiveError::io_error(format!("Extraction completed with {errors} error(s)")));
     } else {
         println!("Extracted {} file(s)", count);
     }

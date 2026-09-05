@@ -18,7 +18,7 @@ salzweg = "0.1.4"
 bitstream-io = "4.10.0"
 zip = { version = "8.6.0", features = ["legacy-zip", "aes-crypto"] }
 unrar = "0.5.8"
-sevenz-rust2 = "0.21.4"
+sevenz-rust2 = "0.22.2"
 thiserror = "2.0"
 tar = "0.4"
 flate2 = "1.1"
