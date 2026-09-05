@@ -2,10 +2,11 @@
 //!
 //! A command-line tool for listing and extracting files from various archive formats.
 
+mod extraction;
 mod password;
 
 use clap::{Parser, Subcommand};
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -594,7 +595,11 @@ fn sanitize_entry_path(name: &str) -> Option<PathBuf> {
             _ => result.push(part),
         }
     }
-    if result.as_os_str().is_empty() { None } else { Some(result) }
+    if result.as_os_str().is_empty() {
+        None
+    } else {
+        Some(result)
+    }
 }
 
 fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Option<&str>) -> Result<(), ArchiveError> {
@@ -620,8 +625,7 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
         }
     }
 
-    // Create output directory if needed
-    fs::create_dir_all(output_dir)?;
+    let output = extraction::ExtractionRoot::new(output_dir)?;
 
     let mut count = 0;
     let mut errors = 0;
@@ -640,10 +644,8 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
                 continue;
             }
         };
-        let output_path = output_dir.join(&relative_path);
-
         if entry.is_directory() {
-            fs::create_dir_all(&output_path)?;
+            output.create_dir_all(&relative_path)?;
             if let Err(e) = archive.skip_box(&entry) {
                 if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
                     return Err(e);
@@ -653,7 +655,7 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
         }
 
         // Check if file exists
-        if output_path.exists() && !force {
+        if !force && output.exists(&relative_path)? {
             eprintln!("  Skipping {} (already exists, use -f to overwrite)", entry.name());
             // Still need to skip the entry data
             if let Err(e) = archive.skip_box(&entry) {
@@ -664,18 +666,16 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
             continue;
         }
 
-        // Create parent directories if needed
-        if let Some(parent) = output_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
         print!("  {} ({} bytes)... ", entry.name(), entry.original_size());
 
         match archive.read_with_options_box(&entry, &options) {
             Ok(data) => {
-                fs::write(&output_path, &data)?;
-                println!("OK");
-                count += 1;
+                if output.write(&relative_path, &data, force)? {
+                    println!("OK");
+                    count += 1;
+                } else {
+                    println!("Skipped (already exists, use -f to overwrite)");
+                }
             }
             Err(e) => {
                 println!("ERROR: {}", e);
