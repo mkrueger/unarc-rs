@@ -25,6 +25,16 @@ fn extract(archive: &Path, output: &Path, force: bool) -> Output {
 }
 
 #[test]
+fn list_accepts_multibyte_filenames() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive = temp.path().join("unicode.tar");
+    make_tar(&archive, &"ä".repeat(30), b"content");
+    let result = Command::new(env!("CARGO_BIN_EXE_unarc")).arg("list").arg(&archive).output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert!(String::from_utf8(result.stdout).unwrap().contains(&"ä".repeat(30)));
+}
+
+#[test]
 fn nested_extraction_preserves_files_unless_forced() {
     let temp = tempfile::tempdir().unwrap();
     let archive = temp.path().join("input.tar");

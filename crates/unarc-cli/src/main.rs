@@ -746,10 +746,37 @@ fn detect_format(path: &Path) -> Result<ArchiveFormat, ArchiveError> {
     ArchiveFormat::from_path(path).ok_or_else(|| ArchiveError::UnsupportedFormat(format!("Unsupported or unrecognized archive format: {:?}", path.extension())))
 }
 
+/// Shorten a name by Unicode scalar values, never by arbitrary UTF-8 bytes.
 pub fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    let len = s.chars().count();
+    if len <= max_len {
         s.to_string()
+    } else if max_len <= 3 {
+        ".".repeat(max_len)
     } else {
-        format!("...{}", &s[s.len() - max_len + 3..])
+        let suffix: String = s.chars().skip(len - (max_len - 3)).collect();
+        format!("...{suffix}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_preserves_unicode_and_ascii_suffixes() {
+        assert_eq!(truncate("abcdefgh", 6), "...fgh");
+        assert_eq!(truncate(&"ä".repeat(30), 40), "ä".repeat(30));
+        assert_eq!(truncate(&"ä".repeat(60), 40), format!("...{}", "ä".repeat(37)));
+        assert_eq!(truncate("", 0), "");
+        for name in ["abcdef", "äöüßé", "文件名归档", "📁🦀🙂🙂", "e\u{301}e\u{301}"] {
+            for max_len in 0..=30 {
+                let result = truncate(name, max_len);
+                assert!(result.chars().count() <= max_len);
+                if name.chars().count() <= max_len {
+                    assert_eq!(result, name);
+                }
+            }
+        }
     }
 }
