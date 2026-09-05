@@ -1040,6 +1040,12 @@ impl ArchiveEntry {
         match &self.index {
             EntryIndex::Arj(header) => header.file_type == ArjFileType::Directory,
             EntryIndex::Jar(header) => header.is_directory,
+            EntryIndex::Tar(header) | EntryIndex::Tgz(header) | EntryIndex::Tbz(header) | EntryIndex::TarZ(header) => {
+                header.entry_type == crate::tar::TarEntryType::Directory
+            }
+            EntryIndex::Zip(header) => header.is_directory,
+            EntryIndex::Rar(header) => header.is_directory,
+            EntryIndex::SevenZ(header) => header.is_directory,
             _ => self.name.ends_with('/') || self.name.ends_with('\\'),
         }
     }
@@ -1096,7 +1102,7 @@ enum ArchiveInner<T: Read + Seek> {
     PackIce(PackIceArchive, bool), // bool = already read (Atari ST)
     Hyp(HypArchive<T>),
     Ha(HaArchive<T>),
-    Jar(JarArchive<T>),            // JAR (Just Another aRchiver) - solid archive
+    Jar(JarArchive<T>), // JAR (Just Another aRchiver) - solid archive
     Uc2(Uc2Archive<T>),
     Lha(LhaArchiveSeekable<T>),
     Zip(ZipArchive<T>),
@@ -1534,18 +1540,18 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 }
             }
-            ArchiveInner::Jar(archive) => {
-                Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
-                    name: header.name.clone(),
-                    compressed_size: u64::from(header.compressed_size),
-                    original_size: u64::from(header.original_size),
-                    compression_method: "JAR Huffman/LZ/words".to_string(),
-                    modified_time: Some(DosDateTime::new((u32::from(header.modification_date) << 16) | u32::from(header.modification_time))),
-                    crc: u64::from(header.crc32),
-                    encryption: EncryptionMethod::None,
-                    index: EntryIndex::Jar(header),
-                }))
-            }
+            ArchiveInner::Jar(archive) => Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
+                name: header.name.clone(),
+                compressed_size: u64::from(header.compressed_size),
+                original_size: u64::from(header.original_size),
+                compression_method: "JAR Huffman/LZ/words".to_string(),
+                modified_time: Some(DosDateTime::new(
+                    (u32::from(header.modification_date) << 16) | u32::from(header.modification_time),
+                )),
+                crc: u64::from(header.crc32),
+                encryption: EncryptionMethod::None,
+                index: EntryIndex::Jar(header),
+            })),
             ArchiveInner::Uc2(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
                     Ok(Some(ArchiveEntry {

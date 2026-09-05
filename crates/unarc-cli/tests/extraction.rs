@@ -25,6 +25,32 @@ fn extract(archive: &Path, output: &Path, force: bool) -> Output {
 }
 
 #[test]
+fn extracts_directory_type_without_trailing_slash_and_its_child() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive = temp.path().join("directory.tar");
+    let output = temp.path().join("output");
+    let mut builder = tar::Builder::new(fs::File::create(&archive).unwrap());
+    for (name, kind, data) in [
+        ("dir", tar::EntryType::Directory, &b""[..]),
+        ("dir/file.txt", tar::EntryType::Regular, &b"child data"[..]),
+    ] {
+        let mut header = tar::Header::new_ustar();
+        header.set_path(name).unwrap();
+        header.set_entry_type(kind);
+        header.set_size(data.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder.append(&header, data).unwrap();
+    }
+    builder.finish().unwrap();
+    drop(builder);
+    let result = extract(&archive, &output, false);
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert!(output.join("dir").is_dir());
+    assert_eq!(fs::read(output.join("dir/file.txt")).unwrap(), b"child data");
+}
+
+#[test]
 fn list_accepts_multibyte_filenames() {
     let temp = tempfile::tempdir().unwrap();
     let archive = temp.path().join("unicode.tar");

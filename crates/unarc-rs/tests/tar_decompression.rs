@@ -19,6 +19,38 @@ fn tar_entry_count() {
     assert_eq!(1, archive.entry_count());
 }
 
+#[test]
+fn directory_type_is_authoritative_without_a_trailing_slash() {
+    use std::io::Write;
+    use unarc_rs::unified::{ArchiveFormat, UnifiedArchive};
+    let mut builder = tar::Builder::new(Vec::new());
+    for (name, kind) in [("dir", tar::EntryType::Directory), ("dir/file", tar::EntryType::Regular)] {
+        let mut header = tar::Header::new_ustar();
+        header.set_path(name).unwrap();
+        header.set_entry_type(kind);
+        header.set_size(0);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder.append(&header, &[][..]).unwrap();
+    }
+    let tar = builder.into_inner().unwrap();
+    let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gzip.write_all(&tar).unwrap();
+    let mut bzip = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::default());
+    bzip.write_all(&tar).unwrap();
+    for (format, data) in [
+        (ArchiveFormat::Tar, tar),
+        (ArchiveFormat::Tgz, gzip.finish().unwrap()),
+        (ArchiveFormat::Tbz, bzip.finish().unwrap()),
+    ] {
+        let mut archive = UnifiedArchive::open_with_format(Cursor::new(data), format).unwrap();
+        let entries = archive.entries().unwrap();
+        assert_eq!(entries[0].name(), "dir");
+        assert!(entries[0].is_directory());
+        assert!(!entries[1].is_directory());
+    }
+}
+
 fn duplicate_names_tar() -> Vec<u8> {
     let mut builder = tar::Builder::new(Vec::new());
     // Same name and size: metadata alone cannot identify an entry.
