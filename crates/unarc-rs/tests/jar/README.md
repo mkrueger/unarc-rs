@@ -24,3 +24,13 @@ The Rust output was compared recursively against this input directory for
 each preset. Tests reconstruct all expected bytes except random.bin directly;
 no DOS emulator, Wine or Python is required to run them. JAR's stored CRC is
 over file records including the trailer, not just file bytes.
+
+## Multiple solid blocks
+
+`two_blocks.j` (653 bytes) was created with JAR32 1.02 on 2026-09-05 using two
+successive commands: `a blocks.j FIRST.TXT` and `a blocks.j SECOND.TXT`.
+The files contain, respectively, `First solid block: the file index starts at zero.\n`
+and `Second solid block: the file index starts at zero again.\n` (LF endings).
+They occupy distinct solid blocks, both with local file index zero. Tests verify
+both contents, cross-block API iteration and rejection of truly duplicate IDs.
+This fixture contains only these two authored text files, no EXEs or user data.

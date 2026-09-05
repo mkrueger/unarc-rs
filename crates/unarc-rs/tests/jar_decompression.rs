@@ -104,6 +104,33 @@ fn unified_api_lists_reads_and_skips_solid_entries() {
 }
 
 #[test]
+fn multiple_solid_blocks_restart_file_indices() {
+    let bytes = fixture("two_blocks.j");
+    let expected: [(&str, &[u8]); 2] = [
+        ("FIRST.TXT", b"First solid block: the file index starts at zero.\n"),
+        ("SECOND.TXT", b"Second solid block: the file index starts at zero again.\n"),
+    ];
+    let mut archive = JarArchive::new(Cursor::new(&bytes)).unwrap();
+    let files = archive.extract_all().unwrap();
+    assert_eq!(files.len(), expected.len());
+    assert_eq!(archive.total_original_size().unwrap(), 107);
+    for ((entry, data), (name, content)) in files.iter().zip(expected) {
+        assert_eq!(entry.name, name);
+        assert_eq!(data, content);
+        assert_eq!(archive.read_entry(entry).unwrap(), content);
+    }
+
+    let mut archive = UnifiedArchive::open_with_format(Cursor::new(bytes), ArchiveFormat::Jar).unwrap();
+    let first = archive.next_entry().unwrap().unwrap();
+    archive.skip(&first).unwrap();
+    let second = archive.next_entry().unwrap().unwrap();
+    assert_eq!(second.name(), expected[1].0);
+    assert_eq!(archive.read(&second).unwrap(), expected[1].1);
+    assert!(archive.next_entry().unwrap().is_none());
+    assert_eq!(archive.read(&first).unwrap(), expected[0].1);
+}
+
+#[test]
 fn rejects_truncation_header_corruption_and_output_bombs() {
     let bytes = fixture("license_m1.j");
     for len in 0..bytes.len() {

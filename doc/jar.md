@@ -140,7 +140,10 @@ from the file CRC. JAR stores **unfinalized** reflected CRC-32 (`!crc32fast::has
 The metadata stream contains a tree: 0xE06 opens a group (LE32 id and optional
 name), 0xE07 introduces a typed record (LE16 type), and 0xE08 closes a group.
 File groups contain type 0x100 metadata and type 0x101 NUL-terminated names.
-Their numeric IDs give the solid file order, which can differ from tree order.
+The hierarchy is `ABL -> solid block ID -> file ID`. File IDs restart at zero
+in each block; the pair `(block ID, file ID)` identifies an entry. These IDs
+give the solid stream/file order, which can differ from tree order. Named BIN
+children contain block information, not files; VIN/CIN/AIN are separate trees.
 Names use backslashes; the Rust API normalizes them to slashes.
 
 Offsets within the 95-byte type-0x100 record, **including the type**:

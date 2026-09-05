@@ -301,10 +301,11 @@ impl<R: Read + Seek> JarArchive<R> {
         }
         let mut result = Vec::new();
         let mut offset = 0;
-        let mut file_index = 0u32;
+        let mut block_index = 0u32;
         while offset < directory_offset {
             let (records, used) = decoder::decode_stream(&compressed[offset..directory_offset], self.output_limit)?;
             offset += used;
+            let mut file_index = 0u32;
             let mut start = 0;
             for i in 0..records.len() {
                 if records[i].tag != 0xe03 {
@@ -323,7 +324,7 @@ impl<R: Read + Seek> JarArchive<R> {
                 if records[i].data.len() != 4 || decoder::record_crc(file_records) != crc {
                     return Err(bad(&format!("File CRC mismatch: {filename}")));
                 }
-                let entry = metadata.remove(&file_index).ok_or_else(|| bad("Missing file metadata"))?;
+                let entry = metadata.remove(&(block_index, file_index)).ok_or_else(|| bad("Missing file metadata"))?;
                 if filename != entry.name || crc != entry.crc32 {
                     return Err(bad("File descriptor differs from directory"));
                 }
@@ -346,6 +347,7 @@ impl<R: Read + Seek> JarArchive<R> {
             if records[start..].iter().any(|r| r.tag != 0xe04 || !r.data.is_empty()) {
                 return Err(bad("Incomplete file records"));
             }
+            block_index += 1;
         }
         if !metadata.is_empty() {
             return Err(bad("Missing file data"));
@@ -370,9 +372,19 @@ impl<R: Read + Seek> JarArchive<R> {
     }
 }
 
-fn parse_directory(records: &[Record]) -> Result<std::collections::BTreeMap<u32, JarEntry>> {
+// File IDs are local to a solid block: ABL -> block ID -> file ID.
+// Named BIN children describe blocks; VIN/CIN/AIN are separate metadata trees.
+fn parse_directory(records: &[Record]) -> Result<std::collections::BTreeMap<(u32, u32), JarEntry>> {
+    #[derive(Clone, Copy)]
+    enum GroupKind {
+        Other,
+        ArchiveBlocks,
+        Block(u32),
+        File(u32),
+    }
     struct Group {
         id: u32,
+        kind: GroupKind,
         entry: Option<JarEntry>,
         name: Option<String>,
     }
@@ -385,8 +397,21 @@ fn parse_directory(records: &[Record]) -> Result<std::collections::BTreeMap<u32,
                 if groups.len() >= 256 {
                     return Err(bad("Directory nesting too deep"));
                 }
+                let id = decoder::u32_at(&record.data, 0)?;
+                let kind = if groups.is_empty() && &record.data[4..] == b"ABL\0" {
+                    GroupKind::ArchiveBlocks
+                } else if record.data.len() == 4 {
+                    match groups.last().map(|g| g.kind) {
+                        Some(GroupKind::ArchiveBlocks) => GroupKind::Block(id),
+                        Some(GroupKind::Block(block)) => GroupKind::File(block),
+                        _ => GroupKind::Other,
+                    }
+                } else {
+                    GroupKind::Other
+                };
                 groups.push(Group {
-                    id: decoder::u32_at(&record.data, 0)?,
+                    id,
+                    kind,
                     entry: None,
                     name: None,
                 });
@@ -396,6 +421,9 @@ fn parse_directory(records: &[Record]) -> Result<std::collections::BTreeMap<u32,
                 let data = &record.data;
                 if data.len() < 2 {
                     return Err(bad("Truncated directory record"));
+                }
+                if !matches!(g.kind, GroupKind::File(_)) {
+                    continue;
                 }
                 match u16::from_le_bytes([data[0], data[1]]) {
                     0x100 => {
@@ -445,9 +473,9 @@ fn parse_directory(records: &[Record]) -> Result<std::collections::BTreeMap<u32,
                     return Err(bad("Unexpected directory end data"));
                 }
                 if let Some(g) = groups.pop() {
-                    if let Some(mut entry) = g.entry {
+                    if let (GroupKind::File(block), Some(mut entry)) = (g.kind, g.entry) {
                         entry.name = g.name.ok_or_else(|| bad("Missing filename"))?;
-                        if result.insert(g.id, entry).is_some() {
+                        if result.insert((block, g.id), entry).is_some() {
                             return Err(bad("Duplicate file index"));
                         }
                     }
@@ -466,6 +494,53 @@ fn parse_directory(records: &[Record]) -> Result<std::collections::BTreeMap<u32,
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    fn two_block_directory() -> Vec<Record> {
+        let data = include_bytes!("../../tests/jar/two_blocks.j");
+        let header = JarHeader::load_from(data).unwrap();
+        let offset = (header.data_offset + header.uncompressed_size) as usize;
+        let (mut records, _) = decoder::decode_stream(&data[offset..], 65536).unwrap();
+        records.truncate(records.iter().position(|r| r.tag == 0xe03).unwrap());
+        records
+    }
+
+    #[test]
+    fn directory_file_indices_are_block_local() {
+        let entries = parse_directory(&two_block_directory()).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[&(0, 0)].name, "FIRST.TXT");
+        assert_eq!(entries[&(1, 0)].name, "SECOND.TXT");
+    }
+
+    #[test]
+    fn directory_rejects_duplicate_file_index_in_same_block() {
+        let mut records = two_block_directory();
+        let mut depth = 0usize;
+        let mut changed = false;
+        for record in &mut records {
+            if record.tag == 0xe06 {
+                if depth == 1 && record.data == 1u32.to_le_bytes() {
+                    record.data = 0u32.to_le_bytes().to_vec();
+                    changed = true;
+                    break;
+                }
+                depth += 1;
+            } else if record.tag == 0xe08 {
+                depth = depth.saturating_sub(1);
+            }
+        }
+        assert!(changed);
+        assert!(parse_directory(&records).unwrap_err().to_string().contains("Duplicate file index"));
+    }
+
+    #[test]
+    fn directory_ignores_file_like_records_outside_abl() {
+        let mut records = two_block_directory();
+        let root = records.iter_mut().find(|r| r.tag == 0xe06).unwrap();
+        assert_eq!(&root.data[4..], b"ABL\0");
+        root.data[4..].copy_from_slice(b"VIN\0");
+        assert!(parse_directory(&records).unwrap().is_empty());
+    }
 
     #[test]
     fn test_jar_probe() {
