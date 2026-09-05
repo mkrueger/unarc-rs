@@ -307,14 +307,16 @@ impl FileVolumeProvider {
         let name = path.file_name()?.to_str()?.to_lowercase();
 
         // Check for .partN.rar pattern (RAR5 new style)
-        if name.contains(".part") && name.ends_with(".rar") {
-            return Some(VolumePattern::RarNew);
+        if let Some((_, number)) = name.strip_suffix(".rar").and_then(|stem| stem.rsplit_once(".part")) {
+            if !number.is_empty() && number.bytes().all(|c| c.is_ascii_digit()) && number.parse::<u32>().is_ok_and(|n| n > 0) {
+                return Some(VolumePattern::RarNew);
+            }
         }
 
         // Check for .7z.NNN pattern
         if let Some(pos) = name.rfind(".7z.") {
             let suffix = &name[pos + 4..];
-            if suffix.chars().all(|c| c.is_ascii_digit()) {
+            if !suffix.is_empty() && suffix.bytes().all(|c| c.is_ascii_digit()) && suffix.parse::<u32>().is_ok_and(|n| n > 0) {
                 return Some(VolumePattern::SevenZ);
             }
         }
@@ -327,21 +329,26 @@ impl FileVolumeProvider {
             s if s.len() == 3 && s.chars().all(|c| c.is_ascii_digit()) => Some(VolumePattern::Numeric3),
             // ZIP and WinZip split: .zip, .z01, .z02
             "zip" => Some(VolumePattern::WinZip),
-            s if s.starts_with('z') && s.len() == 3 => Some(VolumePattern::WinZip),
+            s if Self::numbered_extension(s, 'z') => Some(VolumePattern::WinZip),
             // RAR old style: .rar, .r00, .r01
             "rar" => Some(VolumePattern::RarOld),
-            s if s.starts_with('r') && s.len() == 3 => Some(VolumePattern::RarOld),
+            s if Self::numbered_extension(s, 'r') => Some(VolumePattern::RarOld),
             // ACE style: .ace, .c00, .c01
             "ace" => Some(VolumePattern::Ace),
-            s if s.starts_with('c') && s.len() == 3 => Some(VolumePattern::Ace),
+            s if Self::numbered_extension(s, 'c') => Some(VolumePattern::Ace),
             // ARJ style: .arj, .a01, .a02
             "arj" => Some(VolumePattern::Arj),
-            s if s.starts_with('a') && s.len() == 3 && s != "ace" && s != "arj" => Some(VolumePattern::Arj),
+            s if Self::numbered_extension(s, 'a') => Some(VolumePattern::Arj),
             _ => None,
         }
     }
 
-    /// Get the base name for finding other volumes (without volume-specific extension)
+    /// Validate the letter plus two-digit suffix used by legacy volume names.
+    fn numbered_extension(ext: &str, prefix: char) -> bool {
+        ext.len() == 3 && ext.starts_with(prefix) && ext.as_bytes()[1..].iter().all(u8::is_ascii_digit)
+    }
+
+    /// Get the base name without its volume suffix.
     fn get_base_for_pattern(path: &Path, pattern: VolumePattern) -> Option<PathBuf> {
         let parent = path.parent()?;
         let name = path.file_name()?.to_str()?;
@@ -350,8 +357,8 @@ impl FileVolumeProvider {
             VolumePattern::RarNew => {
                 // Remove .partN.rar to get base
                 // e.g., "archive.part1.rar" -> "archive"
-                let lower = name.to_lowercase();
-                if let Some(pos) = lower.find(".part") {
+                let lower = name.to_ascii_lowercase();
+                if let Some(pos) = lower.rfind(".part") {
                     let base = &name[..pos];
                     return Some(parent.join(base));
                 }
@@ -360,7 +367,7 @@ impl FileVolumeProvider {
             VolumePattern::SevenZ => {
                 // Remove .7z.NNN to get base
                 // e.g., "archive.7z.001" -> "archive"
-                let lower = name.to_lowercase();
+                let lower = name.to_ascii_lowercase();
                 if let Some(pos) = lower.rfind(".7z.") {
                     let base = &name[..pos];
                     return Some(parent.join(base));
@@ -377,75 +384,15 @@ impl FileVolumeProvider {
 
     /// Check if a file matches the volume pattern for a given base
     fn matches_pattern(path: &Path, base: &Path, pattern: VolumePattern) -> bool {
-        let name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_lowercase(),
-            None => return false,
+        if Self::detect_pattern(path) != Some(pattern) {
+            return false;
+        }
+        let Some(candidate) = Self::get_base_for_pattern(path, pattern) else {
+            return false;
         };
-
-        let base_name = match base.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_lowercase(),
-            None => return false,
-        };
-
-        match pattern {
-            VolumePattern::Numeric3 => {
-                // base.001, base.002, ...
-                if !name.starts_with(&base_name) {
-                    return false;
-                }
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                ext.len() == 3 && ext.chars().all(|c| c.is_ascii_digit())
-            }
-            VolumePattern::WinZip => {
-                // base.zip, base.z01, base.z02, ...
-                if !name.starts_with(&base_name) {
-                    return false;
-                }
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                ext == "zip" || (ext.starts_with('z') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()))
-            }
-            VolumePattern::RarOld => {
-                // base.rar, base.r00, base.r01, ...
-                if !name.starts_with(&base_name) {
-                    return false;
-                }
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                ext == "rar" || (ext.starts_with('r') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()))
-            }
-            VolumePattern::RarNew => {
-                // base.part1.rar, base.part2.rar, ...
-                if !name.starts_with(&base_name) {
-                    return false;
-                }
-                name.contains(".part") && name.ends_with(".rar")
-            }
-            VolumePattern::SevenZ => {
-                // base.7z.001, base.7z.002, ...
-                if !name.starts_with(&base_name) {
-                    return false;
-                }
-                if let Some(pos) = name.rfind(".7z.") {
-                    let suffix = &name[pos + 4..];
-                    return suffix.chars().all(|c| c.is_ascii_digit());
-                }
-                false
-            }
-            VolumePattern::Ace => {
-                // base.ace, base.c00, base.c01, ...
-                if !name.starts_with(&base_name) {
-                    return false;
-                }
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                ext == "ace" || (ext.starts_with('c') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()))
-            }
-            VolumePattern::Arj => {
-                // base.arj, base.a01, base.a02, ...
-                if !name.starts_with(&base_name) {
-                    return false;
-                }
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                ext == "arj" || (ext.starts_with('a') && ext.len() == 3 && ext[1..].chars().all(|c| c.is_ascii_digit()))
-            }
+        match (candidate.file_name().and_then(|n| n.to_str()), base.file_name().and_then(|n| n.to_str())) {
+            (Some(candidate), Some(base)) => candidate.to_lowercase() == base.to_lowercase(),
+            _ => false,
         }
     }
 
@@ -465,7 +412,8 @@ impl FileVolumeProvider {
             VolumePattern::WinZip => {
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
                 if ext == "zip" {
-                    0
+                    // The central directory is in the final .zip volume.
+                    u32::MAX
                 } else if let Some(stripped) = ext.strip_prefix('z') {
                     stripped.parse().unwrap_or(u32::MAX)
                 } else {
@@ -485,7 +433,7 @@ impl FileVolumeProvider {
             }
             VolumePattern::RarNew => {
                 // Extract number from .partN.rar
-                if let Some(start) = name.find(".part") {
+                if let Some(start) = name.rfind(".part") {
                     let rest = &name[start + 5..];
                     if let Some(end) = rest.find('.') {
                         return rest[..end].parse().unwrap_or(u32::MAX);
@@ -533,6 +481,7 @@ impl FileVolumeProvider {
         };
 
         let parent = match archive_path.parent() {
+            Some(p) if p.as_os_str().is_empty() => Path::new("."),
             Some(p) => p,
             None => return vec![archive_path.to_path_buf()],
         };
@@ -762,6 +711,81 @@ pub fn truncate(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn volume_patterns_require_exact_base_names() {
+        use VolumePattern::*;
+        for (pattern, suffixes) in [
+            (Numeric3, &["001", "002"][..]),
+            (WinZip, &["zip", "z01", "z02"][..]),
+            (RarOld, &["rar", "r00", "r01"][..]),
+            (RarNew, &["part1.rar", "part02.rar"][..]),
+            (SevenZ, &["7z.001", "7z.002"][..]),
+            (Ace, &["ace", "c00", "c01"][..]),
+            (Arj, &["arj", "a01", "a02"][..]),
+        ] {
+            for base in ["backup", "archive.part.data", "İmage", "文件"] {
+                for suffix in suffixes {
+                    let name = format!("{base}.{suffix}");
+                    assert_eq!(FileVolumeProvider::detect_pattern(Path::new(&name)), Some(pattern));
+                    assert!(FileVolumeProvider::matches_pattern(Path::new(&name), Path::new(base), pattern));
+                    assert!(FileVolumeProvider::matches_pattern(
+                        Path::new(&name.to_ascii_uppercase()),
+                        Path::new(base),
+                        pattern
+                    ));
+                    for extra in ["-other", ".other", "2"] {
+                        assert!(!FileVolumeProvider::matches_pattern(
+                            Path::new(&format!("{base}{extra}.{suffix}")),
+                            Path::new(base),
+                            pattern
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_volume_suffixes() {
+        for name in ["backup.zxy", "backup.r0x", "backup.c_1", "backup.aé", "backup.7z.", "backup.7z.xyz"] {
+            assert_eq!(FileVolumeProvider::detect_pattern(Path::new(name)), None, "{name}");
+        }
+        for name in ["backup.part.rar", "backup.partx.rar", "backup.part0.rar", "backup.part4294967296.rar"] {
+            assert!(!FileVolumeProvider::matches_pattern(
+                Path::new(name),
+                Path::new("backup"),
+                VolumePattern::RarNew
+            ));
+        }
+        assert_eq!(
+            FileVolumeProvider::get_volume_number(Path::new("archive.part.data.part12.rar"), VolumePattern::RarNew),
+            12
+        );
+    }
+
+    #[test]
+    fn discovers_only_matching_volumes_in_numeric_order() {
+        use VolumePattern::*;
+        for (pattern, names) in [
+            (Numeric3, &["backup.001", "backup.002", "backup.010"][..]),
+            (WinZip, &["backup.z01", "backup.z02", "backup.zip"][..]),
+            (RarOld, &["backup.rar", "backup.r00", "backup.r01"][..]),
+            (RarNew, &["backup.part1.rar", "backup.part2.rar", "backup.part10.rar"][..]),
+            (SevenZ, &["backup.7z.001", "backup.7z.002", "backup.7z.010"][..]),
+            (Ace, &["backup.ace", "backup.c00", "backup.c01"][..]),
+            (Arj, &["backup.arj", "backup.a01", "backup.a02"][..]),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            for name in names.iter().rev() {
+                std::fs::write(temp.path().join(name), []).unwrap();
+                std::fs::write(temp.path().join(name.replace("backup", "backup-other")), []).unwrap();
+            }
+            let actual = FileVolumeProvider::find_all_volumes(&temp.path().join(names[1]));
+            let expected: Vec<_> = names.iter().map(|name| temp.path().join(name)).collect();
+            assert_eq!(actual, expected, "{pattern:?}");
+        }
+    }
 
     #[test]
     fn truncate_preserves_unicode_and_ascii_suffixes() {
