@@ -15,6 +15,8 @@ use crate::error::{ArchiveError, Result};
 /// TAR file header information
 #[derive(Debug, Clone)]
 pub struct TarFileHeader {
+    /// Stable entry index within this archive. Names are not unique in TAR.
+    pub index: usize,
     /// File name (may include path)
     pub name: String,
     /// File size in bytes
@@ -153,6 +155,7 @@ impl<T: Read + Seek> TarArchive<T> {
 
                 entries.push(TarEntry {
                     header: TarFileHeader {
+                        index: entries.len(),
                         name,
                         size,
                         mtime,
@@ -185,22 +188,24 @@ impl<T: Read + Seek> TarArchive<T> {
         Ok(Some(entry.header.clone()))
     }
 
-    /// Skip the current entry
-    pub fn skip(&mut self, _header: &TarFileHeader) -> Result<()> {
-        if self.current_index < self.entries.len() {
+    /// Skip an entry. Re-skipping an already consumed entry does not skip its successor.
+    pub fn skip(&mut self, header: &TarFileHeader) -> Result<()> {
+        if header.index >= self.entries.len() {
+            return Err(ArchiveError::IndexMismatch("Invalid TAR entry index".to_string()));
+        }
+        if self.current_index == header.index {
             self.current_index += 1;
         }
         Ok(())
     }
 
-    /// Read the contents of the current entry
+    /// Read an entry by its stable index, including archives with repeated names.
+    /// Advances iteration only when reading the current entry.
     pub fn read(&mut self, header: &TarFileHeader) -> Result<Vec<u8>> {
-        // Find the entry by name (in case entries were iterated out of order)
         let entry = self
             .entries
-            .iter()
-            .find(|e| e.header.name == header.name)
-            .ok_or_else(|| ArchiveError::io_error(format!("Entry not found: {}", header.name)))?;
+            .get(header.index)
+            .ok_or_else(|| ArchiveError::IndexMismatch("Invalid TAR entry index".to_string()))?;
 
         // Seek to data position
         self.reader.seek(SeekFrom::Start(entry.data_offset))?;
@@ -209,8 +214,9 @@ impl<T: Read + Seek> TarArchive<T> {
         let mut data = vec![0u8; entry.header.size as usize];
         self.reader.read_exact(&mut data)?;
 
-        // Advance to next entry
-        self.current_index += 1;
+        if self.current_index == header.index {
+            self.current_index += 1;
+        }
 
         Ok(data)
     }
