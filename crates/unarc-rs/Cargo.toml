@@ -7,6 +7,7 @@ authors.workspace = true
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
+exclude = ["src/**/exe/**", "src/**/disasm/**"]
 
 [dependencies]
 log = "0.4.33"
