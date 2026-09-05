@@ -36,8 +36,11 @@ pub fn decode_fastest(data: &[u8], original_size: usize) -> Result<Vec<u8>> {
         } else {
             let rep_count = len as usize + THRESHOLD - 1;
             let back_ptr = decode_val(&mut r, 9, 13)? as usize;
-            if back_ptr > res.len() - 1 {
+            if back_ptr >= res.len() {
                 return Err(ArchiveError::decompression_failed("ARJ", "invalid back pointer in LZ77 stream"));
+            }
+            if rep_count > original_size - res.len() {
+                return Err(ArchiveError::decompression_failed("ARJ", "LZ77 match exceeds original size"));
             }
             let start = res.len() - 1 - back_ptr;
             for i in start..start + rep_count {
@@ -46,4 +49,31 @@ pub fn decode_fastest(data: &[u8], original_size: usize) -> Result<Vec<u8>> {
         }
     }
     Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_match_before_first_literal() {
+        assert!(decode_fastest(&[0x80, 0], 1).is_err());
+    }
+
+    #[test]
+    fn rejects_truncated_literal_and_match() {
+        for data in [&[][..], &[0][..], &[0x80][..]] {
+            assert!(decode_fastest(data, 1).is_err());
+        }
+    }
+
+    #[test]
+    fn overlapping_match_respects_output_size() {
+        // 0 + 'A' (8 bits), length 1 (100), distance 0 (ten zero bits).
+        // The match copies three bytes at distance one, producing AAAA.
+        let data = [0x20, 0xc0, 0];
+        assert_eq!(decode_fastest(&data, 4).unwrap(), b"AAAA");
+        assert!(decode_fastest(&data, 2).is_err());
+        assert!(decode_fastest(&data, 3).is_err());
+    }
 }
