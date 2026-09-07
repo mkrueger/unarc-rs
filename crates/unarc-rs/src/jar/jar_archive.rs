@@ -66,7 +66,7 @@ impl JarHeader {
         }
 
         // Check magic at offset 0x0E
-        if &data[0x0E..0x12] != JAR_MAGIC {
+        if data[0x0E..0x12] != JAR_MAGIC {
             return Err(ArchiveError::invalid_header("JAR"));
         }
 
@@ -240,7 +240,7 @@ impl<R: Read + Seek> JarArchive<R> {
             return false;
         }
         // Check magic at offset 0x0E
-        &data[0x0E..0x12] == JAR_MAGIC
+        data[0x0E..0x12] == JAR_MAGIC
     }
 
     /// Extract all files from the archive

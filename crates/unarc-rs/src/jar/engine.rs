@@ -558,7 +558,7 @@ pub fn decode_symbols(data: &[u8], limit: usize) -> crate::error::Result<(Vec<u1
                 if distance == 0 || distance > out.len() || len == 0 || len > limit.saturating_sub(out.len()) {
                     return Err(ArchiveError::decompression_failed(
                         "JAR",
-                        &format!("distance={distance} len={len} at {}", out.len()),
+                        format!("distance={distance} len={len} at {}", out.len()),
                     ));
                 }
                 let start = out.len();

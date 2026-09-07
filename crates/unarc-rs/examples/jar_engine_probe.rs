@@ -9,9 +9,7 @@
 //! LICENSE file), whereas a wrong alignment produces garbage / early match
 //! codes. The best-scoring candidates are printed with an ASCII preview.
 
-use unarc_rs::jar::engine::{
-    decode_match, read_code_length_table, BitReader, HuffmanTree, TableRead, NSYM,
-};
+use unarc_rs::jar::engine::{decode_match, read_code_length_table, BitReader, HuffmanTree, TableRead, NSYM};
 
 struct Candidate {
     start: usize,
@@ -31,10 +29,7 @@ fn main() {
     // The solid stream's true start is unknown, so scan the first 64 payload
     // bytes rather than assuming a fixed local-header size.
     let payload = &data[0x40..];
-    println!(
-        "payload @file 0x40, first bytes: {:02x?}",
-        &payload[..16.min(payload.len())]
-    );
+    println!("payload @file 0x40, first bytes: {:02x?}", &payload[..16.min(payload.len())]);
 
     let mut cands: Vec<Candidate> = Vec::new();
 
@@ -119,11 +114,7 @@ fn score_literals(tree: &HuffmanTree, br: &mut BitReader, max: usize) -> (usize,
                 printable += 1;
             }
             if preview.len() < 78 {
-                preview.push(if (0x20..0x7f).contains(&b) {
-                    b as char
-                } else {
-                    '.'
-                });
+                preview.push(if (0x20..0x7f).contains(&b) { b as char } else { '.' });
             }
         } else if (sym as usize) < NSYM {
             // Consume the match-code's trailing extra bits to stay aligned.

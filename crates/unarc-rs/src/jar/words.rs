@@ -120,7 +120,7 @@ pub(super) fn decode(symbols: &[u16], limit: usize) -> Result<Vec<Record>> {
                 }
             } else {
                 let values = &symbols[i..end];
-                if values.len() < 4 || values.len() % 2 != 0 || values.iter().any(|&v| v > 255) {
+                if values.len() < 4 || !values.len().is_multiple_of(2) || values.iter().any(|&v| v > 255) {
                     return Err(bad("Invalid delta transform"));
                 }
                 let mut left = values[0] | values[1] << 8;

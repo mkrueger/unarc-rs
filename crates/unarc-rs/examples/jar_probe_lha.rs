@@ -12,10 +12,7 @@ fn main() {
     let data = std::fs::read(path).unwrap();
     let target_crc = u32::from_le_bytes([data[0x18], data[0x19], data[0x1a], data[0x1b]]);
     let usize_field = u32::from_le_bytes([data[0x20], data[0x21], data[0x22], data[0x23]]) as usize;
-    println!(
-        "target_crc=0x{target_crc:08X} usize_field={usize_field} file_len={}",
-        data.len()
-    );
+    println!("target_crc=0x{target_crc:08X} usize_field={usize_field} file_len={}", data.len());
 
     let methods = [
         delharc::CompressionMethod::Lh1,
@@ -34,24 +31,12 @@ fn main() {
                 let mut out = vec![0u8; outlen];
                 if decoder.fill_buffer(&mut out).is_ok() {
                     let c = crc32(&out);
-                    let printable = out.iter().take(64).filter(|&&b| b >= 32 && b < 127).count();
+                    let printable = out.iter().take(64).filter(|&&b| (32..127).contains(&b)).count();
                     if c == target_crc {
                         println!("*** MATCH start={start} method={m:?} outlen={outlen} CRC OK ***");
                     } else if printable > 50 {
-                        let preview: String = out
-                            .iter()
-                            .take(48)
-                            .map(|&b| {
-                                if (32..127).contains(&b) {
-                                    b as char
-                                } else {
-                                    '.'
-                                }
-                            })
-                            .collect();
-                        println!(
-                            "start={start} {m:?} outlen={outlen} crc=0x{c:08X} preview: {preview}"
-                        );
+                        let preview: String = out.iter().take(48).map(|&b| if (32..127).contains(&b) { b as char } else { '.' }).collect();
+                        println!("start={start} {m:?} outlen={outlen} crc=0x{c:08X} preview: {preview}");
                     }
                 }
             }
