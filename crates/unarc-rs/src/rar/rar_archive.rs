@@ -15,6 +15,7 @@ use rars::{ArchiveMember, ArchiveMemberDetail, ArchiveReadOptions, ArchiveReader
 
 use crate::date_time::DosDateTime;
 use crate::error::{ArchiveError, Result};
+use crate::unified::VolumeProvider;
 
 /// Header information for a RAR entry
 #[derive(Debug, Clone)]
@@ -37,11 +38,14 @@ pub struct RarFileHeader {
     pub is_encrypted: bool,
     /// Position of the entry in archive order
     pub(crate) index: usize,
+    /// Whether the entry's data is split across volumes
+    pub(crate) spans_volumes: bool,
 }
 
 /// RAR archive reader
 ///
-/// Supports RAR 1.3 through RAR 7 archives with full decompression.
+/// Supports RAR 1.3 through RAR 7 archives with full decompression. Multi-volume
+/// sets are supported when a [`VolumeProvider`] is set.
 pub struct RarArchive<T: Read + Seek> {
     state: ParseState,
     /// Raw name bytes of each entry (same order as `entries`), used to match extraction callbacks
@@ -54,18 +58,26 @@ pub struct RarArchive<T: Read + Seek> {
     password: Option<String>,
     /// Decoded members that were produced by a sequential extraction pass but not consumed yet
     cache: DecodeCache,
+    volume_provider: Option<Arc<dyn VolumeProvider>>,
+    /// Whether the following volumes of a multi-volume set have been looked up
+    volumes_loaded: bool,
+    /// Number (0-based) of the first volume that was needed but could not be opened
+    missing_volume: Option<u32>,
     _reader: PhantomData<T>,
 }
 
+/// The volumes of a (possibly single-volume) archive, in order
+pub(super) type Volumes = Arc<Vec<rars::Archive>>;
+
+/// Raw bytes of one volume
+pub(super) type RawVolume = Arc<Vec<u8>>;
+
 enum ParseState {
-    /// `header_data` holds the raw archive when its headers are encrypted, so that
+    /// `header_data` holds the raw volumes when their headers are encrypted, so that
     /// password verifiers can re-check the header password.
-    Parsed {
-        archive: Arc<rars::Archive>,
-        header_data: Option<Arc<Vec<u8>>>,
-    },
+    Parsed { volumes: Volumes, header_data: Option<Vec<RawVolume>> },
     /// Headers are encrypted; parsing is deferred until a password is known
-    NeedsPassword(Arc<Vec<u8>>),
+    NeedsPassword(RawVolume),
 }
 
 #[derive(Default)]
@@ -73,6 +85,9 @@ struct DecodeCache {
     password: Option<String>,
     members: HashMap<usize, Vec<u8>>,
 }
+
+/// Upper bound for the number of volumes in a set, to stop runaway volume providers
+const MAX_VOLUMES: u32 = 65_535;
 
 impl<T: Read + Seek> RarArchive<T> {
     /// Create a new RAR archive reader from a Read+Seek source
@@ -91,7 +106,7 @@ impl<T: Read + Seek> RarArchive<T> {
     pub fn from_path(path: &std::path::Path) -> Result<Self> {
         match ArchiveReader::read_path(path) {
             Ok(archive) => Ok(Self::from_state(ParseState::Parsed {
-                archive: Arc::new(archive),
+                volumes: Arc::new(vec![archive]),
                 header_data: None,
             })),
             Err(rars::Error::NeedPassword) => Self::from_bytes(std::fs::read(path)?),
@@ -107,7 +122,7 @@ impl<T: Read + Seek> RarArchive<T> {
         }
         let archive = ArchiveReader::read_owned(data).map_err(map_parse_error)?;
         Ok(Self::from_state(ParseState::Parsed {
-            archive: Arc::new(archive),
+            volumes: Arc::new(vec![archive]),
             header_data: None,
         }))
     }
@@ -121,6 +136,9 @@ impl<T: Read + Seek> RarArchive<T> {
             current_index: 0,
             password: None,
             cache: DecodeCache::default(),
+            volume_provider: None,
+            volumes_loaded: false,
+            missing_volume: None,
             _reader: PhantomData,
         };
         result.load_entries();
@@ -137,60 +155,153 @@ impl<T: Read + Seek> RarArchive<T> {
         self.password = None;
     }
 
-    fn ensure_parsed(&mut self) -> Result<Arc<rars::Archive>> {
-        let data = match &self.state {
-            ParseState::Parsed { archive, .. } => return Ok(archive.clone()),
-            ParseState::NeedsPassword(data) => data.clone(),
+    /// Set the provider used to open the following volumes of a multi-volume archive
+    ///
+    /// Volume 0 is the archive this reader was created from; volumes 1, 2, ... are
+    /// requested from the provider when the entries are listed.
+    pub fn set_volume_provider(&mut self, provider: Arc<dyn VolumeProvider>) {
+        self.volume_provider = Some(provider);
+        self.volumes_loaded = false;
+    }
+
+    /// Number of volumes that make up this archive
+    pub fn volume_count(&self) -> usize {
+        match &self.state {
+            ParseState::Parsed { volumes, .. } => volumes.len(),
+            ParseState::NeedsPassword(_) => 1,
+        }
+    }
+
+    fn ensure_parsed(&mut self) -> Result<Volumes> {
+        if let ParseState::NeedsPassword(data) = &self.state {
+            let Some(password) = self.password.as_deref() else {
+                return Err(ArchiveError::encryption_required("archive headers", "RAR"));
+            };
+            let archive = parse_encrypted_headers(data, password.as_bytes())?;
+            self.state = ParseState::Parsed {
+                volumes: Arc::new(vec![archive]),
+                header_data: Some(vec![data.clone()]),
+            };
+            self.load_entries();
+        }
+        if !self.volumes_loaded && self.volume_provider.is_some() {
+            self.volumes_loaded = true;
+            self.load_following_volumes()?;
+        }
+        match &self.state {
+            ParseState::Parsed { volumes, .. } => Ok(volumes.clone()),
+            ParseState::NeedsPassword(_) => Err(ArchiveError::encryption_required("archive headers", "RAR")),
+        }
+    }
+
+    /// Opens volumes 1, 2, ... from the volume provider for as long as the last volume announces a successor.
+    fn load_following_volumes(&mut self) -> Result<()> {
+        let (Some(provider), ParseState::Parsed { volumes, header_data }) = (&self.volume_provider, &self.state) else {
+            return Ok(());
         };
-        let Some(password) = self.password.as_deref() else {
-            return Err(ArchiveError::encryption_required("archive headers", "RAR"));
-        };
-        let archive = Arc::new(parse_encrypted_headers(&data, password.as_bytes())?);
-        self.state = ParseState::Parsed {
-            archive: archive.clone(),
-            header_data: Some(data),
-        };
-        self.load_entries();
-        Ok(archive)
+        let mut new_volumes: Vec<rars::Archive> = volumes.as_ref().clone();
+        let mut new_header_data = header_data.clone();
+        let password = self.password.as_deref().map(str::as_bytes);
+        self.missing_volume = None;
+
+        while let Some(last) = new_volumes.last() {
+            let announced = next_volume_hint(last);
+            if announced == Some(false) {
+                break;
+            }
+            let number = new_volumes.len() as u32;
+            if number >= MAX_VOLUMES {
+                return Err(ArchiveError::corrupted_entry("RAR", "too many volumes"));
+            }
+            let Some(mut reader) = provider.open_volume(number) else {
+                if announced == Some(true) {
+                    self.missing_volume = Some(number);
+                }
+                break;
+            };
+            let mut data = Vec::new();
+            reader.read_to_end(&mut data)?;
+
+            let parsed = match &new_header_data {
+                Some(_) => password
+                    .ok_or_else(|| ArchiveError::encryption_required("archive headers", "RAR"))
+                    .and_then(|password| parse_encrypted_headers(&data, password)),
+                None => ArchiveReader::read(&data).map_err(map_parse_error),
+            };
+            let archive = match parsed {
+                Ok(archive) if archive.family() == new_volumes[0].family() => archive,
+                // Without an explicit "next volume" marker a file that isn't a matching volume just ends the set.
+                _ if announced.is_none() => break,
+                Ok(_) => {
+                    return Err(ArchiveError::corrupted_entry(
+                        "RAR",
+                        format!("volume {} belongs to a different archive", number + 1),
+                    ))
+                }
+                Err(e) => return Err(e),
+            };
+            new_volumes.push(archive);
+            if let Some(header_data) = &mut new_header_data {
+                header_data.push(Arc::new(data));
+            }
+        }
+
+        if new_volumes.len() > volumes.len() {
+            self.state = ParseState::Parsed {
+                volumes: Arc::new(new_volumes),
+                header_data: new_header_data,
+            };
+            self.load_entries();
+        }
+        Ok(())
     }
 
     fn load_entries(&mut self) {
-        let ParseState::Parsed { archive, .. } = &self.state else {
+        let ParseState::Parsed { volumes, .. } = &self.state else {
             return;
         };
-        let rar50_times: Vec<Option<u32>> = archive
-            .as_rar50()
-            .map(|a| a.files().map(|f| f.mtime.or(f.htime_mtime)).collect())
-            .unwrap_or_default();
-        self.redirections = archive
-            .as_rar50()
-            .map(|a| a.files().map(|f| f.redirection.clone()).collect())
-            .unwrap_or_default();
 
         self.raw_names.clear();
+        self.redirections.clear();
         self.entries.clear();
-        for (index, member) in archive.members().enumerate() {
-            let date_time = match member.detail {
-                ArchiveMemberDetail::Rar50Plus { .. } => rar50_times.get(index).copied().flatten().and_then(unix_to_dos),
-                _ => member.meta.file_time.filter(|&t| t != 0).map(DosDateTime::new),
-            };
-            let mut name = member.meta.name_lossy();
-            if !matches!(member.detail, ArchiveMemberDetail::Rar50Plus { .. }) {
-                // RAR 1.x-4.x store DOS style path separators, RAR 5 always uses '/'.
-                name = name.replace('\\', "/");
+        for volume in volumes.iter() {
+            let rar50_files: Vec<&rars::rar50::FileHeader> = volume.as_rar50().map(|a| a.files().collect()).unwrap_or_default();
+            for (i, member) in volume.members().enumerate() {
+                let rar50_file = rar50_files.get(i);
+                if member.meta.is_split_before {
+                    // Continuation of the previous entry from an earlier volume
+                    if let Some(previous) = self.entries.last_mut() {
+                        previous.compressed_size = previous.compressed_size.saturating_add(member.meta.packed_size);
+                        // Only the last fragment carries the checksum of the whole file
+                        previous.crc32 = member_crc(&member);
+                        previous.spans_volumes = true;
+                        continue;
+                    }
+                }
+                let date_time = match rar50_file {
+                    Some(file) => file.mtime.or(file.htime_mtime).and_then(unix_to_dos),
+                    None => member.meta.file_time.filter(|&t| t != 0).map(DosDateTime::new),
+                };
+                let mut name = member.meta.name_lossy();
+                if rar50_file.is_none() {
+                    // RAR 1.x-4.x store DOS style path separators, RAR 5 always uses '/'.
+                    name = name.replace('\\', "/");
+                }
+                self.entries.push(RarFileHeader {
+                    name,
+                    compressed_size: member.meta.packed_size,
+                    original_size: member.meta.unpacked_size,
+                    compression_method: compression_method(&member),
+                    date_time,
+                    crc32: member_crc(&member),
+                    is_directory: member.meta.is_directory,
+                    is_encrypted: member.meta.is_encrypted,
+                    index: self.raw_names.len(),
+                    spans_volumes: member.meta.is_split_after || member.meta.is_split_before,
+                });
+                self.redirections.push(rar50_file.and_then(|file| file.redirection.clone()));
+                self.raw_names.push(member.meta.name);
             }
-            self.entries.push(RarFileHeader {
-                name,
-                compressed_size: member.meta.packed_size,
-                original_size: member.meta.unpacked_size,
-                compression_method: compression_method(&member),
-                date_time,
-                crc32: member_crc(&member),
-                is_directory: member.meta.is_directory,
-                is_encrypted: member.meta.is_encrypted,
-                index,
-            });
-            self.raw_names.push(member.meta.name);
         }
     }
 
@@ -225,7 +336,7 @@ impl<T: Read + Seek> RarArchive<T> {
         if header.is_encrypted && password.is_none() {
             return Err(ArchiveError::encryption_required(&header.name, "RAR"));
         }
-        let archive = self.ensure_parsed()?;
+        let volumes = self.ensure_parsed()?;
         let pwd = password.as_deref().map(str::as_bytes);
 
         if let Some(Some(redirection)) = self.redirections.get(header.index) {
@@ -243,7 +354,7 @@ impl<T: Read + Seek> RarArchive<T> {
             };
         }
 
-        if let Some(data) = read_independent_member(&archive, header, pwd)? {
+        if let Some(data) = read_independent_member(&volumes, header, pwd)? {
             return Ok(data);
         }
 
@@ -253,10 +364,18 @@ impl<T: Read + Seek> RarArchive<T> {
             }
         }
 
-        // Solid archives (and older formats) can only be decoded front to back. Decode
-        // every member from the requested one onwards in a single pass and keep the
+        // Solid archives, volume sets and older formats can only be decoded front to back.
+        // Decode every member from the requested one onwards in a single pass and keep the
         // rest around, so reading all entries sequentially stays a single pass.
-        let mut members = decode_members(&archive, &self.raw_names, header, pwd, false)?;
+        let mut members = match decode_members(&volumes, &self.raw_names, header, pwd, false) {
+            Ok(members) => members,
+            Err(e) => {
+                return Err(match self.missing_volume {
+                    Some(number) if header.spans_volumes => ArchiveError::io_error(format!("RAR volume {} is missing", number + 1)),
+                    _ => e,
+                });
+            }
+        };
         let data = members.remove(&header.index).unwrap_or_default();
         self.cache = DecodeCache { password, members };
         Ok(data)
@@ -269,11 +388,11 @@ impl<T: Read + Seek> RarArchive<T> {
         if !header.is_encrypted {
             return Err(ArchiveError::unsupported_method("RAR", "entry is not encrypted"));
         }
-        let ParseState::Parsed { archive, header_data } = &self.state else {
+        let ParseState::Parsed { volumes, header_data } = &self.state else {
             return Err(ArchiveError::encryption_required("archive headers", "RAR"));
         };
         Ok(super::password_verifier::RarPasswordVerifier::new(
-            archive.clone(),
+            volumes.clone(),
             header_data.clone(),
             Arc::new(self.raw_names.clone()),
             header.clone(),
@@ -283,6 +402,41 @@ impl<T: Read + Seek> RarArchive<T> {
 
 const REDIR_HARD_LINK: u64 = 4;
 const REDIR_FILE_COPY: u64 = 5;
+
+/// Whether `archive` is followed by another volume: `Some(true)` if it announces one,
+/// `Some(false)` if it is the last (or only) volume, `None` if the format doesn't say.
+fn next_volume_hint(archive: &rars::Archive) -> Option<bool> {
+    const EARC_NEXT_VOLUME: u16 = 0x0001;
+    match archive {
+        rars::Archive::Rar50Plus(a) => {
+            if !a.main.is_volume() {
+                return Some(false);
+            }
+            let end = a.blocks.iter().rev().find_map(|block| match block {
+                rars::rar50::Block::End(end) => Some(end.has_next_volume()),
+                _ => None,
+            });
+            end.or_else(|| a.files().last().filter(|f| f.is_split_after()).map(|_| true))
+        }
+        rars::Archive::Rar15To40(a) => {
+            if !a.main.is_volume() {
+                return Some(false);
+            }
+            let end = a.blocks.iter().rev().find_map(|block| match block {
+                rars::rar15_40::Block::End(end) => Some(end.flags & EARC_NEXT_VOLUME != 0),
+                _ => None,
+            });
+            end.or_else(|| a.files().last().filter(|f| f.is_split_after()).map(|_| true))
+        }
+        rars::Archive::Rar13(a) => {
+            if !a.main.is_volume() {
+                return Some(false);
+            }
+            a.entries.last().filter(|e| e.is_split_after()).map(|_| true)
+        }
+        _ => None,
+    }
+}
 
 pub(super) fn parse_encrypted_headers(data: &[u8], password: &[u8]) -> Result<rars::Archive> {
     ArchiveReader::read_with_options(data, ArchiveReadOptions::with_password(password)).map_err(|e| match e {
@@ -294,7 +448,10 @@ pub(super) fn parse_encrypted_headers(data: &[u8], password: &[u8]) -> Result<ra
 /// Decodes one member of an archive whose members are independent of each other.
 ///
 /// Returns `Ok(None)` if the archive needs sequential (solid) decoding.
-pub(super) fn read_independent_member(archive: &rars::Archive, header: &RarFileHeader, password: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
+pub(super) fn read_independent_member(volumes: &[rars::Archive], header: &RarFileHeader, password: Option<&[u8]>) -> Result<Option<Vec<u8>>> {
+    let [archive] = volumes else {
+        return Ok(None);
+    };
     let Some(rar50) = archive.as_rar50() else {
         return Ok(None);
     };
@@ -318,7 +475,7 @@ pub(super) fn read_independent_member(archive: &rars::Archive, header: &RarFileH
 /// With `stop_after_target` the pass ends once the requested member is decoded,
 /// otherwise every later member is collected as well.
 pub(super) fn decode_members(
-    archive: &rars::Archive,
+    volumes: &[rars::Archive],
     raw_names: &[Vec<u8>],
     header: &RarFileHeader,
     password: Option<&[u8]>,
@@ -327,7 +484,7 @@ pub(super) fn decode_members(
     let mut buffers: Vec<(usize, SharedBuffer)> = Vec::new();
     let mut next_index = 0usize;
     let mut target_seen = false;
-    let result = archive.extract_to(password, |meta| {
+    let open = |meta: &rars::ExtractedEntryMeta| {
         // Some members (e.g. RAR5 links) are never reported, so resync by name.
         let mut index = next_index;
         while index < raw_names.len() && raw_names[index] != meta.name {
@@ -348,7 +505,11 @@ pub(super) fn decode_members(
         let buffer = SharedBuffer::default();
         buffers.push((index, buffer.clone()));
         Ok(Box::new(buffer) as Box<dyn Write>)
-    });
+    };
+    let result = match volumes {
+        [archive] => archive.extract_to(password, open),
+        _ => rars::extract_volumes_to(volumes, password, open),
+    };
 
     let mut members: HashMap<usize, Vec<u8>> = buffers.into_iter().map(|(index, buffer)| (index, buffer.0.take())).collect();
 

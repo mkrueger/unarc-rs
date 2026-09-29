@@ -28,7 +28,7 @@ cargo install unarc-cli
 | ------ | ---------- | ----------- | ---------- | ------------ |
 | **7z** | `.7z` | Full support | AES-256 ✓ | ✓ |
 | **ZIP** | `.zip` | Full support | ZipCrypto, AES ✓ | ✓ |
-| **RAR** | `.rar` | Full support | AES ✓ | — |
+| **RAR** | `.rar` | Full support | AES ✓ | ✓ |
 | **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
 | **TAR** | `.tar` | Full support | — | — |
 | **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |

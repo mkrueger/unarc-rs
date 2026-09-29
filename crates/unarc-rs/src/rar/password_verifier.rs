@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use super::rar_archive::{decode_members, parse_encrypted_headers, read_independent_member, RarFileHeader};
+use super::rar_archive::{decode_members, parse_encrypted_headers, read_independent_member, RarFileHeader, RawVolume, Volumes};
 
 /// A standalone password verifier for RAR archives.
 ///
@@ -16,17 +16,17 @@ use super::rar_archive::{decode_members, parse_encrypted_headers, read_independe
 /// checks (CRC32 / BLAKE2 / password check values) reject wrong passwords.
 #[derive(Clone)]
 pub struct RarPasswordVerifier {
-    archive: Arc<rars::Archive>,
-    /// Raw archive bytes if the headers are encrypted; the header password is checked first
-    header_data: Option<Arc<Vec<u8>>>,
+    volumes: Volumes,
+    /// Raw volume bytes if the headers are encrypted; the header password is checked first
+    header_data: Option<Vec<RawVolume>>,
     raw_names: Arc<Vec<Vec<u8>>>,
     header: RarFileHeader,
 }
 
 impl RarPasswordVerifier {
-    pub(super) fn new(archive: Arc<rars::Archive>, header_data: Option<Arc<Vec<u8>>>, raw_names: Arc<Vec<Vec<u8>>>, header: RarFileHeader) -> Self {
+    pub(super) fn new(volumes: Volumes, header_data: Option<Vec<RawVolume>>, raw_names: Arc<Vec<Vec<u8>>>, header: RarFileHeader) -> Self {
         Self {
-            archive,
+            volumes,
             header_data,
             raw_names,
             header,
@@ -48,21 +48,21 @@ impl RarPasswordVerifier {
     /// Returns `true` if the password produces valid decompressed data
     /// with matching checksum and size, `false` otherwise.
     pub fn verify(&self, password: &str) -> bool {
-        let reparsed;
-        let archive = match &self.header_data {
-            Some(data) => match parse_encrypted_headers(data, password.as_bytes()) {
-                Ok(archive) => {
-                    reparsed = archive;
+        let reparsed: Vec<rars::Archive>;
+        let volumes: &[rars::Archive] = match &self.header_data {
+            Some(data) => match data.iter().map(|volume| parse_encrypted_headers(volume, password.as_bytes())).collect() {
+                Ok(volumes) => {
+                    reparsed = volumes;
                     &reparsed
                 }
                 Err(_) => return false,
             },
-            None => &*self.archive,
+            None => &self.volumes,
         };
         let password = Some(password.as_bytes());
-        let data = match read_independent_member(archive, &self.header, password) {
+        let data = match read_independent_member(volumes, &self.header, password) {
             Ok(Some(data)) => data,
-            Ok(None) => match decode_members(archive, &self.raw_names, &self.header, password, true) {
+            Ok(None) => match decode_members(volumes, &self.raw_names, &self.header, password, true) {
                 Ok(mut members) => members.remove(&self.header.index).unwrap_or_default(),
                 Err(_) => return false,
             },

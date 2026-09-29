@@ -1275,6 +1275,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                 if let Some(ref pwd) = password {
                     archive.set_password(pwd);
                 }
+                if let Some(ref provider) = options.volume_provider {
+                    archive.set_volume_provider(provider.clone());
+                }
                 ArchiveInner::Rar(archive)
             }
             ArchiveFormat::SevenZ => {
@@ -1327,6 +1330,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     archive.set_volume_provider(provider.clone());
                 }
                 ArchiveInner::Arj(archive) => {
+                    archive.set_volume_provider(provider.clone());
+                }
+                ArchiveInner::Rar(archive) => {
                     archive.set_volume_provider(provider.clone());
                 }
                 _ => {}

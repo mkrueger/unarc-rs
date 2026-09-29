@@ -13,7 +13,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | ------ | ---------- | ----------- | ---------- | ------------ |
 | **7z** | `.7z` | LZMA, LZMA2, etc. | AES-256 ✓ | ✓ |
 | **ZIP** | `.zip` | Deflate, legacy methods | ZipCrypto, AES ✓ | ✓ |
-| **RAR** | `.rar` | RAR 1.3 – RAR 7 | AES ✓ | — |
+| **RAR** | `.rar` | RAR 1.3 – RAR 7 | AES ✓ | ✓ |
 | **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
 | **TAR** | `.tar` | Full support | — | — |
 | **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |
@@ -227,6 +227,8 @@ Full support via the [zip](https://crates.io/crates/zip) crate with legacy compr
 ### RAR
 
 Full support for RAR 1.3 through RAR 7 (including encrypted headers) via the pure Rust [rars](https://crates.io/crates/rars) crate. No C/C++ toolchain is required.
+
+**Multi-volume support:** Volume sets (`.part1.rar`, `.part2.rar`, … or `.rar`, `.r00`, `.r01`, …) are supported through a `VolumeProvider` set in `ArchiveOptions`. Open the first volume; the following volumes are requested from the provider as volume 1, 2, and so on.
 
 ### LHA/LZH
 
