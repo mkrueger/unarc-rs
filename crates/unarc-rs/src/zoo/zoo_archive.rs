@@ -8,8 +8,11 @@ use crate::error::{ArchiveError, Result};
 
 use super::{
     dirent::{CompressionMethod, DirectoryEntry, DIRENT_HEADER_SIZE},
-    zoo_header::{ZooHeader, ZOO_HEADER_SIZE},
+    zoo_header::{ZooHeader, ZOO_HEADER_SIZE, ZOO_TAG},
 };
+
+/// End of the `next` field in a directory entry (tag: 4, type: 1, method: 1, next: 4)
+const DIRENT_NEXT_END: usize = 10;
 
 pub struct ZooArchive<T: Read + Seek> {
     pub header: ZooHeader,
@@ -91,13 +94,19 @@ impl<T: Read + Seek> ZooArchive<T> {
             return Ok(None);
         }
         let mut header_bytes = [0; DIRENT_HEADER_SIZE];
-        self.reader.read_exact(&mut header_bytes)?;
-        let entry = DirectoryEntry::load_from(&header_bytes)?;
-
-        // Mark as no more entries if this is the last one
-        if entry.next == 0 {
-            self.has_next = false;
+        // The directory chain ends with a dummy entry whose `next` is 0. It may be shorter than
+        // a full entry, so check it before reading the rest of the header.
+        self.reader.read_exact(&mut header_bytes[..DIRENT_NEXT_END])?;
+        if u32::from_le_bytes([header_bytes[0], header_bytes[1], header_bytes[2], header_bytes[3]]) != ZOO_TAG {
+            return Err(ArchiveError::invalid_header("ZOO"));
         }
+        let next = u32::from_le_bytes([header_bytes[6], header_bytes[7], header_bytes[8], header_bytes[9]]);
+        if next == 0 {
+            self.has_next = false;
+            return Ok(None);
+        }
+        self.reader.read_exact(&mut header_bytes[DIRENT_NEXT_END..])?;
+        let entry = DirectoryEntry::load_from(&header_bytes)?;
 
         Ok(Some(entry))
     }
