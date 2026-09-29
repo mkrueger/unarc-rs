@@ -44,6 +44,11 @@ impl<T: Read> Bz2Archive<T> {
 
     /// Read and decompress the file
     pub fn read(&mut self) -> Result<Vec<u8>> {
+        self.read_with_limit(None)
+    }
+
+    /// Read and decompress the file, failing if it decompresses to more than `limit` bytes
+    pub fn read_with_limit(&mut self, limit: Option<u64>) -> Result<Vec<u8>> {
         let reader = self
             .reader
             .take()
@@ -53,11 +58,11 @@ impl<T: Read> Bz2Archive<T> {
         let header = [b'B', b'Z', b'h'];
         let chained = std::io::Cursor::new(header).chain(reader);
 
-        let mut decoder = BzDecoder::new(chained);
-        let mut decompressed = Vec::new();
-        decoder
-            .read_to_end(&mut decompressed)
-            .map_err(|e| ArchiveError::io_error(format!("Failed to decompress bzip2: {}", e)))?;
+        let decoder = BzDecoder::new(chained);
+        let decompressed = crate::limits::read_to_end_limited(decoder, limit, "BZ2").map_err(|e| match e {
+            ArchiveError::Io(e) => ArchiveError::io_error(format!("Failed to decompress bzip2: {}", e)),
+            e => e,
+        })?;
 
         Ok(decompressed)
     }

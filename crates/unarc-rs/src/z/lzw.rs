@@ -40,8 +40,9 @@ impl Lzw {
         Lzw { max_bits, block_mode }
     }
 
-    /// Decompress LZW-compressed data
-    pub fn decomp(&mut self, input: &[u8]) -> Result<Vec<u8>> {
+    /// Decompress LZW-compressed data, failing once the output exceeds `limit` bytes
+    pub fn decomp_limited(&mut self, input: &[u8], limit: Option<u64>) -> Result<Vec<u8>> {
+        let limit = limit.map_or(usize::MAX, |l| usize::try_from(l).unwrap_or(usize::MAX));
         let max_bits = self.max_bits as usize;
         let block_mode = self.block_mode;
         let maxmaxcode: usize = 1 << max_bits;
@@ -165,6 +166,9 @@ impl Lzw {
         // Main decompression loop
         #[allow(clippy::while_let_loop)]
         loop {
+            if output.len() > limit {
+                return Err(crate::error::ArchiveError::size_limit_exceeded("Z", limit as u64));
+            }
             let incode = match getcode!() {
                 Some(c) => c,
                 None => break,
@@ -236,6 +240,9 @@ impl Lzw {
             oldcode = incode;
         }
 
+        if output.len() > limit {
+            return Err(crate::error::ArchiveError::size_limit_exceeded("Z", limit as u64));
+        }
         Ok(output)
     }
 }

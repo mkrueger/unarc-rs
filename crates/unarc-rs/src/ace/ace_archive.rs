@@ -332,8 +332,7 @@ impl<R: Read + Seek> AceArchive<R> {
         self.reader.seek(SeekFrom::Start(header.data_offset))?;
 
         // Read compressed data
-        let mut compressed = vec![0u8; header.packed_size as usize];
-        self.reader.read_exact(&mut compressed)?;
+        let compressed = crate::limits::read_exact_vec(&mut self.reader, header.packed_size)?;
 
         // Decrypt if encrypted
         let data = if header.is_encrypted() {
@@ -392,8 +391,7 @@ impl<R: Read + Seek> AceArchive<R> {
 
         // Read first segment from current volume
         self.reader.seek(SeekFrom::Start(header.data_offset))?;
-        let mut segment = vec![0u8; header.packed_size as usize];
-        self.reader.read_exact(&mut segment)?;
+        let segment = crate::limits::read_exact_vec(&mut self.reader, header.packed_size)?;
 
         // Decrypt if needed
         let segment_data = if header.is_encrypted() {
@@ -432,8 +430,7 @@ impl<R: Read + Seek> AceArchive<R> {
             }
 
             // Read this segment's data
-            let mut segment = vec![0u8; cont_header.packed_size as usize];
-            next_volume.read_exact(&mut segment)?;
+            let segment = crate::limits::read_exact_vec(&mut next_volume, cont_header.packed_size)?;
 
             // Decrypt if needed
             let segment_data = if cont_header.is_encrypted() {
@@ -665,8 +662,7 @@ impl<R: Read + Seek> AceArchive<R> {
 
         // Seek to and read the compressed data
         self.reader.seek(SeekFrom::Start(header.data_offset))?;
-        let mut compressed = vec![0u8; header.packed_size as usize];
-        self.reader.read_exact(&mut compressed)?;
+        let compressed = crate::limits::read_exact_vec(&mut self.reader, header.packed_size)?;
 
         Ok(super::password_verifier::AcePasswordVerifier::new(
             compressed,

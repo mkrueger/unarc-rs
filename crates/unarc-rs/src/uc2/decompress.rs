@@ -392,7 +392,7 @@ fn create_circular_buffer(dict: MasterDict) -> io::Result<CircularBuffer> {
 fn decompress_impl(compressed: &[u8], expected_size: Option<usize>, dict: MasterDict) -> io::Result<Vec<u8>> {
     let mut bits = Uc2BitReader::new(compressed);
     let mut circ_buf = create_circular_buffer(dict)?;
-    let mut output = Vec::with_capacity(expected_size.unwrap_or(0));
+    let mut output = Vec::with_capacity(crate::limits::capacity_hint(expected_size.unwrap_or(0) as u64));
     let mut symprev = get_default_lengths();
     let max_output = expected_size.unwrap_or(usize::MAX);
 

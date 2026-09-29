@@ -192,6 +192,24 @@ while let Some(entry) = archive.next_entry()? {
 }
 ```
 
+## Size Limits
+
+Archives from untrusted sources can contain decompression bombs or forged size fields. By default, the unified API rejects entries larger than 1 GiB (`DEFAULT_MAX_ENTRY_SIZE`) with `ArchiveError::SizeLimitExceeded`, before anything is decompressed whenever the archive records the size. The limits can be changed per archive or per read:
+
+```rust
+use unarc_rs::unified::{ArchiveFormat, ArchiveOptions};
+
+let options = ArchiveOptions::new()
+    .with_max_entry_size(Some(16 * 1024 * 1024)) // 16 MiB per entry
+    .with_max_total_size(Some(64 * 1024 * 1024)); // 64 MiB for the whole archive
+let mut archive = ArchiveFormat::open_path_with_options("upload.zip", options)?;
+
+// Or disable the limit entirely:
+let options = ArchiveOptions::new().with_max_entry_size(None);
+```
+
+`.tar.gz`, `.tar.bz2` and `.tar.Z` archives are decompressed as a whole when opened; the total limit (or the entry limit, if no total limit is set) applies to the whole TAR stream.
+
 ## Format-Specific Notes
 
 ### 7z

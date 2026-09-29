@@ -47,6 +47,11 @@ impl<T: Read> GzArchive<T> {
 
     /// Read and decompress the file
     pub fn read(&mut self) -> Result<Vec<u8>> {
+        self.read_with_limit(None)
+    }
+
+    /// Read and decompress the file, failing if it decompresses to more than `limit` bytes
+    pub fn read_with_limit(&mut self, limit: Option<u64>) -> Result<Vec<u8>> {
         let reader = self
             .reader
             .take()
@@ -56,12 +61,10 @@ impl<T: Read> GzArchive<T> {
         let header = [0x1f, 0x8b];
         let chained = std::io::Cursor::new(header).chain(reader);
 
-        let mut decoder = GzDecoder::new(chained);
-        let mut decompressed = Vec::new();
-        decoder
-            .read_to_end(&mut decompressed)
-            .map_err(|e| ArchiveError::io_error(format!("Failed to decompress gzip: {}", e)))?;
-
-        Ok(decompressed)
+        let decoder = GzDecoder::new(chained);
+        crate::limits::read_to_end_limited(decoder, limit, "GZ").map_err(|e| match e {
+            ArchiveError::Io(e) => ArchiveError::io_error(format!("Failed to decompress gzip: {}", e)),
+            e => e,
+        })
     }
 }

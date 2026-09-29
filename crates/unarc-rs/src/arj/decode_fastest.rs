@@ -26,7 +26,7 @@ pub fn decode_val(r: &mut BitReader<&[u8], BigEndian>, from: u32, to: u32) -> Re
 const THRESHOLD: usize = 3;
 
 pub fn decode_fastest(data: &[u8], original_size: usize) -> Result<Vec<u8>> {
-    let mut res = Vec::with_capacity(original_size);
+    let mut res = Vec::with_capacity(crate::limits::capacity_hint(original_size as u64));
     let mut r = BitReader::endian(data, BigEndian);
     while res.len() < original_size {
         let len = decode_val(&mut r, 0, 7)?;

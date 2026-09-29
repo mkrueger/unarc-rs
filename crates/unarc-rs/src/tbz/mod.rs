@@ -27,12 +27,16 @@ impl TbzArchive {
     /// This will decompress the entire bzip2 stream into memory,
     /// then create a TAR archive reader from the decompressed data.
     pub fn new<T: Read>(reader: T) -> Result<Self> {
-        // Decompress the bzip2 data
-        let mut decoder = BzDecoder::new(reader);
-        let mut decompressed = Vec::new();
-        decoder
-            .read_to_end(&mut decompressed)
-            .map_err(|e| crate::error::ArchiveError::io_error(format!("Failed to decompress bzip2: {}", e)))?;
+        Self::new_with_limit(reader, None)
+    }
+
+    /// Like [`Self::new`], but fails if the decompressed TAR stream exceeds `limit` bytes
+    pub fn new_with_limit<T: Read>(reader: T, limit: Option<u64>) -> Result<Self> {
+        let decoder = BzDecoder::new(reader);
+        let decompressed = crate::limits::read_to_end_limited(decoder, limit, "TBZ").map_err(|e| match e {
+            crate::error::ArchiveError::Io(e) => crate::error::ArchiveError::io_error(format!("Failed to decompress bzip2: {}", e)),
+            e => e,
+        })?;
 
         // Create a cursor for the decompressed data
         let cursor = Cursor::new(decompressed);

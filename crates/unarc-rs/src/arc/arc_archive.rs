@@ -62,8 +62,7 @@ impl<T: Read + Seek> ArcArchive<T> {
     }
 
     pub fn read(&mut self, header: &LocalFileHeader) -> Result<Vec<u8>> {
-        let mut compressed_buffer = vec![0; header.compressed_size as usize];
-        self.reader.read_exact(&mut compressed_buffer)?;
+        let mut compressed_buffer = crate::limits::read_exact_vec(&mut self.reader, header.compressed_size as u64)?;
 
         // Decrypt if password is set
         if let Some(ref password) = self.password {
@@ -126,8 +125,7 @@ impl<T: Read + Seek> ArcArchive<T> {
     ///
     /// The verifier is `Send + Sync` and can be safely used with rayon.
     pub fn create_password_verifier(&mut self, header: &LocalFileHeader) -> Result<ArcPasswordVerifier> {
-        let mut compressed_data = vec![0; header.compressed_size as usize];
-        self.reader.read_exact(&mut compressed_data)?;
+        let compressed_data = crate::limits::read_exact_vec(&mut self.reader, header.compressed_size as u64)?;
 
         Ok(ArcPasswordVerifier::new(
             compressed_data,

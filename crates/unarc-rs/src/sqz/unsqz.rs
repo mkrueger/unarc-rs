@@ -561,7 +561,7 @@ fn unsqz_method4_impl_with_reader<R: SqzBitRead + Clone>(
     let window_mask: usize = 0x7fff;
     let mut win_pos: usize = win_pos_init & window_mask;
 
-    let mut out = Vec::with_capacity(original_size.max(1));
+    let mut out = Vec::with_capacity(crate::limits::capacity_hint(original_size as u64));
 
     // Block counter: SQZ.EXE uses decrement-before-test, we use check-then-decrement
     // equivalent with initial = 0 and check for <= 0 after decrement.

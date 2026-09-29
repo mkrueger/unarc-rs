@@ -477,7 +477,13 @@ impl PackIceArchive {
 
     /// Create a new Pack-Ice archive reader from raw data
     pub fn new(data: &[u8]) -> Result<Self> {
+        Self::new_with_limit(data, None)
+    }
+
+    /// Like [`Self::new`], but fails if the stored original size exceeds `limit` bytes
+    pub fn new_with_limit(data: &[u8], limit: Option<u64>) -> Result<Self> {
         let header = parse_header(data)?;
+        crate::limits::check_size(u64::from(header.raw_size), limit, "Pack-Ice")?;
         let decompressed = decompress(data, &header)?;
         Ok(Self {
             original_size: header.raw_size,
@@ -486,10 +492,15 @@ impl PackIceArchive {
     }
 
     /// Create a new Pack-Ice archive reader from a reader
-    pub fn from_reader<R: std::io::Read>(mut reader: R) -> Result<Self> {
+    pub fn from_reader<R: std::io::Read>(reader: R) -> Result<Self> {
+        Self::from_reader_with_limit(reader, None)
+    }
+
+    /// Like [`Self::from_reader`], but fails if the stored original size exceeds `limit` bytes
+    pub fn from_reader_with_limit<R: std::io::Read>(mut reader: R, limit: Option<u64>) -> Result<Self> {
         let mut file_data = Vec::new();
         reader.read_to_end(&mut file_data)?;
-        Self::new(&file_data)
+        Self::new_with_limit(&file_data, limit)
     }
 
     /// Skip the current entry (Pack-Ice files only contain one file)

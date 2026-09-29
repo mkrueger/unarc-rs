@@ -211,8 +211,7 @@ impl<T: Read + Seek> TarArchive<T> {
         self.reader.seek(SeekFrom::Start(entry.data_offset))?;
 
         // Read the data
-        let mut data = vec![0u8; entry.header.size as usize];
-        self.reader.read_exact(&mut data)?;
+        let data = crate::limits::read_exact_vec(&mut self.reader, entry.header.size)?;
 
         if self.current_index == header.index {
             self.current_index += 1;

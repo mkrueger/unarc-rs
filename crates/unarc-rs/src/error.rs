@@ -100,6 +100,15 @@ pub enum ArchiveError {
         /// Error message from the library
         message: String,
     },
+
+    /// An entry is larger than the configured size limit
+    #[error("'{entry}' exceeds the size limit of {limit} bytes")]
+    SizeLimitExceeded {
+        /// Name of the entry (or archive, for formats that decompress as a whole)
+        entry: String,
+        /// The limit that was exceeded, in bytes
+        limit: u64,
+    },
 }
 
 /// Result type for archive operations
@@ -216,5 +225,10 @@ impl ArchiveError {
             entry: entry.into(),
             format: format.into(),
         }
+    }
+
+    /// Create a size limit exceeded error
+    pub fn size_limit_exceeded(entry: impl Into<String>, limit: u64) -> Self {
+        Self::SizeLimitExceeded { entry: entry.into(), limit }
     }
 }

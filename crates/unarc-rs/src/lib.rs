@@ -3,9 +3,11 @@ pub(crate) mod macros;
 pub mod date_time;
 pub mod encryption;
 pub mod error;
+pub mod limits;
 
 pub use encryption::{EncryptionMethod, RarEncryption, SevenZEncryption, ZipEncryption};
 pub use error::{ArchiveError, Result};
+pub use limits::DEFAULT_MAX_ENTRY_SIZE;
 
 pub mod ace;
 pub mod arc;

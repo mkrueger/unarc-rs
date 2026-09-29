@@ -79,7 +79,7 @@ impl ZipPasswordVerifier {
         };
 
         // Read and decompress the data
-        let mut data = Vec::with_capacity(self.original_size as usize);
+        let mut data = Vec::with_capacity(crate::limits::capacity_hint(self.original_size));
         if file.read_to_end(&mut data).is_err() {
             return false;
         }

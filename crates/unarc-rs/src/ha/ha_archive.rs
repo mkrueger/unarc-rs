@@ -41,8 +41,7 @@ impl<T: Read + Seek> HaArchive<T> {
     }
 
     pub fn read(&mut self, header: &FileHeader) -> Result<Vec<u8>> {
-        let mut compressed = vec![0u8; header.compressed_size as usize];
-        self.reader.read_exact(&mut compressed)?;
+        let compressed = crate::limits::read_exact_vec(&mut self.reader, header.compressed_size as u64)?;
 
         let decompressed = match header.method {
             CompressionMethod::Cpy => compressed,

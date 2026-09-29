@@ -31,9 +31,13 @@ impl<T: Read> ZArchive<T> {
     }
 
     pub fn read(&mut self) -> Result<Vec<u8>> {
+        self.read_with_limit(None)
+    }
+
+    /// Read and decompress the file, failing if it decompresses to more than `limit` bytes
+    pub fn read_with_limit(&mut self, limit: Option<u64>) -> Result<Vec<u8>> {
         let mut compressed_buffer = Vec::new();
         self.reader.read_to_end(&mut compressed_buffer)?;
-        let decompressed = lzw::Lzw::new(self.max_bits, self.block_mode).decomp(&compressed_buffer)?;
-        Ok(decompressed)
+        lzw::Lzw::new(self.max_bits, self.block_mode).decomp_limited(&compressed_buffer, limit)
     }
 }

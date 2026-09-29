@@ -26,9 +26,13 @@ impl TarZArchive {
     /// This will decompress the entire LZW stream into memory,
     /// then create a TAR archive reader from the decompressed data.
     pub fn new<T: Read>(reader: T) -> Result<Self> {
-        // Use the existing Z archive to decompress
+        Self::new_with_limit(reader, None)
+    }
+
+    /// Like [`Self::new`], but fails if the decompressed TAR stream exceeds `limit` bytes
+    pub fn new_with_limit<T: Read>(reader: T, limit: Option<u64>) -> Result<Self> {
         let mut z_archive = ZArchive::new(reader)?;
-        let decompressed = z_archive.read()?;
+        let decompressed = z_archive.read_with_limit(limit)?;
 
         // Create a cursor for the decompressed data
         let cursor = Cursor::new(decompressed);

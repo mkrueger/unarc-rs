@@ -30,8 +30,7 @@ impl<T: Read + Seek> SqzArchive<T> {
     }
 
     pub fn read(&mut self, header: &FileHeader) -> Result<Vec<u8>> {
-        let mut compressed_buffer = vec![0; header.compressed_size as usize];
-        self.reader.read_exact(&mut compressed_buffer)?;
+        let compressed_buffer = crate::limits::read_exact_vec(&mut self.reader, header.compressed_size as u64)?;
 
         let uncompressed = match header.compression_method {
             CompressionMethod::Stored => compressed_buffer,

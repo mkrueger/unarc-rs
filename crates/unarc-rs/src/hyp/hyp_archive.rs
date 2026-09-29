@@ -20,8 +20,7 @@ impl<T: Read + Seek> HypArchive<T> {
     }
 
     pub fn read(&mut self, header: &Header) -> Result<Vec<u8>> {
-        let mut compressed_buffer = vec![0; header.compressed_size as usize];
-        self.reader.read_exact(&mut compressed_buffer)?;
+        let compressed_buffer = crate::limits::read_exact_vec(&mut self.reader, header.compressed_size as u64)?;
 
         // Checksum is calculated on compressed data
         let checksum = calculate_checksum(&compressed_buffer);

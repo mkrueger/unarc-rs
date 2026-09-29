@@ -42,8 +42,7 @@ impl<T: Read + Seek> ZooArchive<T> {
 
     pub fn read(&mut self, header: &DirectoryEntry) -> Result<Vec<u8>> {
         self.reader.seek(std::io::SeekFrom::Start(header.offset as u64))?;
-        let mut compressed_buffer = vec![0; header.size_now as usize];
-        self.reader.read_exact(&mut compressed_buffer)?;
+        let compressed_buffer = crate::limits::read_exact_vec(&mut self.reader, header.size_now as u64)?;
 
         if header.next == 0 {
             self.has_next = false;

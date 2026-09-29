@@ -105,8 +105,7 @@ impl<T: Read + Seek> ArjArchive<T> {
         }
 
         // Single volume: read and decompress normally
-        let mut compressed_buffer = vec![0; header.compressed_size as usize];
-        self.reader.read_exact(&mut compressed_buffer)?;
+        let mut compressed_buffer = crate::limits::read_exact_vec(&mut self.reader, header.compressed_size as u64)?;
 
         // Decrypt if needed
         if header.is_garbled() {
@@ -168,13 +167,12 @@ impl<T: Read + Seek> ArjArchive<T> {
             header.original_size as usize
         };
 
-        let mut result = Vec::with_capacity(total_size);
+        let mut result = Vec::with_capacity(crate::limits::capacity_hint(total_size as u64));
         let filename = header.name.clone();
         let compression_method = header.compression_method;
 
         // Read and decompress first chunk from current volume
-        let mut compressed_buffer = vec![0; header.compressed_size as usize];
-        self.reader.read_exact(&mut compressed_buffer)?;
+        let mut compressed_buffer = crate::limits::read_exact_vec(&mut self.reader, header.compressed_size as u64)?;
 
         // Decrypt if needed
         if header.is_garbled() {
@@ -246,8 +244,7 @@ impl<T: Read + Seek> ArjArchive<T> {
             read_extended_headers(&mut next_volume)?;
 
             // Read the compressed data from this volume
-            let mut chunk = vec![0; continuation_header.compressed_size as usize];
-            next_volume.read_exact(&mut chunk)?;
+            let mut chunk = crate::limits::read_exact_vec(&mut next_volume, continuation_header.compressed_size as u64)?;
 
             // Decrypt if needed (continuation chunks use their own header data)
             if continuation_header.is_garbled() {
@@ -367,8 +364,7 @@ impl<T: Read + Seek> ArjArchive<T> {
         }
 
         // Read compressed data
-        let mut compressed_data = vec![0; header.compressed_size as usize];
-        self.reader.read_exact(&mut compressed_data)?;
+        let compressed_data = crate::limits::read_exact_vec(&mut self.reader, header.compressed_size as u64)?;
 
         let file_time: u32 = header.date_time_modified.into();
 

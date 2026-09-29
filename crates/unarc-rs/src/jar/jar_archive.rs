@@ -365,8 +365,7 @@ impl<R: Read + Seek> JarArchive<R> {
         }
         self.reader.seek(SeekFrom::Start(self.header.data_offset as u64))?;
 
-        let mut data = vec![0u8; self.header.compressed_size as usize];
-        self.reader.read_exact(&mut data)?;
+        let data = crate::limits::read_exact_vec(&mut self.reader, self.header.compressed_size as u64)?;
 
         Ok(data)
     }

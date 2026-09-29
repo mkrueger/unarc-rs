@@ -94,9 +94,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
             self.reader.read_to_end(&mut buffer)?;
             buffer
         } else {
-            let mut buffer = vec![0u8; compress_info.compressed_length as usize];
-            self.reader.read_exact(&mut buffer)?;
-            buffer
+            crate::limits::read_exact_vec(&mut self.reader, compress_info.compressed_length as u64)?
         };
 
         let mut cursor: &[u8] = &decompress::decompress_no_master(&compressed_data)?;
@@ -226,8 +224,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
         );
 
         self.reader.seek(SeekFrom::Start(offset as u64))?;
-        let mut compressed = vec![0u8; compressed_len];
-        self.reader.read_exact(&mut compressed)?;
+        let compressed = crate::limits::read_exact_vec(&mut self.reader, compressed_len as u64)?;
 
         let data = match master_prefix {
             0 => decompress::decompress_with_dict(&compressed, size, MasterDict::SuperMaster)?,
@@ -263,8 +260,7 @@ impl<T: Read + Seek> Uc2Archive<T> {
         );
 
         self.reader.seek(SeekFrom::Start(offset))?;
-        let mut compressed = vec![0u8; compressed_len];
-        self.reader.read_exact(&mut compressed)?;
+        let compressed = crate::limits::read_exact_vec(&mut self.reader, compressed_len as u64)?;
 
         let dict = entry.compress_info.master_prefix;
 

@@ -130,13 +130,16 @@ impl<T: Read + Seek> ZipArchive<T> {
             return Ok(Vec::new());
         }
 
-        let mut data = Vec::with_capacity(header.original_size as usize);
+        let mut data = Vec::with_capacity(crate::limits::capacity_hint(header.original_size));
+        // Never produce more than the size recorded in the central directory. Reading one byte
+        // past it lets the zip reader hit EOF, which is where it verifies the CRC.
+        let read_limit = header.original_size.saturating_add(1);
 
         if header.is_encrypted {
             // Use decryption
             let password = password.ok_or_else(|| ArchiveError::encryption_required(&header.name, "ZIP"))?;
 
-            let mut file = self.archive.by_index_decrypt(header.index, password).map_err(|e| {
+            let file = self.archive.by_index_decrypt(header.index, password).map_err(|e| {
                 // Check if it's a password error
                 let msg = e.to_string();
                 if msg.contains("password") || msg.contains("decrypt") {
@@ -146,14 +149,22 @@ impl<T: Read + Seek> ZipArchive<T> {
                 }
             })?;
 
-            file.read_to_end(&mut data)?;
+            file.take(read_limit).read_to_end(&mut data)?;
         } else {
-            let mut file = self
+            let file = self
                 .archive
                 .by_index(header.index)
                 .map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
 
-            file.read_to_end(&mut data)?;
+            file.take(read_limit).read_to_end(&mut data)?;
+        }
+
+        if data.len() as u64 > header.original_size {
+            return Err(ArchiveError::corrupted_entry_named(
+                "ZIP",
+                &header.name,
+                "entry is larger than its recorded size",
+            ));
         }
 
         Ok(data)

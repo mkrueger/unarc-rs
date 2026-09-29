@@ -117,6 +117,9 @@ fn main() {
 
 /// Open an archive, automatically handling multi-volume split archives
 fn open_archive_auto(archive_path: &Path, format: ArchiveFormat, options: ArchiveOptions) -> Result<Box<dyn ArchiveReader>, ArchiveError> {
+    // The user explicitly asked for this archive, so don't apply the library's safety size limit.
+    let options = options.with_max_entry_size(None);
+
     // Check if this is a multi-volume split archive (ZIP .001/.z01 or 7z .001)
     if let Some(pattern) = FileVolumeProvider::detect_pattern(archive_path) {
         match pattern {
@@ -156,8 +159,7 @@ fn open_archive_auto(archive_path: &Path, format: ArchiveFormat, options: Archiv
     // Standard single-file or VolumeProvider-handled multi-volume
     let volume_provider = Arc::new(FileVolumeProvider::new(archive_path, format));
     let file = File::open(archive_path)?;
-    let mut archive = UnifiedArchive::open_with_format(file, format)?;
-    archive.set_options(options.with_volume_provider_arc(volume_provider));
+    let archive = UnifiedArchive::open_with_format_and_options(file, format, options.with_volume_provider_arc(volume_provider))?;
     Ok(Box::new(archive))
 }
 
@@ -563,7 +565,8 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
             ArchiveOptions::new().with_password(pwd)
         }
         None => ArchiveOptions::new(),
-    };
+    }
+    .with_max_entry_size(None);
 
     let mut archive = open_archive_auto(archive_path, format, options.clone())?;
 

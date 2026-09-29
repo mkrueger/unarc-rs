@@ -33,7 +33,12 @@ impl IceArchive {
     ///
     /// This reads the compressed data and attempts to decompress it using
     /// various LHA compression methods until one succeeds.
-    pub fn new<T: Read>(mut reader: T) -> Result<Self> {
+    pub fn new<T: Read>(reader: T) -> Result<Self> {
+        Self::new_with_limit(reader, None)
+    }
+
+    /// Like [`Self::new`], but fails if the stored original size exceeds `limit` bytes
+    pub fn new_with_limit<T: Read>(mut reader: T, limit: Option<u64>) -> Result<Self> {
         let mut file_data = Vec::new();
         reader.read_to_end(&mut file_data)?;
 
@@ -42,6 +47,7 @@ impl IceArchive {
             return Err(ArchiveError::invalid_header("ICE"));
         }
         let original_size = u32::from_le_bytes(file_data[0..4].try_into().unwrap());
+        crate::limits::check_size(u64::from(original_size), limit, "ICE")?;
         let compressed_data = &file_data[4..];
 
         let data = Self::try_decompress(compressed_data, original_size)?;

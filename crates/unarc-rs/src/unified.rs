@@ -122,6 +122,16 @@ impl std::fmt::Debug for dyn VolumeProvider {
 /// `ArchiveOptions` provides a builder-style API for configuring archive operations,
 /// such as setting passwords for encrypted archives or enabling CRC verification.
 ///
+/// # Size limits
+///
+/// To protect against malicious archives (decompression bombs, forged size fields),
+/// entries larger than [`DEFAULT_MAX_ENTRY_SIZE`](crate::DEFAULT_MAX_ENTRY_SIZE) (1 GiB)
+/// are rejected with [`ArchiveError::SizeLimitExceeded`] by default. Use
+/// [`with_max_entry_size`](Self::with_max_entry_size) and
+/// [`with_max_total_size`](Self::with_max_total_size) to adjust this.
+/// Formats that are decompressed as a whole when opened (`.tar.gz`, `.tar.bz2`, `.tar.Z`)
+/// apply the total limit, or the entry limit if no total limit is set, to the whole TAR stream.
+///
 /// # Example
 ///
 /// ```
@@ -134,7 +144,7 @@ impl std::fmt::Debug for dyn VolumeProvider {
 /// assert!(options.has_password());
 /// assert!(options.verify_crc());
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ArchiveOptions {
     /// Password for encrypted archives
     password: Option<String>,
@@ -142,6 +152,22 @@ pub struct ArchiveOptions {
     verify_crc: bool,
     /// Volume provider for multi-volume archives
     volume_provider: Option<Arc<dyn VolumeProvider>>,
+    /// Maximum decompressed size of a single entry
+    max_entry_size: Option<u64>,
+    /// Maximum decompressed size of all entries read from the archive
+    max_total_size: Option<u64>,
+}
+
+impl Default for ArchiveOptions {
+    fn default() -> Self {
+        Self {
+            password: None,
+            verify_crc: false,
+            volume_provider: None,
+            max_entry_size: Some(crate::limits::DEFAULT_MAX_ENTRY_SIZE),
+            max_total_size: None,
+        }
+    }
 }
 
 impl ArchiveOptions {
@@ -192,6 +218,37 @@ impl ArchiveOptions {
     /// Returns a reference to the volume provider if set
     pub fn volume_provider(&self) -> Option<&Arc<dyn VolumeProvider>> {
         self.volume_provider.as_ref()
+    }
+
+    /// Set the maximum decompressed size of a single entry (`None` = unlimited)
+    ///
+    /// Defaults to [`DEFAULT_MAX_ENTRY_SIZE`](crate::DEFAULT_MAX_ENTRY_SIZE).
+    pub fn with_max_entry_size(mut self, limit: Option<u64>) -> Self {
+        self.max_entry_size = limit;
+        self
+    }
+
+    /// Set the maximum decompressed size of all entries read from an archive (`None` = unlimited)
+    ///
+    /// Defaults to unlimited.
+    pub fn with_max_total_size(mut self, limit: Option<u64>) -> Self {
+        self.max_total_size = limit;
+        self
+    }
+
+    /// Returns the maximum decompressed size of a single entry
+    pub fn max_entry_size(&self) -> Option<u64> {
+        self.max_entry_size
+    }
+
+    /// Returns the maximum decompressed size of all entries read from an archive
+    pub fn max_total_size(&self) -> Option<u64> {
+        self.max_total_size
+    }
+
+    /// Limit applied to formats that decompress the whole archive at once
+    fn whole_archive_limit(&self) -> Option<u64> {
+        self.max_total_size.or(self.max_entry_size)
     }
 }
 
@@ -858,6 +915,7 @@ impl ArchiveFormat {
             format: ArchiveFormat::Zip,
             single_file_name: None,
             options,
+            total_read: 0,
         })
     }
 
@@ -916,6 +974,7 @@ impl ArchiveFormat {
             format: ArchiveFormat::SevenZ,
             single_file_name: None,
             options,
+            total_read: 0,
         })
     }
 }
@@ -1130,6 +1189,8 @@ pub struct UnifiedArchive<T: Read + Seek> {
     single_file_name: Option<String>,
     /// Options for archive operations (password, CRC verification, etc.)
     options: ArchiveOptions,
+    /// Decompressed bytes returned so far (for `max_total_size`)
+    total_read: u64,
 }
 
 impl<T: Read + Seek> UnifiedArchive<T> {
@@ -1144,38 +1205,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// let archive = UnifiedArchive::open_with_format(file, ArchiveFormat::Arj).unwrap();
     /// ```
     pub fn open_with_format(reader: T, format: ArchiveFormat) -> Result<Self> {
-        let inner = match format {
-            ArchiveFormat::Ace => ArchiveInner::Ace(AceArchive::new(reader)?),
-            ArchiveFormat::Arc => ArchiveInner::Arc(ArcArchive::new(reader)?),
-            ArchiveFormat::Arj => ArchiveInner::Arj(ArjArchive::new(reader)?),
-            ArchiveFormat::Zoo => ArchiveInner::Zoo(ZooArchive::new(reader)?),
-            ArchiveFormat::Sq => ArchiveInner::Sq(SqArchive::new(reader)?),
-            ArchiveFormat::Sqz => ArchiveInner::Sqz(SqzArchive::new(reader)?),
-            ArchiveFormat::Z => ArchiveInner::Z(ZArchive::new(reader)?, false),
-            ArchiveFormat::Gz => ArchiveInner::Gz(GzArchive::new(reader)?, false),
-            ArchiveFormat::Bz2 => ArchiveInner::Bz2(Bz2Archive::new(reader)?, false),
-            ArchiveFormat::Ice => ArchiveInner::Ice(IceArchive::new(reader)?, false),
-            ArchiveFormat::PackIce => ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false),
-            ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
-            ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
-            ArchiveFormat::Jar => ArchiveInner::Jar(JarArchive::new(reader)?),
-            ArchiveFormat::Uc2 => ArchiveInner::Uc2(Uc2Archive::new(reader)?),
-            ArchiveFormat::Lha => ArchiveInner::Lha(LhaArchiveSeekable::new(reader)?),
-            ArchiveFormat::Zip => ArchiveInner::Zip(ZipArchive::new(reader)?),
-            ArchiveFormat::Rar => ArchiveInner::Rar(RarArchive::new(reader)?),
-            ArchiveFormat::SevenZ => ArchiveInner::SevenZ(SevenZArchive::new(reader)?),
-            ArchiveFormat::Tar => ArchiveInner::Tar(TarArchive::new(reader)?),
-            ArchiveFormat::Tgz => ArchiveInner::Tgz(TgzArchive::new(reader)?),
-            ArchiveFormat::Tbz => ArchiveInner::Tbz(TbzArchive::new(reader)?),
-            ArchiveFormat::TarZ => ArchiveInner::TarZ(TarZArchive::new(reader)?),
-        };
-
-        Ok(Self {
-            inner,
-            format,
-            single_file_name: None,
-            options: ArchiveOptions::default(),
-        })
+        Self::open_with_format_and_options(reader, format, ArchiveOptions::default())
     }
 
     /// Open an archive with a specific format and options
@@ -1226,8 +1256,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Z => ArchiveInner::Z(ZArchive::new(reader)?, false),
             ArchiveFormat::Gz => ArchiveInner::Gz(GzArchive::new(reader)?, false),
             ArchiveFormat::Bz2 => ArchiveInner::Bz2(Bz2Archive::new(reader)?, false),
-            ArchiveFormat::Ice => ArchiveInner::Ice(IceArchive::new(reader)?, false),
-            ArchiveFormat::PackIce => ArchiveInner::PackIce(PackIceArchive::from_reader(reader)?, false),
+            ArchiveFormat::Ice => ArchiveInner::Ice(IceArchive::new_with_limit(reader, options.max_entry_size)?, false),
+            ArchiveFormat::PackIce => ArchiveInner::PackIce(PackIceArchive::from_reader_with_limit(reader, options.max_entry_size)?, false),
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
             ArchiveFormat::Ha => ArchiveInner::Ha(HaArchive::new(reader)?),
             ArchiveFormat::Jar => ArchiveInner::Jar(JarArchive::new(reader)?),
@@ -1252,9 +1282,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                 ArchiveInner::SevenZ(SevenZArchive::new_with_password(reader, password)?)
             }
             ArchiveFormat::Tar => ArchiveInner::Tar(TarArchive::new(reader)?),
-            ArchiveFormat::Tgz => ArchiveInner::Tgz(TgzArchive::new(reader)?),
-            ArchiveFormat::Tbz => ArchiveInner::Tbz(TbzArchive::new(reader)?),
-            ArchiveFormat::TarZ => ArchiveInner::TarZ(TarZArchive::new(reader)?),
+            ArchiveFormat::Tgz => ArchiveInner::Tgz(TgzArchive::new_with_limit(reader, options.whole_archive_limit())?),
+            ArchiveFormat::Tbz => ArchiveInner::Tbz(TbzArchive::new_with_limit(reader, options.whole_archive_limit())?),
+            ArchiveFormat::TarZ => ArchiveInner::TarZ(TarZArchive::new_with_limit(reader, options.whole_archive_limit())?),
         };
 
         Ok(Self {
@@ -1262,6 +1292,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             format,
             single_file_name: None,
             options,
+            total_read: 0,
         })
     }
 
@@ -1736,6 +1767,33 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// }
     /// ```
     pub fn read(&mut self, entry: &ArchiveEntry) -> Result<Vec<u8>> {
+        let limit = self.entry_limit(entry, self.options.max_entry_size, self.options.max_total_size)?;
+        let result = self.read_inner(entry, limit);
+        self.finish_read(entry, limit, result)
+    }
+
+    /// Returns the size limit for `entry`, failing early if its recorded size already exceeds it
+    fn entry_limit(&self, entry: &ArchiveEntry, max_entry_size: Option<u64>, max_total_size: Option<u64>) -> Result<Option<u64>> {
+        let remaining = max_total_size.map(|total| total.saturating_sub(self.total_read));
+        let limit = match (max_entry_size, remaining) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        crate::limits::check_size(entry.original_size, limit, &entry.name)?;
+        Ok(limit)
+    }
+
+    fn finish_read(&mut self, entry: &ArchiveEntry, limit: Option<u64>, result: Result<Vec<u8>>) -> Result<Vec<u8>> {
+        let data = result.map_err(|e| match e {
+            ArchiveError::SizeLimitExceeded { limit, .. } => ArchiveError::size_limit_exceeded(&entry.name, limit),
+            e => e,
+        })?;
+        crate::limits::check_size(data.len() as u64, limit, &entry.name)?;
+        self.total_read = self.total_read.saturating_add(data.len() as u64);
+        Ok(data)
+    }
+
+    fn read_inner(&mut self, entry: &ArchiveEntry, limit: Option<u64>) -> Result<Vec<u8>> {
         match (&mut self.inner, &entry.index) {
             (ArchiveInner::Ace(archive), EntryIndex::Ace(header)) => archive.read(header),
             (ArchiveInner::Arc(archive), EntryIndex::Arc(header)) => archive.read(header),
@@ -1743,9 +1801,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Zoo(archive), EntryIndex::Zoo(header)) => archive.read(header),
             (ArchiveInner::Sq(archive), EntryIndex::Sq(header)) => archive.read(header),
             (ArchiveInner::Sqz(archive), EntryIndex::Sqz(header)) => archive.read(header),
-            (ArchiveInner::Z(archive, _), EntryIndex::Z) => archive.read(),
-            (ArchiveInner::Gz(archive, _), EntryIndex::Gz) => archive.read(),
-            (ArchiveInner::Bz2(archive, _), EntryIndex::Bz2) => archive.read(),
+            (ArchiveInner::Z(archive, _), EntryIndex::Z) => archive.read_with_limit(limit),
+            (ArchiveInner::Gz(archive, _), EntryIndex::Gz) => archive.read_with_limit(limit),
+            (ArchiveInner::Bz2(archive, _), EntryIndex::Bz2) => archive.read_with_limit(limit),
             (ArchiveInner::Ice(archive, _), EntryIndex::Ice) => archive.read(),
             (ArchiveInner::PackIce(archive, _), EntryIndex::PackIce) => archive.read(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.read(header),
@@ -1816,6 +1874,12 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// }
     /// ```
     pub fn read_with_options(&mut self, entry: &ArchiveEntry, options: &ArchiveOptions) -> Result<Vec<u8>> {
+        let limit = self.entry_limit(entry, options.max_entry_size, options.max_total_size)?;
+        let result = self.read_inner_with_options(entry, options, limit);
+        self.finish_read(entry, limit, result)
+    }
+
+    fn read_inner_with_options(&mut self, entry: &ArchiveEntry, options: &ArchiveOptions, limit: Option<u64>) -> Result<Vec<u8>> {
         let password = options.password().map(|s| s.to_string());
 
         match (&mut self.inner, &entry.index) {
@@ -1826,7 +1890,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.read_with_password(header, password),
             (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => archive.read_with_password(header, password),
             // Other formats don't support encryption, use normal read
-            _ => self.read(entry),
+            _ => self.read_inner(entry, limit),
         }
     }
 

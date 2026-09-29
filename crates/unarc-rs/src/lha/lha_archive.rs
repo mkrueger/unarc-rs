@@ -148,7 +148,7 @@ impl<T: Read> LhaArchive<T> {
         }
 
         if let Some(ref mut reader) = self.reader {
-            let mut data = Vec::with_capacity(header.original_size as usize);
+            let mut data = Vec::with_capacity(crate::limits::capacity_hint(header.original_size));
             reader.read_to_end(&mut data)?;
 
             // Verify CRC

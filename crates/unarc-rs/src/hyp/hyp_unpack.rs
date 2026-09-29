@@ -704,7 +704,7 @@ pub(crate) fn unpack_hyp(compressed_buffer: &[u8], original_size: usize, version
     let mut reader = BitReader::new(compressed_buffer);
     let mut state = HuffmanState::new();
     state.version = version;
-    let mut output = Vec::with_capacity(original_size.max(1));
+    let mut output = Vec::with_capacity(crate::limits::capacity_hint(original_size as u64));
 
     loop {
         // Per the original EXE (fcn.00004f26), reset low_tsi to 0x1fe at the
