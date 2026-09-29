@@ -49,10 +49,6 @@ pub struct ArcPasswordVerifier {
     entry_name: String,
 }
 
-// Arc<[u8]> is Send + Sync, CompressionMethod is Copy, so this is safe
-unsafe impl Send for ArcPasswordVerifier {}
-unsafe impl Sync for ArcPasswordVerifier {}
-
 impl ArcPasswordVerifier {
     /// Create a new password verifier from entry data.
     ///

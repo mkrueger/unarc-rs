@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 #[macro_use]
 pub(crate) mod macros;
 pub mod date_time;
@@ -35,3 +37,14 @@ pub mod zoo;
 
 pub mod unified;
 pub use unified::{ArchiveOptions, VolumeProvider};
+
+// Password verifiers are shared across threads (e.g. with rayon) when testing passwords in parallel.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<ace::AcePasswordVerifier>();
+    assert_send_sync::<arc::password_verifier::ArcPasswordVerifier>();
+    assert_send_sync::<arj::password_verifier::ArjPasswordVerifier>();
+    assert_send_sync::<rar::RarPasswordVerifier>();
+    assert_send_sync::<sevenz::SevenZPasswordVerifier>();
+    assert_send_sync::<zip::ZipPasswordVerifier>();
+};

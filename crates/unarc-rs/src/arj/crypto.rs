@@ -175,12 +175,11 @@ impl Gost40 {
     /// The key is limited to 40 bits (5 bytes) for export compliance.
     /// Password bytes are accumulated with bit shifting for mixing.
     fn build_key_from_password(password: &str) -> [u32; 8] {
-        let mut key = [0u32; 8];
-        let key_bytes: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(key.as_mut_ptr() as *mut u8, 32) };
+        let mut key_bytes = [0u8; 32];
 
         let pwd_bytes = password.as_bytes();
         if pwd_bytes.is_empty() {
-            return key;
+            return [0; 8];
         }
 
         let mut pwd_idx = 0;
@@ -194,7 +193,7 @@ impl Gost40 {
             }
         }
 
-        key
+        bytes_to_words(&key_bytes)
     }
 
     /// GOST 28147-89 encryption of a 64-bit block
@@ -236,7 +235,7 @@ impl Gost40 {
     /// Strengthens a weak 40-bit key by iteratively encrypting
     /// the key material. This is a form of key stretching.
     fn derive_key(&mut self, iv: &[u32; 2]) {
-        let mut work_key = self.subkeys;
+        let mut work_bytes: [u8; 32] = words_to_bytes(&self.subkeys);
 
         // Bootstrap: encrypt IV with initial bootstrap key
         let saved_keys = self.subkeys;
@@ -246,11 +245,10 @@ impl Gost40 {
 
         // Key strengthening: repeatedly encrypt the key material
         for _ in 0..KEY_ITERATIONS {
-            let work_bytes: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(work_key.as_mut_ptr() as *mut u8, 32) };
-            self.cfb_encrypt(work_bytes);
+            self.cfb_encrypt(&mut work_bytes);
         }
 
-        self.subkeys = work_key;
+        self.subkeys = bytes_to_words(&work_bytes);
     }
 
     /// CFB-mode encryption (used for key derivation)
@@ -258,17 +256,14 @@ impl Gost40 {
         for chunk in data.chunks_mut(8) {
             self.feedback = self.encrypt_block(&self.feedback);
 
-            let fb_bytes: &[u8] = unsafe { std::slice::from_raw_parts(self.feedback.as_ptr() as *const u8, 8) };
+            let mut fb_bytes: [u8; 8] = words_to_bytes(&self.feedback);
 
-            for (i, byte) in chunk.iter_mut().enumerate() {
-                let encrypted = *byte ^ fb_bytes[i];
-                *byte = encrypted;
+            for (byte, fb) in chunk.iter_mut().zip(fb_bytes.iter_mut()) {
+                *byte ^= *fb;
                 // CFB: feed ciphertext back
-                unsafe {
-                    let fb_ptr = self.feedback.as_mut_ptr() as *mut u8;
-                    *fb_ptr.add(i) = encrypted;
-                }
+                *fb = *byte;
             }
+            self.feedback = bytes_to_words(&fb_bytes);
         }
     }
 
@@ -308,16 +303,36 @@ impl Gost40 {
                     self.feedback = self.encrypt_block(&self.feedback);
                 }
 
-                let fb_bytes: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(self.feedback.as_mut_ptr() as *mut u8, 8) };
+                let mut fb_bytes: [u8; 8] = words_to_bytes(&self.feedback);
 
                 let ciphertext = *byte;
                 *byte = ciphertext ^ fb_bytes[self.byte_offset];
                 fb_bytes[self.byte_offset] = ciphertext;
+                self.feedback = bytes_to_words(&fb_bytes);
 
                 self.byte_offset = (self.byte_offset + 1) % 8;
             }
         }
     }
+}
+
+/// Serializes cipher words as little-endian bytes, matching the in-memory layout of the original DOS implementation
+fn words_to_bytes<const W: usize, const B: usize>(words: &[u32; W]) -> [u8; B] {
+    const { assert!(W * 4 == B) };
+    let mut bytes = [0u8; B];
+    for (dst, word) in bytes.chunks_exact_mut(4).zip(words) {
+        dst.copy_from_slice(&word.to_le_bytes());
+    }
+    bytes
+}
+
+fn bytes_to_words<const B: usize, const W: usize>(bytes: &[u8; B]) -> [u32; W] {
+    const { assert!(W * 4 == B) };
+    let mut words = [0u32; W];
+    for (word, src) in words.iter_mut().zip(bytes.chunks_exact(4)) {
+        *word = u32::from_le_bytes([src[0], src[1], src[2], src[3]]);
+    }
+    words
 }
 
 // ============================================================================
@@ -415,6 +430,31 @@ mod tests {
         // Verify the expanded table produces consistent results
         // First entry combines SBOX[0][0] and SBOX[1][0]
         assert_eq!(sbox.table[0][0], (SBOX[0][0] << 4) | SBOX[1][0]);
+    }
+
+    fn gost40_decrypt(password: &str, data: &[u8], chunk_len: usize) -> Vec<u8> {
+        let mut gost = Gost40::new(password, 0x9C, 0x5A3C_1234);
+        let mut out = data.to_vec();
+        for chunk in out.chunks_mut(chunk_len) {
+            gost.decrypt(chunk);
+        }
+        out
+    }
+
+    #[test]
+    fn test_gost40_known_output() {
+        let data: Vec<u8> = (0..29u8).map(|b| b.wrapping_mul(37).wrapping_add(11)).collect();
+        let expected = gost40_decrypt("pässwörd", &data, data.len());
+        assert_eq!(
+            expected,
+            [
+                0x39, 0xB2, 0xA0, 0x07, 0xA6, 0xC6, 0x64, 0x71, 0x2D, 0x58, 0x69, 0x69, 0xBD, 0x14, 0x00, 0x88, 0x5E, 0x97, 0x54, 0xE7, 0x3F, 0x3F, 0x80, 0x41,
+                0x3C, 0xBF, 0x15, 0xA4, 0x39
+            ]
+        );
+        // Aligned fast path and unaligned slow path must produce the same stream
+        assert_eq!(gost40_decrypt("pässwörd", &data[..24], 8), expected[..24]);
+        assert_eq!(gost40_decrypt("pässwörd", &data, 3), expected);
     }
 
     #[test]

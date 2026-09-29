@@ -38,10 +38,6 @@ pub struct ArjPasswordVerifier {
     file_time: u32,
 }
 
-// Arc<[u8]> is Send + Sync, other fields are Copy or Send+Sync
-unsafe impl Send for ArjPasswordVerifier {}
-unsafe impl Sync for ArjPasswordVerifier {}
-
 impl ArjPasswordVerifier {
     /// Create a new password verifier from entry data.
     ///

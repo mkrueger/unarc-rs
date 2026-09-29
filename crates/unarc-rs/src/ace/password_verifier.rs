@@ -35,10 +35,6 @@ pub struct AcePasswordVerifier {
     entry_name: String,
 }
 
-// Arc<[u8]> is Send + Sync, other fields are Copy or Clone+Send+Sync
-unsafe impl Send for AcePasswordVerifier {}
-unsafe impl Sync for AcePasswordVerifier {}
-
 impl AcePasswordVerifier {
     /// Create a new password verifier from entry data.
     ///

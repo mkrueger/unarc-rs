@@ -25,10 +25,6 @@ pub struct SevenZPasswordVerifier {
     original_size: u64,
 }
 
-// Arc<[u8]> is Send + Sync, other fields are Copy or Clone+Send+Sync
-unsafe impl Send for SevenZPasswordVerifier {}
-unsafe impl Sync for SevenZPasswordVerifier {}
-
 impl SevenZPasswordVerifier {
     /// Create a new password verifier from archive data.
     ///

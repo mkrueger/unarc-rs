@@ -2,6 +2,8 @@
 //!
 //! A command-line tool for listing and extracting files from various archive formats.
 
+#![forbid(unsafe_code)]
+
 mod extraction;
 mod password;
 

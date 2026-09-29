@@ -25,10 +25,6 @@ pub struct ZipPasswordVerifier {
     entry_name: String,
 }
 
-// Arc<[u8]> is Send + Sync, other fields are Copy or Clone+Send+Sync
-unsafe impl Send for ZipPasswordVerifier {}
-unsafe impl Sync for ZipPasswordVerifier {}
-
 impl ZipPasswordVerifier {
     /// Create a new password verifier from archive data.
     ///

@@ -86,10 +86,6 @@ impl UnifiedPasswordVerifier {
     }
 }
 
-// Required for rayon parallel processing
-unsafe impl Send for UnifiedPasswordVerifier {}
-unsafe impl Sync for UnifiedPasswordVerifier {}
-
 /// Execute the try-passwords command
 pub fn cmd_try_passwords(
     archive_path: &Path,
