@@ -1,0 +1,2 @@
+# Test fixtures are binary archives and byte-exact expected outputs; never convert line endings.
+crates/*/tests/** -text
