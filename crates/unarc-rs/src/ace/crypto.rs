@@ -38,11 +38,11 @@ pub fn decrypt_cbc(data: &[u8], key: &[u8]) -> Vec<u8> {
     let mut prev_block = [0u8; BLOCK_SIZE]; // Zero IV
 
     // Process each block
-    for chunk in result.chunks_exact_mut(BLOCK_SIZE) {
-        let encrypted_block: [u8; BLOCK_SIZE] = chunk.try_into().unwrap();
+    for chunk in result.as_chunks_mut::<BLOCK_SIZE>().0 {
+        let encrypted_block: [u8; BLOCK_SIZE] = *chunk;
 
         // Decrypt block
-        let mut block = Array::try_from(&*chunk).expect("block size mismatch");
+        let mut block = Array::try_from(&chunk[..]).expect("block size mismatch");
         cipher.decrypt_block(&mut block);
 
         // XOR with previous ciphertext (CBC mode)

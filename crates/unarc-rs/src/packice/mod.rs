@@ -397,15 +397,14 @@ fn decompress_internal(data: &[u8], header: &Header, use_bytes: bool, out: &mut 
         let count_base = count_base_dec.decode_cascade(&mut br, use_bytes)?;
         let count = count_dec.decode(&mut br, use_bytes, count_base)? + 2;
 
-        let distance: u32;
-        if count == 2 {
+        let distance: u32 = if count == 2 {
             let mut d = if read_bits(&mut br, use_bytes, 1)? != 0 {
                 read_bits(&mut br, use_bytes, 9)? + 0x40
             } else {
                 read_bits(&mut br, use_bytes, 6)?
             };
             d += count - if use_bytes { 1 } else { 0 };
-            distance = d;
+            d
         } else {
             let mut dist_base = dist_base_dec.decode_cascade(&mut br, use_bytes)?;
             if dist_base < 2 {
@@ -421,8 +420,8 @@ fn decompress_internal(data: &[u8], header: &Header, use_bytes: bool, out: &mut 
             } else {
                 d += count;
             }
-            distance = d;
-        }
+            d
+        };
 
         os.copy(distance as usize, count as usize)?;
     }

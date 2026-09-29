@@ -55,7 +55,7 @@ impl<T: Read> Bz2Archive<T> {
             .ok_or_else(|| ArchiveError::io_error("BZ2 archive already read or in invalid state"))?;
 
         // Reconstruct with the header we already consumed
-        let header = [b'B', b'Z', b'h'];
+        let header = *b"BZh";
         let chained = std::io::Cursor::new(header).chain(reader);
 
         let decoder = BzDecoder::new(chained);
