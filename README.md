@@ -126,7 +126,14 @@ cd unarc-rs
 cargo build --release
 ```
 
-The CLI binary will be at `target/release/unarc`.
+The CLI binary will be at `target/release/unarc`. Building requires Rust 1.95 or newer.
+
+Benchmarks for the native decoders use [Criterion](https://crates.io/crates/criterion):
+
+```bash
+cargo bench -p unarc-rs            # all decoders
+cargo bench -p unarc-rs -- uc2     # only UC2
+```
 
 ## Background
 

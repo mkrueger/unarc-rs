@@ -5,8 +5,7 @@ use unarc_rs::packice::PackIceArchive;
 fn sha1_hex(data: &[u8]) -> String {
     let mut hasher = Sha1::new();
     hasher.update(data);
-    let digest = hasher.finalize();
-    format!("{:x}", digest)
+    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[test]

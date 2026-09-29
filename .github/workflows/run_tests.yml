@@ -55,6 +55,24 @@ jobs:
       - name: Run tests (no default features)
         run: cargo test -p unarc-rs --no-default-features
 
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (rust-version from Cargo.toml)
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
+          echo "MSRV: $msrv"
+          rustup toolchain install "$msrv" --profile minimal
+          rustup default "$msrv"
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests with MSRV
+        run: cargo test --workspace --all-features
+
   wasm:
     runs-on: ubuntu-latest
     steps:

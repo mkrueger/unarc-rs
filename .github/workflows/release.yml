@@ -1,0 +1,43 @@
+name: Release checks
+
+# Run before publishing: push a version tag (e.g. `v0.7.0`) or start the workflow manually.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  semver-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Compares the public API against the latest unarc-rs release on crates.io
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: unarc-rs
+
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Check that the crates package and build
+        run: cargo package --workspace

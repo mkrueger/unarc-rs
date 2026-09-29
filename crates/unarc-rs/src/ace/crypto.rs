@@ -31,8 +31,8 @@ pub fn decrypt_cbc(data: &[u8], key: &[u8]) -> Vec<u8> {
         return Vec::new();
     }
 
-    // ACE uses big-endian Blowfish
-    let cipher: Blowfish<byteorder::BigEndian> = Blowfish::new_from_slice(key).expect("Invalid key length");
+    // ACE uses big-endian Blowfish (the default byte order)
+    let cipher: Blowfish = Blowfish::new_from_slice(key).expect("Invalid key length");
 
     let mut result = data.to_vec();
     let mut prev_block = [0u8; BLOCK_SIZE]; // Zero IV
@@ -72,7 +72,7 @@ mod tests {
     fn test_derive_key() {
         let key = derive_key("test");
         assert_eq!(key.len(), 16);
-        // SHA-1 of "test" starts with a9993e36...
+        // SHA-1 of "test" starts with a94a8fe5...
         assert_eq!(key[0], 0xa9);
     }
 

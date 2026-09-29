@@ -5,6 +5,8 @@ members = ["crates/unarc-rs", "crates/unarc-cli"]
 [workspace.package]
 version = "0.7.0"
 edition = "2021"
+# delharc 0.8 requires Rust 1.95
+rust-version = "1.95"
 authors = ["Mike Krüger <mkrueger@posteo.de>"]
 homepage = "https://github.com/mkrueger/unarc-rs"
 repository = "https://github.com/mkrueger/unarc-rs"

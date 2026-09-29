@@ -56,6 +56,8 @@ Add to your `Cargo.toml`:
 unarc-rs = "0.7"
 ```
 
+The minimum supported Rust version (MSRV) is 1.95.
+
 ### Cargo features
 
 | Feature | Default | Description |
@@ -132,26 +134,43 @@ if is_supported_archive(Path::new("file.arj")) {
 if let Some(format) = ArchiveFormat::from_path(Path::new("archive.zoo")) {
     println!("Format: {}", format.name()); // "ZOO"
 }
+
+// Detect from the file content (magic bytes), falling back to the extension
+let path = Path::new("DOWNLOAD.001");
+let mut file = std::fs::File::open(path)?;
+if let Some(format) = ArchiveFormat::detect(&mut file, Some(path))? {
+    let mut archive = format.open(file)?;
+    // ...
+}
 ```
+
+`open_path` picks the format from the file extension only. Use `detect` when the extension may be missing or wrong.
 
 ## API Overview
 
 ### `ArchiveFormat`
 
-- `open_path(path)` - Open archive from file path (auto-detects format)
-- `open(reader)` - Open archive from any `Read + Seek`
+- `open_path(path)` / `open_path_with_options(path, options)` - Open archive from file path (format from the extension)
+- `open(reader)` / `open_with_options(reader, options)` - Open archive from any `Read + Seek`
 - `open_multi_volume_zip(paths, options)` - Open multi-volume ZIP archive
 - `open_multi_volume_7z(paths, options)` - Open multi-volume 7z archive
-- `from_path(path)` - Detect format from path
-- `name()` / `extension()` / `extensions()` - Format metadata
+- `from_path(path)` - Detect format from the file extension
+- `detect_from_bytes(data)` - Detect format from the first bytes of a file (magic bytes)
+- `detect_from_reader(reader)` - Detect format from a `Read + Seek` without moving its position
+- `detect(reader, path)` - Detect from content, falling back to the extension of `path`
+- `name()` / `extension()` / `extensions()` / `preambles()` - Format metadata
+
+Free functions: `is_supported_archive(path)` and `supported_extensions()`.
 
 ### `UnifiedArchive`
 
 - `next_entry()` - Get next entry (returns `Option<ArchiveEntry>`)
 - `entries_iter()` - Iterator over all entries
 - `read(&entry)` - Read entry data into `Vec<u8>`
-- `read_to(&entry, &mut writer)` - Stream entry data to writer
+- `read_to(&entry, &mut writer)` - Write entry data to a writer
+- `read_with_options(&entry, &options)` / `read_to_with_options(...)` - Read with a different password or limits
 - `skip(&entry)` - Skip entry without reading
+- `entries()` - Collect all remaining entries into a `Vec`
 
 ### `ArchiveEntry`
 

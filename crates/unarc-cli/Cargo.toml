@@ -2,6 +2,7 @@
 name = "unarc-cli"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Universal Archive Extractor - CLI tool for extracting various archive formats"
 authors.workspace = true
 homepage.workspace = true
