@@ -1,6 +1,6 @@
 //! RAR archive support
 //!
-//! Uses the `rar` crate for parsing RAR5 archives.
+//! Uses the pure Rust `rars` crate (RAR 1.3 through RAR 7).
 
 pub mod password_verifier;
 pub mod rar_archive;

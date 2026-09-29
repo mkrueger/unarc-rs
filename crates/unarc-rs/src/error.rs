@@ -92,7 +92,7 @@ pub enum ArchiveError {
         format: String,
     },
 
-    /// External library error (e.g., from zip, unrar, sevenz-rust2)
+    /// External library error (e.g., from zip, rars, sevenz-rust2)
     #[error("{library} error: {message}")]
     ExternalLibrary {
         /// Name of the external library

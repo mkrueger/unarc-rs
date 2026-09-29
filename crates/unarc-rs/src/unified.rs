@@ -230,7 +230,7 @@ pub enum ArchiveFormat {
     Lha,
     /// ZIP archive format (.zip)
     Zip,
-    /// RAR archive format (.rar) - RAR5 only
+    /// RAR archive format (.rar) - RAR 1.3 through RAR 7
     Rar,
     /// 7z archive format (.7z)
     SevenZ,
@@ -480,8 +480,8 @@ impl ArchiveFormat {
             ArchiveFormat::Lha => Some(&[b"-lh", b"-lz"]),
             // ZIP: "PK\x03\x04" or "PK\x05\x06" (empty)
             ArchiveFormat::Zip => Some(&[b"PK\x03\x04", b"PK\x05\x06"]),
-            // RAR: "Rar!\x1A\x07"
-            ArchiveFormat::Rar => Some(&[b"Rar!\x1a\x07"]),
+            // RAR: "Rar!\x1A\x07" (RAR 1.5+) or "RE~^" (RAR 1.3/1.4)
+            ArchiveFormat::Rar => Some(&[b"Rar!\x1a\x07", b"RE~^"]),
             // 7z: "7z\xBC\xAF\x27\x1C"
             ArchiveFormat::SevenZ => Some(&[&[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]]),
             // TAR: "ustar" at offset 257
@@ -540,6 +540,11 @@ impl ArchiveFormat {
 
         // RAR: "Rar!\x1A\x07" (6 bytes for RAR4, 7 bytes for RAR5)
         if data.len() >= 6 && data.starts_with(b"Rar!\x1a\x07") {
+            return Some(ArchiveFormat::Rar);
+        }
+
+        // RAR 1.3/1.4: "RE~^"
+        if data.starts_with(b"RE~^") {
             return Some(ArchiveFormat::Rar);
         }
 
@@ -2094,6 +2099,7 @@ mod tests {
 
         // Test RAR detection
         assert_eq!(ArchiveFormat::detect_from_bytes(b"Rar!\x1a\x07\x00rest"), Some(ArchiveFormat::Rar));
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"RE~^rest"), Some(ArchiveFormat::Rar));
 
         // Test 7z detection
         assert_eq!(

@@ -13,7 +13,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | ------ | ---------- | ----------- | ---------- | ------------ |
 | **7z** | `.7z` | LZMA, LZMA2, etc. | AES-256 ✓ | ✓ |
 | **ZIP** | `.zip` | Deflate, legacy methods | ZipCrypto, AES ✓ | ✓ |
-| **RAR** | `.rar` | RAR4 & RAR5 | AES ✓ | — |
+| **RAR** | `.rar` | RAR 1.3 – RAR 7 | AES ✓ | — |
 | **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
 | **TAR** | `.tar` | Full support | — | — |
 | **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |
@@ -53,7 +53,20 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unarc-rs = "0.6"
+unarc-rs = "0.7"
+```
+
+### Cargo features
+
+| Feature | Default | Description |
+| ------- | ------- | ----------- |
+| `zstd` | ✓ | Zstandard-compressed ZIP entries. This is the only feature that needs a C compiler (`zstd-sys`). |
+
+With `default-features = false`, unarc-rs is pure Rust and builds for `wasm32-unknown-unknown`:
+
+```toml
+[dependencies]
+unarc-rs = { version = "0.7", default-features = false }
 ```
 
 ## Quick Start
@@ -195,7 +208,7 @@ Full support via the [zip](https://crates.io/crates/zip) crate with legacy compr
 
 ### RAR
 
-Full support for RAR4 and RAR5 via the [unrar](https://crates.io/crates/unrar) crate (uses native unrar library).
+Full support for RAR 1.3 through RAR 7 (including encrypted headers) via the pure Rust [rars](https://crates.io/crates/rars) crate. No C/C++ toolchain is required.
 
 ### LHA/LZH
 

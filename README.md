@@ -88,7 +88,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unarc-rs = "0.6"
+unarc-rs = "0.7"
 ```
 
 ```rust

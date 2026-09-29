@@ -2,107 +2,73 @@
 //!
 //! This module provides a `Send + Sync` password verifier that can be used with
 //! rayon for parallel password testing.
-//!
-//! Note: The unrar crate requires a file path, so this verifier stores the path
-//! and re-opens the archive for each verification attempt. This is less efficient
-//! than the ARC/ARJ verifiers but still enables parallel testing.
 
-use std::path::PathBuf;
 use std::sync::Arc;
+
+use super::rar_archive::{decode_members, parse_encrypted_headers, read_independent_member, RarFileHeader};
 
 /// A standalone password verifier for RAR archives.
 ///
 /// This struct holds all the data needed to verify a password.
 /// It is `Send + Sync` and can be safely used from multiple threads with rayon.
 ///
-/// Note: Since unrar requires a file path, each verification attempt opens the archive.
+/// A password is verified by decoding the entry, which lets the RAR integrity
+/// checks (CRC32 / BLAKE2 / password check values) reject wrong passwords.
 #[derive(Clone)]
 pub struct RarPasswordVerifier {
-    /// Path to the archive file
-    archive_path: Arc<PathBuf>,
-    /// Name of the encrypted file to test
-    file_name: String,
-    /// Expected CRC32 of the uncompressed data
-    expected_crc: u32,
-    /// Original (uncompressed) size
-    original_size: u64,
+    archive: Arc<rars::Archive>,
+    /// Raw archive bytes if the headers are encrypted; the header password is checked first
+    header_data: Option<Arc<Vec<u8>>>,
+    raw_names: Arc<Vec<Vec<u8>>>,
+    header: RarFileHeader,
 }
 
-// Arc<PathBuf> is Send + Sync, other fields are Copy or Clone+Send+Sync
-unsafe impl Send for RarPasswordVerifier {}
-unsafe impl Sync for RarPasswordVerifier {}
-
 impl RarPasswordVerifier {
-    /// Create a new password verifier.
-    ///
-    /// # Arguments
-    /// * `archive_path` - Path to the RAR archive
-    /// * `file_name` - Name of the encrypted file to test against
-    /// * `expected_crc` - The CRC32 from the header
-    /// * `original_size` - The uncompressed size
-    pub fn new(archive_path: PathBuf, file_name: String, expected_crc: u32, original_size: u64) -> Self {
+    pub(super) fn new(archive: Arc<rars::Archive>, header_data: Option<Arc<Vec<u8>>>, raw_names: Arc<Vec<Vec<u8>>>, header: RarFileHeader) -> Self {
         Self {
-            archive_path: Arc::new(archive_path),
-            file_name,
-            expected_crc,
-            original_size,
+            archive,
+            header_data,
+            raw_names,
+            header,
         }
     }
 
     /// Get the entry name this verifier was created for.
     pub fn entry_name(&self) -> &str {
-        &self.file_name
+        &self.header.name
     }
 
     /// Get the original (uncompressed) size.
     pub fn original_size(&self) -> u64 {
-        self.original_size
+        self.header.original_size
     }
 
     /// Verify if the given password is correct.
     ///
     /// Returns `true` if the password produces valid decompressed data
-    /// with matching CRC and size, `false` otherwise.
+    /// with matching checksum and size, `false` otherwise.
     pub fn verify(&self, password: &str) -> bool {
-        // Open archive with password
-        let archive = match unrar::Archive::with_password(&*self.archive_path, password).open_for_processing() {
-            Ok(a) => a,
+        let reparsed;
+        let archive = match &self.header_data {
+            Some(data) => match parse_encrypted_headers(data, password.as_bytes()) {
+                Ok(archive) => {
+                    reparsed = archive;
+                    &reparsed
+                }
+                Err(_) => return false,
+            },
+            None => &*self.archive,
+        };
+        let password = Some(password.as_bytes());
+        let data = match read_independent_member(archive, &self.header, password) {
+            Ok(Some(data)) => data,
+            Ok(None) => match decode_members(archive, &self.raw_names, &self.header, password, true) {
+                Ok(mut members) => members.remove(&self.header.index).unwrap_or_default(),
+                Err(_) => return false,
+            },
             Err(_) => return false,
         };
-
-        // Find and extract the specific file
-        let mut current = archive;
-        loop {
-            match current.read_header() {
-                Ok(Some(header_cursor)) => {
-                    let entry_name = header_cursor.entry().filename.to_string_lossy().to_string();
-
-                    if entry_name == self.file_name {
-                        // Try to extract this file
-                        match header_cursor.read() {
-                            Ok((data, _)) => {
-                                // Check size first (fast rejection)
-                                if data.len() != self.original_size as usize {
-                                    return false;
-                                }
-                                // Check CRC32
-                                let crc = crc32fast::hash(&data);
-                                return crc == self.expected_crc;
-                            }
-                            Err(_) => return false,
-                        }
-                    } else {
-                        // Skip this file
-                        match header_cursor.skip() {
-                            Ok(next) => current = next,
-                            Err(_) => return false,
-                        }
-                    }
-                }
-                Ok(None) => return false, // File not found
-                Err(_) => return false,
-            }
-        }
+        data.len() as u64 == self.header.original_size
     }
 }
 

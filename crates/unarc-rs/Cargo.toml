@@ -17,8 +17,19 @@ chrono = "0.4.45"
 delharc = "0.8.0"
 salzweg = "0.1.4"
 bitstream-io = "4.10.0"
-zip = { version = "8.6.0", features = ["legacy-zip", "aes-crypto"] }
-unrar = "0.5.8"
+# zip's default features except "zstd", which builds the C zstd library (see the `zstd` feature)
+zip = { version = "8.6.0", default-features = false, features = [
+    "legacy-zip",
+    "aes-crypto",
+    "bzip2",
+    "deflate",
+    "deflate64",
+    "lzma",
+    "ppmd",
+    "time",
+    "xz",
+] }
+rars = "0.9.4"
 sevenz-rust2 = "0.22.2"
 thiserror = "2.0"
 tar = "0.4"
@@ -32,4 +43,6 @@ sha-1 = "0.10"
 pretty_assertions = "1.4.1"
 
 [features]
-default = []
+default = ["zstd"]
+# Zstandard compressed ZIP entries. Requires a C compiler (zstd-sys); disable for a pure Rust build, e.g. for wasm32.
+zstd = ["zip/zstd"]
