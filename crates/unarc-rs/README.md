@@ -255,7 +255,9 @@ Full support via the excellent [delharc](https://crates.io/crates/delharc) crate
 
 ### ACE
 
-ACE archive support with LZ77+Huffman decompression. Supports both ACE 1.0 (LZ77 mode) and ACE 2.0 (Blocked mode). Blowfish encryption is supported (password required). Multi-volume archives are not supported.
+ACE archive support with LZ77+Huffman decompression. Supports both ACE 1.0 (LZ77 mode) and ACE 2.0 (Blocked mode). Blowfish encryption is supported (password required).
+
+**Multi-volume support:** Volume sets (`.ace`, `.c00`, `.c01`, …) are supported through a `VolumeProvider` set in `ArchiveOptions`.
 
 See <https://github.com/droe/acefile> for format documentation.
 
@@ -267,7 +269,9 @@ ARC/PAK can be password-decrypted (simple XOR), but the format has no reliable e
 
 ### ARJ
 
-Popular in the BBS scene in the 90s. Supports Garble and GOST40 encryption (password required). GOST-256 (ARJCRYPT) is detected but not supported. Multi-volume archives are not supported.
+Popular in the BBS scene in the 90s. Supports Garble and GOST40 encryption (password required). GOST-256 (ARJCRYPT) is detected but not supported.
+
+**Multi-volume support:** Volume sets (`.arj`, `.a01`, `.a02`, …) are supported through a `VolumeProvider` set in `ArchiveOptions`.
 
 ### UC2
 

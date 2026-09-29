@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The library and the CLI are now `#![forbid(unsafe_code)]`.
   - Removed the manual `unsafe impl Send/Sync` for the password verifiers. They are `Send + Sync` automatically, and a compile-time assertion now checks this.
   - ARJ GOST40 decryption no longer reinterprets `u32` arrays as bytes through raw pointers. It now uses explicit little-endian conversion, which also makes it correct on big-endian targets.
-- README: documented the `detect*` functions and the `*_with_options` variants, and the crate description now lists ACE, JAR, ICE and Pack-Ice.
+- README: ACE and ARJ multi-volume support is now documented (the format notes wrongly said it was unsupported). Also documented the `detect*` functions and the `*_with_options` variants, and the crate description now lists ACE, JAR, ICE and Pack-Ice.
 
 ### Fixed
 

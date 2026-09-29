@@ -320,8 +320,8 @@ impl Gost40 {
 fn words_to_bytes<const W: usize, const B: usize>(words: &[u32; W]) -> [u8; B] {
     const { assert!(W * 4 == B) };
     let mut bytes = [0u8; B];
-    for (dst, word) in bytes.chunks_exact_mut(4).zip(words) {
-        dst.copy_from_slice(&word.to_le_bytes());
+    for (dst, word) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(words) {
+        *dst = word.to_le_bytes();
     }
     bytes
 }
@@ -329,8 +329,8 @@ fn words_to_bytes<const W: usize, const B: usize>(words: &[u32; W]) -> [u8; B] {
 fn bytes_to_words<const B: usize, const W: usize>(bytes: &[u8; B]) -> [u32; W] {
     const { assert!(W * 4 == B) };
     let mut words = [0u32; W];
-    for (word, src) in words.iter_mut().zip(bytes.chunks_exact(4)) {
-        *word = u32::from_le_bytes([src[0], src[1], src[2], src[3]]);
+    for (word, src) in words.iter_mut().zip(bytes.as_chunks::<4>().0) {
+        *word = u32::from_le_bytes(*src);
     }
     words
 }
