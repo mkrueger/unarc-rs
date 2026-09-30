@@ -11,8 +11,8 @@ license.workspace = true
 exclude = ["src/**/exe/**", "src/**/disasm/**"]
 
 [dependencies]
-log = "0.4.33"
-crc32fast = "1.5.0"
+log = "0.4.34"
+crc32fast = "1.5.2"
 crc16 = "0.4.0"
 chrono = "0.4.45"
 delharc = "0.8.0"
@@ -31,7 +31,7 @@ zip = { version = "8.6.0", default-features = false, features = [
     "xz",
 ] }
 rars = "0.9.4"
-sevenz-rust2 = "0.22.2"
+sevenz-rust2 = "0.23.0"
 thiserror = "2.0"
 tar = "0.4"
 flate2 = "1.1"

@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `open_with_format` now shares the options code path.
 - The CLI opts out of the default entry size limit.
 - Replaced the deprecated `sha-1` crate with `sha1` and dropped the direct `byteorder` dependency.
+- Bumped dependencies: `sevenz-rust2` 0.23, `clap` 4.6, `rayon` 1.12, `log` 0.4.34, `crc32fast` 1.5.2.
 - The library and the CLI are now `#![forbid(unsafe_code)]`.
   - Removed the manual `unsafe impl Send/Sync` for the password verifiers. They are `Send + Sync` automatically, and a compile-time assertion now checks this.
   - ARJ GOST40 decryption no longer reinterprets `u32` arrays as bytes through raw pointers. It now uses explicit little-endian conversion, which also makes it correct on big-endian targets.
