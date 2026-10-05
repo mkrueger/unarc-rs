@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `ArchiveFormat::detect()` returns `Tgz`, `Tbz` or `TarZ` when gzip, bzip2 or
+  compress content has a matching compressed-TAR name (`.tgz`, `.tar.gz`, `.tbz`,
+  `.tbz2`, `.tar.bz2`, `.tar.Z`). Previously such archives were detected as a single
+  compressed file, including in the `unarc` command-line tool.
+
 ## [0.7.2] - 2026-10-05
 
 ### Fixed

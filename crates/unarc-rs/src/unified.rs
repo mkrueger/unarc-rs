@@ -737,6 +737,10 @@ impl ArchiveFormat {
     /// 1. First tries to detect from file content (magic bytes)
     /// 2. Falls back to extension-based detection if content detection fails
     ///
+    /// Compressed TAR archives start with plain gzip, bzip2 or compress magic bytes.
+    /// When the path names the matching TAR variant (`.tgz`, `.tar.gz`, `.tbz`,
+    /// `.tbz2`, `.tar.bz2`, `.tar.Z`), that variant is returned instead.
+    ///
     /// # Example
     /// ```no_run
     /// use std::path::Path;
@@ -749,17 +753,14 @@ impl ArchiveFormat {
     /// let format = ArchiveFormat::detect(&mut file, Some(path)).unwrap();
     /// ```
     pub fn detect<R: Read + Seek>(reader: &mut R, path: Option<&Path>) -> std::io::Result<Option<Self>> {
-        // First try content-based detection
-        if let Some(format) = Self::detect_from_reader(reader)? {
-            return Ok(Some(format));
+        let named = path.and_then(Self::from_path);
+        match (Self::detect_from_reader(reader)?, named) {
+            (Some(ArchiveFormat::Gz), Some(ArchiveFormat::Tgz)) => Ok(Some(ArchiveFormat::Tgz)),
+            (Some(ArchiveFormat::Bz2), Some(ArchiveFormat::Tbz)) => Ok(Some(ArchiveFormat::Tbz)),
+            (Some(ArchiveFormat::Z), Some(ArchiveFormat::TarZ)) => Ok(Some(ArchiveFormat::TarZ)),
+            (Some(format), _) => Ok(Some(format)),
+            (None, named) => Ok(named),
         }
-
-        // Fall back to extension-based detection
-        if let Some(p) = path {
-            return Ok(Self::from_path(p));
-        }
-
-        Ok(None)
     }
 
     /// Open an archive with this format
@@ -2182,6 +2183,30 @@ mod tests {
         // Test .tar.gz still detects as Tgz (tar archive)
         assert_eq!(ArchiveFormat::from_path(Path::new("file.tar.gz")), Some(ArchiveFormat::Tgz));
         assert_eq!(ArchiveFormat::from_path(Path::new("file.tar.bz2")), Some(ArchiveFormat::Tbz));
+    }
+
+    #[test]
+    fn test_detect_prefers_compressed_tar_names_and_falls_back_to_extension() {
+        use std::io::Cursor;
+        let detect = |data: &[u8], name: &str| ArchiveFormat::detect(&mut Cursor::new(data), Some(Path::new(name))).unwrap();
+        let gz = [0x1F, 0x8B, 0x08, 0x00];
+        let compress = [0x1F, 0x9D, 0x90, 0x00];
+
+        assert_eq!(detect(&gz, "file.tgz"), Some(ArchiveFormat::Tgz));
+        assert_eq!(detect(&gz, "FILE.TAR.GZ"), Some(ArchiveFormat::Tgz));
+        assert_eq!(detect(b"BZh9data", "file.tbz2"), Some(ArchiveFormat::Tbz));
+        assert_eq!(detect(b"BZh9data", "file.tar.bz2"), Some(ArchiveFormat::Tbz));
+        assert_eq!(detect(&compress, "file.tar.Z"), Some(ArchiveFormat::TarZ));
+
+        // A plain compressed file and a misleading name keep the content-detected format.
+        assert_eq!(detect(&gz, "file.gz"), Some(ArchiveFormat::Gz));
+        assert_eq!(detect(&gz, "file.zip"), Some(ArchiveFormat::Gz));
+        assert_eq!(detect(b"PK\x03\x04rest", "file.tgz"), Some(ArchiveFormat::Zip));
+
+        // Formats without magic bytes are recognised by their extension.
+        assert_eq!(detect(b"no magic", "file.ice"), Some(ArchiveFormat::Ice));
+        assert_eq!(detect(b"no magic", "file.txt"), None);
+        assert_eq!(ArchiveFormat::detect(&mut Cursor::new(&gz), None).unwrap(), Some(ArchiveFormat::Gz));
     }
 
     #[test]
