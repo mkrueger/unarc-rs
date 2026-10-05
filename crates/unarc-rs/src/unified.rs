@@ -992,7 +992,43 @@ impl VolumeProvider for FileVolumeProvider {
     }
 }
 
-/// Unified archive entry containing metadata about a file in an archive
+/// The type of an archive member, when identifiable from the format's metadata.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ArchiveEntryKind {
+    /// Regular file or a single-file compressed stream.
+    File,
+    /// Directory.
+    Directory,
+    /// Symbolic link (including Windows junctions).
+    SymbolicLink,
+    /// Hard link to another archive member.
+    HardLink,
+    /// Device, FIFO, socket, or another explicitly non-file entry.
+    Special,
+    /// An entry whose recorded type cannot be interpreted.
+    Unknown,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct EntryMetadata {
+    pub kind: ArchiveEntryKind,
+    pub link_target: Option<String>,
+}
+
+impl ArchiveEntryKind {
+    pub(crate) fn from_unix_mode(mode: u32) -> Option<Self> {
+        match mode & 0o170000 {
+            0 => None,
+            0o100000 => Some(Self::File),
+            0o040000 => Some(Self::Directory),
+            0o120000 => Some(Self::SymbolicLink),
+            0o010000 | 0o020000 | 0o060000 | 0o140000 => Some(Self::Special),
+            _ => Some(Self::Unknown),
+        }
+    }
+}
+
+/// Unified archive entry containing metadata about a member in an archive
 #[derive(Debug, Clone)]
 pub struct ArchiveEntry {
     /// File name (may include path)
@@ -1036,10 +1072,10 @@ enum EntryIndex {
     Ha(HaHeader),
     Jar(JarEntry),
     Uc2(Uc2Header),
-    Lha(LhaFileHeader),
-    Zip(ZipFileHeader),
-    Rar(RarFileHeader),
-    SevenZ(SevenZFileHeader),
+    Lha(LhaFileHeader, EntryMetadata),
+    Zip(ZipFileHeader, EntryMetadata),
+    Rar(RarFileHeader, EntryMetadata),
+    SevenZ(SevenZFileHeader, EntryMetadata),
     Tar(TarFileHeader),
     /// TGZ uses the same header as TAR
     Tgz(TarFileHeader),
@@ -1099,19 +1135,83 @@ impl ArchiveEntry {
         self.compression_method.to_lowercase().contains("stored") || self.compression_method.to_lowercase().contains("unpacked")
     }
 
-    /// Returns true if this entry describes a directory rather than a file
-    pub fn is_directory(&self) -> bool {
-        match &self.index {
-            EntryIndex::Arj(header) => header.file_type == ArjFileType::Directory,
-            EntryIndex::Jar(header) => header.is_directory,
-            EntryIndex::Tar(header) | EntryIndex::Tgz(header) | EntryIndex::Tbz(header) | EntryIndex::TarZ(header) => {
-                header.entry_type == crate::tar::TarEntryType::Directory
+    /// Returns the entry type, using format metadata rather than link payloads.
+    pub fn kind(&self) -> ArchiveEntryKind {
+        use ArchiveEntryKind::{Directory, File, HardLink, Special, SymbolicLink, Unknown};
+        let dos_kind = |attributes: u32| {
+            if attributes & 0x10 != 0 {
+                Directory
+            } else if attributes & 0x08 != 0 {
+                Special
+            } else {
+                File
             }
-            EntryIndex::Zip(header) => header.is_directory,
-            EntryIndex::Rar(header) => header.is_directory,
-            EntryIndex::SevenZ(header) => header.is_directory,
-            _ => self.name.ends_with('/') || self.name.ends_with('\\'),
+        };
+        match &self.index {
+            EntryIndex::Ace(header) => dos_kind(header.attributes),
+            EntryIndex::Arj(header) => match header.file_type {
+                ArjFileType::Directory => Directory,
+                ArjFileType::Binary | ArjFileType::Text7Bit => {
+                    if header.host_os == crate::arj::main_header::HostOS::Unix {
+                        // ARJ encodes its own type bits, not POSIX st_mode.
+                        match header.file_access_mode & 0xf000 {
+                            0 | 0x1000 => File,
+                            0x2000 => Directory,
+                            0x4000 => Special,
+                            _ => Unknown,
+                        }
+                    } else {
+                        File
+                    }
+                }
+                ArjFileType::Unknown(_) => Unknown,
+                _ => Special,
+            },
+            EntryIndex::Ha(header) => match header.method {
+                crate::ha::header::CompressionMethod::Dir => Directory,
+                crate::ha::header::CompressionMethod::Special => Special,
+                _ => File,
+            },
+            EntryIndex::Hyp(header) => dos_kind(u32::from(header.attribute)),
+            EntryIndex::Sqz(header) => dos_kind(u32::from(header.attribute)),
+            EntryIndex::Uc2(header) if header.attributes.is_directory() => Directory,
+            EntryIndex::Jar(header) => dos_kind(u32::from(header.attributes)),
+            EntryIndex::Tar(header) | EntryIndex::Tgz(header) | EntryIndex::Tbz(header) | EntryIndex::TarZ(header) => match header.entry_type {
+                crate::tar::TarEntryType::Regular | crate::tar::TarEntryType::Continuous => File,
+                crate::tar::TarEntryType::Directory => Directory,
+                crate::tar::TarEntryType::Symlink => SymbolicLink,
+                crate::tar::TarEntryType::HardLink => HardLink,
+                crate::tar::TarEntryType::Char | crate::tar::TarEntryType::Block | crate::tar::TarEntryType::Fifo => Special,
+                crate::tar::TarEntryType::Other(b'S') => File,
+                crate::tar::TarEntryType::Other(_) => Unknown,
+            },
+            EntryIndex::Lha(_, metadata) | EntryIndex::Zip(_, metadata) | EntryIndex::Rar(_, metadata) | EntryIndex::SevenZ(_, metadata) => metadata.kind,
+            _ if self.name.ends_with('/') || self.name.ends_with('\\') => Directory,
+            _ => File,
         }
+    }
+
+    /// Returns the recorded link destination, when available and representable as UTF-8.
+    ///
+    /// This is archive metadata, not a validated or resolved filesystem path.
+    /// ZIP/7z targets are stored in the payload; unavailable, encrypted, invalid UTF-8,
+    /// or oversized targets return `None` without changing the entry's kind.
+    pub fn link_target(&self) -> Option<&str> {
+        if !matches!(self.kind(), ArchiveEntryKind::SymbolicLink | ArchiveEntryKind::HardLink) {
+            return None;
+        }
+        match &self.index {
+            EntryIndex::Tar(header) | EntryIndex::Tgz(header) | EntryIndex::Tbz(header) | EntryIndex::TarZ(header) => header.link_name.as_deref(),
+            EntryIndex::Lha(_, metadata) | EntryIndex::Zip(_, metadata) | EntryIndex::Rar(_, metadata) | EntryIndex::SevenZ(_, metadata) => {
+                metadata.link_target.as_deref()
+            }
+            _ => None,
+        }
+    }
+
+    /// Returns true if this entry describes a directory rather than a file.
+    pub fn is_directory(&self) -> bool {
+        self.kind() == ArchiveEntryKind::Directory
     }
 
     /// Returns the encryption method used for this entry
@@ -1620,7 +1720,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         modified_time: header.date_time,
                         crc: header.crc16 as u64,
                         encryption: EncryptionMethod::None,
-                        index: EntryIndex::Lha(header),
+                        index: EntryIndex::Lha(header, archive.entry_metadata()),
                     }))
                 } else {
                     Ok(None)
@@ -1641,7 +1741,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         modified_time: header.date_time,
                         crc: header.crc32 as u64,
                         encryption,
-                        index: EntryIndex::Zip(header),
+                        index: EntryIndex::Zip(header.clone(), archive.entry_metadata(&header, &self.options)?),
                     }))
                 } else {
                     Ok(None)
@@ -1662,7 +1762,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         modified_time: header.date_time,
                         crc: header.crc32 as u64,
                         encryption,
-                        index: EntryIndex::Rar(header),
+                        index: EntryIndex::Rar(header.clone(), archive.entry_metadata(&header)),
                     }))
                 } else {
                     Ok(None)
@@ -1684,7 +1784,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         modified_time: header.date_time,
                         crc: header.crc32 as u64,
                         encryption,
-                        index: EntryIndex::SevenZ(header),
+                        index: EntryIndex::SevenZ(header.clone(), archive.entry_metadata(&header, &self.options)),
                     }))
                 } else {
                     Ok(None)
@@ -1816,10 +1916,12 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Ha(archive), EntryIndex::Ha(header)) => archive.read(header),
             (ArchiveInner::Jar(archive), EntryIndex::Jar(header)) => archive.read_entry(header),
             (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.read(header),
-            (ArchiveInner::Lha(archive), EntryIndex::Lha(header)) => archive.read(header),
-            (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.read(header),
-            (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.read(header),
-            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.read(header),
+            (ArchiveInner::Lha(archive), EntryIndex::Lha(header, _)) => archive.read(header),
+            (ArchiveInner::Zip(archive), EntryIndex::Zip(header, _)) => archive.read(header),
+            (ArchiveInner::Rar(archive), EntryIndex::Rar(header, _)) => archive.read(header),
+            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header, _)) => {
+                archive.read_with_password_and_limit(header, self.options.password.clone(), limit)
+            }
             (ArchiveInner::Tar(archive), EntryIndex::Tar(header)) => archive.read(header),
             (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.read(header),
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.read(header),
@@ -1891,9 +1993,9 @@ impl<T: Read + Seek> UnifiedArchive<T> {
         match (&mut self.inner, &entry.index) {
             (ArchiveInner::Ace(archive), EntryIndex::Ace(header)) => archive.read_with_password(header, password),
             (ArchiveInner::Arc(archive), EntryIndex::Arc(header)) => archive.read_with_password(header, password),
-            (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.read_with_password(header, password.as_ref().map(|s| s.as_bytes())),
-            (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.read_with_password(header, password),
-            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.read_with_password(header, password),
+            (ArchiveInner::Zip(archive), EntryIndex::Zip(header, _)) => archive.read_with_password(header, password.as_ref().map(|s| s.as_bytes())),
+            (ArchiveInner::Rar(archive), EntryIndex::Rar(header, _)) => archive.read_with_password(header, password),
+            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header, _)) => archive.read_with_password_and_limit(header, password, limit),
             (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => archive.read_with_password(header, password),
             // Other formats don't support encryption, use normal read
             _ => self.read_inner(entry, limit),
@@ -1930,10 +2032,10 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Ha(archive), EntryIndex::Ha(header)) => archive.skip(header),
             (ArchiveInner::Jar(_), EntryIndex::Jar(_)) => Ok(()),
             (ArchiveInner::Uc2(archive), EntryIndex::Uc2(header)) => archive.skip(header),
-            (ArchiveInner::Lha(archive), EntryIndex::Lha(header)) => archive.skip(header),
-            (ArchiveInner::Zip(archive), EntryIndex::Zip(header)) => archive.skip(header),
-            (ArchiveInner::Rar(archive), EntryIndex::Rar(header)) => archive.skip(header),
-            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header)) => archive.skip(header),
+            (ArchiveInner::Lha(archive), EntryIndex::Lha(header, _)) => archive.skip(header),
+            (ArchiveInner::Zip(archive), EntryIndex::Zip(header, _)) => archive.skip(header),
+            (ArchiveInner::Rar(archive), EntryIndex::Rar(header, _)) => archive.skip(header),
+            (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header, _)) => archive.skip(header),
             (ArchiveInner::Tar(archive), EntryIndex::Tar(header)) => archive.skip(header),
             (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.skip(header),
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.skip(header),

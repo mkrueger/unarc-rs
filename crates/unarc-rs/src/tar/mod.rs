@@ -147,7 +147,7 @@ impl<T: Read + Seek> TarArchive<T> {
                 let mtime = header.mtime().unwrap_or(0);
                 let mode = header.mode().unwrap_or(0);
                 let entry_type = header.entry_type().into();
-                let link_name = header.link_name().ok().flatten().map(|p| p.to_string_lossy().to_string());
+                let link_name = entry.link_name().ok().flatten().and_then(|p| p.to_str().map(str::to_owned));
 
                 let raw_header_position = entry.raw_header_position();
                 // Data starts after the 512-byte header

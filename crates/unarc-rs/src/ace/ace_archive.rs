@@ -365,6 +365,11 @@ impl<R: Read + Seek> AceArchive<R> {
             return Err(ArchiveError::crc_mismatch(&header.filename, header.crc32, crc));
         }
 
+        if header.compression_type == CompressionType::Stored {
+            self.lz77.set_dictionary_size(header.dictionary_size());
+            self.lz77.register_data(&decompressed);
+        }
+
         Ok(decompressed)
     }
 
@@ -452,9 +457,7 @@ impl<R: Read + Seek> AceArchive<R> {
         let decompressed = match compression_type {
             CompressionType::Stored => all_compressed,
             CompressionType::Lz77 | CompressionType::Blocked => {
-                if !self.main_header.is_solid() {
-                    self.lz77.reset();
-                }
+                self.lz77.reset();
                 self.lz77.set_dictionary_size(dict_size);
                 let cursor = std::io::Cursor::new(&all_compressed);
                 let mut bs = BitStream::new(cursor, all_compressed.len());
@@ -477,6 +480,11 @@ impl<R: Read + Seek> AceArchive<R> {
         let crc = !crc32fast::hash(&decompressed);
         if crc != expected_crc {
             return Err(ArchiveError::crc_mismatch(&filename, expected_crc, crc));
+        }
+
+        if compression_type == CompressionType::Stored {
+            self.lz77.set_dictionary_size(dict_size);
+            self.lz77.register_data(&decompressed);
         }
 
         Ok(decompressed)
@@ -614,10 +622,8 @@ impl<R: Read + Seek> AceArchive<R> {
 
     /// Decompress LZ77 data
     fn decompress_lz77(&mut self, header: &FileHeader, data: &[u8]) -> Result<Vec<u8>> {
-        // Reset decoder for non-solid or first file
-        if !self.main_header.is_solid() {
-            self.lz77.reset();
-        }
+        // Trees and distance history are per-member; the dictionary survives this reset.
+        self.lz77.reset();
 
         // Set dictionary size
         self.lz77.set_dictionary_size(header.dictionary_size());
@@ -686,5 +692,65 @@ impl<R: Read + Seek> StreamLen for R {
         let end = self.seek(SeekFrom::End(0))?;
         self.seek(SeekFrom::Start(current))?;
         Ok(end)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn stored_volume(volume: u8, file_flags: u16, data: &[u8]) -> Vec<u8> {
+        let append_header = |output: &mut Vec<u8>, header: &[u8]| {
+            output.extend_from_slice(&ace_crc16(header).to_le_bytes());
+            output.extend_from_slice(&(header.len() as u16).to_le_bytes());
+            output.extend_from_slice(header);
+        };
+        let mut bytes = Vec::new();
+        let mut main = vec![0];
+        main.extend_from_slice(&(header_flags::SOLID_MAIN | header_flags::MULTIVOLUME).to_le_bytes());
+        main.extend_from_slice(ACE_MAGIC);
+        main.extend_from_slice(&[10, 10, 0, volume]);
+        main.extend_from_slice(&[0; 12]);
+        append_header(&mut bytes, &main);
+        let mut file = vec![1];
+        file.extend_from_slice(&file_flags.to_le_bytes());
+        file.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        file.extend_from_slice(&2u32.to_le_bytes());
+        file.extend_from_slice(&[0; 8]);
+        file.extend_from_slice(&(!crc32fast::hash(b"AB")).to_le_bytes());
+        file.extend_from_slice(&[0; 6]);
+        file.extend_from_slice(&9u16.to_le_bytes());
+        file.extend_from_slice(b"first.txt");
+        append_header(&mut bytes, &file);
+        bytes.extend_from_slice(data);
+        bytes
+    }
+
+    struct Continuation(Vec<u8>);
+
+    impl VolumeProvider for Continuation {
+        fn open_volume(&self, volume_number: u32) -> Option<Box<dyn Read + Send>> {
+            (volume_number == 1).then(|| Box::new(Cursor::new(self.0.clone())) as Box<dyn Read + Send>)
+        }
+    }
+
+    #[test]
+    fn stored_multi_volume_read_registers_the_combined_dictionary() {
+        let first = stored_volume(0, header_flags::ADDSIZE | header_flags::CONTINUED_NEXT, b"A");
+        let continuation = stored_volume(1, header_flags::ADDSIZE | header_flags::CONTINUED_PREV, b"B");
+        let mut archive = AceArchive::new(Cursor::new(first)).unwrap();
+        archive.set_volume_provider(Arc::new(Continuation(continuation)));
+        assert!(archive.is_solid());
+        let mut header = archive.get_next_entry().unwrap().unwrap();
+        assert_eq!(archive.read(&header).unwrap(), b"AB");
+
+        // An original single-symbol LZ77 stream copies two bytes at distance one.
+        let packed = [
+            0x3f, 0x12, 0x01, 0x82, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfc, 0xff, 0xff, 0xff, 0x00, 0x24, 0x02, 0x00, 0x00, 0x00, 0x80, 0x00,
+        ];
+        header.compression_type = CompressionType::Lz77;
+        assert_eq!(archive.decompress_lz77(&header, &packed).unwrap(), b"BB");
     }
 }

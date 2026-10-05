@@ -118,6 +118,69 @@ while let Some(entry) = archive.next_entry()? {
 }
 ```
 
+### Entry types and links
+
+`ArchiveEntry::kind()` returns `ArchiveEntryKind::{File, Directory, SymbolicLink,
+HardLink, Special, Unknown}`. `is_directory()` uses this classification; names
+are unchanged. `link_target()` returns `Option<&str>` and never resolves or
+validates the destination. Consumers extracting only regular files should skip
+other kinds explicitly:
+
+```rust
+use unarc_rs::{ArchiveEntryKind, unified::ArchiveFormat};
+
+let mut archive = ArchiveFormat::open_path("archive.tar")?;
+while let Some(entry) = archive.next_entry()? {
+    if entry.kind() != ArchiveEntryKind::File {
+        archive.skip(&entry)?;
+        continue;
+    }
+    let data = archive.read(&entry)?;
+    // ... process regular-file data
+}
+```
+
+TAR and compressed TAR expose symbolic/hard links, device/FIFO types, and extended
+link names. ZIP and 7z use Unix file-type attributes; RAR uses Unix modes and RAR5
+redirections (Windows junctions are symbolic links, file copies are regular
+files). LHA uses Unix permissions and the encoded `name|target` destination.
+ACE, ARJ, HA, HYP, JAR, SQZ and UC2 use their available directory/special flags.
+Formats without a type field retain their regular-file/name-suffix fallback.
+An unrecognized explicit type is `Unknown`, not a regular file.
+
+ZIP/7z link targets require decoding the link payload while listing. Targets are
+limited to 64 KiB and the configured entry/total limits. Missing passwords,
+decoding failures or non-UTF-8 targets yield `None` without hiding the link kind.
+RAR 1.5–4.x Unix symlinks are identified, but their payload targets are not
+decoded during listing. 7z Windows reparse points without Unix type information
+are `Unknown`; hard-link destinations are not exposed by the 7z backend.
+HA special entries lack enough interpreted metadata to distinguish symlinks
+from devices/FIFOs/sockets; ARJ's Unix-special type likewise combines those kinds.
+Listing does not create or follow links.
+
+### Size-limit boundaries
+
+`ArchiveOptions::with_max_entry_size` and `with_max_total_size` reject oversized
+recorded sizes before entry decoding. GZ/BZ2/Z streams and 7z entry output are
+also bounded while decoding; compressed TAR is bounded while opening.
+ZIP output is bounded by its central-directory size.
+
+These are decompressed-output limits, **not a process memory/CPU budget**.
+ACE, ARC, ARJ, ZOO, SQ, SQZ, HA, HYP, JAR, UC2 and LHA may allocate/decode their
+output before the unified API checks its actual size. RAR independent reads and
+solid/multi-volume caches can also allocate other members before that check.
+The 7z decoder still allocates its own dictionaries and may decode earlier
+solid members, though those members' output is discarded rather than buffered.
+Input archives, headers, compressed buffers, and caches are not covered by the
+total-output limit. Direct format-specific APIs do not inherit unified options.
+
+ACE `skip()` only advances over metadata/data; it does not reconstruct a solid
+dictionary. Reading a later solid member requires decoding its predecessors in
+order (including stored members). Reopen and replay predecessors after skipping
+them or seeking backwards. `AceArchive::is_solid()` recognizes the canonical
+main-header solid flag; Huffman trees and distance history reset per member,
+while previously decoded dictionary bytes remain available.
+
 ## Building
 
 ```bash

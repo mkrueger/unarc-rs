@@ -5,6 +5,37 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-10-05
+
+### Fixed
+
+- ACE solid archives are identified by the standard main-header flag `0x8000`.
+- ACE stored members now populate the LZ77 dictionary, including stored members
+  split across volumes, so subsequent compressed members can reference their bytes.
+- ACE member reads reset Huffman trees and distance history for every compressed
+  member while retaining dictionary data across members.
+- Added self-authored synthetic regressions for canonical solid flags, stored
+  predecessors, per-member tree resets and unchanged non-solid reads.
+
+## [0.7.1] - 2026-10-05
+
+### Added
+
+- Unified `ArchiveEntryKind`, `ArchiveEntry::kind()` and `ArchiveEntry::link_target()`.
+  TAR (including compressed TAR), ZIP Unix modes, RAR Unix modes/RAR5 redirections,
+  7z Unix attributes, and LHA Unix permissions distinguish links and special entries.
+  Legacy directory and special-entry flags are used where available.
+- Regression tests for links, devices/FIFOs, unknown entry types, extended TAR link
+  names, and unchanged regular-file reads.
+
+### Fixed
+
+- TAR link targets now include GNU/PAX extended link names rather than only the
+  fixed-size header field.
+- 7z unified size limits are propagated into the entry output reader. Solid
+  predecessors are drained without collecting their contents, and reads identify
+  entries by index rather than by possibly duplicated names.
+
 ## [0.7.0] - 2026-09-30
 
 ### Breaking changes
@@ -59,5 +90,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.3] - 2026-09-05
 
+[0.7.2]: https://github.com/mkrueger/unarc-rs/compare/v0.7.1...v0.7.2
+[0.7.1]: https://github.com/mkrueger/unarc-rs/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/mkrueger/unarc-rs/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/mkrueger/unarc-rs/releases/tag/v0.6.3

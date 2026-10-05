@@ -164,7 +164,7 @@ impl MainHeader {
 
     /// Check if archive is solid
     pub fn is_solid(&self) -> bool {
-        self.header_flags & header_flags::SOLID != 0
+        self.header_flags & header_flags::SOLID_MAIN != 0
     }
 
     /// Check if archive is password protected

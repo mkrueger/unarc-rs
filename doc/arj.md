@@ -127,6 +127,14 @@ Extended headers follow the main/local header with the same structure:
 | 10 | Windows 95 |
 | 11 | Windows 32-bit |
 
+For Unix entries, the access-mode field uses ARJ's own type bits, not POSIX
+`st_mode`: `0x1000` means regular file, `0x2000` means directory, and `0x4000`
+means a Unix special entry (links, pipes, etc.). The low 12 bits contain Unix
+permissions. The unified API classifies the combined Unix-special type as
+`ArchiveEntryKind::Special`; it cannot infer a link destination from this field.
+These values follow the `FATTR_DT_*` definitions in the
+[ARJ reference implementation](https://sources.debian.org/src/arj/3.10.22-29/).
+
 ## File Types
 
 | Value | Type |

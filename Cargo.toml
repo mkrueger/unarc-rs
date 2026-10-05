@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/unarc-rs", "crates/unarc-cli"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.7.2"
 edition = "2021"
 # delharc 0.8 requires Rust 1.95
 rust-version = "1.95"

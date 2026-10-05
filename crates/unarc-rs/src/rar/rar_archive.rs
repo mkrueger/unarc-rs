@@ -52,6 +52,7 @@ pub struct RarArchive<T: Read + Seek> {
     raw_names: Vec<Vec<u8>>,
     /// RAR5 link/copy redirections (same order as `entries`)
     redirections: Vec<Option<rars::rar50::FileRedirection>>,
+    metadata: Vec<crate::unified::EntryMetadata>,
     entries: Vec<RarFileHeader>,
     current_index: usize,
     /// Password for encrypted entries (and encrypted headers)
@@ -132,6 +133,7 @@ impl<T: Read + Seek> RarArchive<T> {
             state,
             raw_names: Vec::new(),
             redirections: Vec::new(),
+            metadata: Vec::new(),
             entries: Vec::new(),
             current_index: 0,
             password: None,
@@ -263,6 +265,7 @@ impl<T: Read + Seek> RarArchive<T> {
 
         self.raw_names.clear();
         self.redirections.clear();
+        self.metadata.clear();
         self.entries.clear();
         for volume in volumes.iter() {
             let rar50_files: Vec<&rars::rar50::FileHeader> = volume.as_rar50().map(|a| a.files().collect()).unwrap_or_default();
@@ -300,6 +303,8 @@ impl<T: Read + Seek> RarArchive<T> {
                     spans_volumes: member.meta.is_split_after || member.meta.is_split_before,
                 });
                 self.redirections.push(rar50_file.and_then(|file| file.redirection.clone()));
+                self.metadata
+                    .push(member_metadata(&member, rar50_file.and_then(|file| file.redirection.as_ref())));
                 self.raw_names.push(member.meta.name);
             }
         }
@@ -315,6 +320,10 @@ impl<T: Read + Seek> RarArchive<T> {
         let entry = self.entries[self.current_index].clone();
         self.current_index += 1;
         Ok(Some(entry))
+    }
+
+    pub(crate) fn entry_metadata(&self, header: &RarFileHeader) -> crate::unified::EntryMetadata {
+        self.metadata[header.index].clone()
     }
 
     /// Skip the current entry without reading its data
@@ -402,6 +411,40 @@ impl<T: Read + Seek> RarArchive<T> {
 
 const REDIR_HARD_LINK: u64 = 4;
 const REDIR_FILE_COPY: u64 = 5;
+
+fn member_metadata(member: &ArchiveMember, redirection: Option<&rars::rar50::FileRedirection>) -> crate::unified::EntryMetadata {
+    use crate::unified::{ArchiveEntryKind, EntryMetadata};
+    if let Some(redirection) = redirection {
+        let kind = match redirection.redirection_type {
+            1..=3 => ArchiveEntryKind::SymbolicLink,
+            REDIR_HARD_LINK => ArchiveEntryKind::HardLink,
+            REDIR_FILE_COPY => ArchiveEntryKind::File,
+            _ => ArchiveEntryKind::Unknown,
+        };
+        let link_target = if matches!(kind, ArchiveEntryKind::SymbolicLink | ArchiveEntryKind::HardLink) {
+            String::from_utf8(redirection.target_name.clone()).ok()
+        } else {
+            None
+        };
+        return EntryMetadata { kind, link_target };
+    }
+    let unix_host = match member.detail {
+        ArchiveMemberDetail::Rar15To40 { .. } => member.meta.host_os == Some(3),
+        ArchiveMemberDetail::Rar50Plus { .. } => member.meta.host_os == Some(1),
+        _ => false,
+    };
+    let kind = if unix_host {
+        ArchiveEntryKind::from_unix_mode(member.meta.file_attr as u32)
+    } else {
+        None
+    }
+    .unwrap_or(if member.meta.is_directory {
+        ArchiveEntryKind::Directory
+    } else {
+        ArchiveEntryKind::File
+    });
+    EntryMetadata { kind, link_target: None }
+}
 
 /// Whether `archive` is followed by another volume: `Some(true)` if it announces one,
 /// `Some(false)` if it is the last (or only) volume, `None` if the format doesn't say.

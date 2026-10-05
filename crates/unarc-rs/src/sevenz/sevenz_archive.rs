@@ -38,6 +38,7 @@ pub struct SevenZFileHeader {
 pub struct SevenZArchive<T: Read + Seek> {
     reader: T,
     entries: Vec<SevenZFileHeader>,
+    kinds: Vec<crate::ArchiveEntryKind>,
     current_index: usize,
     password: Option<String>,
     /// Whether the archive has any encrypted content
@@ -79,8 +80,10 @@ impl<T: Read + Seek> SevenZArchive<T> {
         let is_encrypted = !encrypted_blocks.is_empty();
 
         let mut entries = Vec::new();
+        let mut kinds = Vec::new();
 
         for (index, entry) in archive.archive().files.iter().enumerate() {
+            kinds.push(entry_kind(entry));
             let name = entry.name.clone();
             let is_directory = entry.is_directory;
             let original_size = entry.size;
@@ -133,6 +136,7 @@ impl<T: Read + Seek> SevenZArchive<T> {
         Ok(Self {
             reader,
             entries,
+            kinds,
             current_index: 0,
             password,
             is_encrypted,
@@ -142,6 +146,23 @@ impl<T: Read + Seek> SevenZArchive<T> {
     /// Check if the archive contains any encrypted content
     pub fn is_encrypted(&self) -> bool {
         self.is_encrypted
+    }
+
+    pub(crate) fn entry_metadata(&mut self, header: &SevenZFileHeader, options: &crate::ArchiveOptions) -> crate::unified::EntryMetadata {
+        let kind = self.kinds[header.index];
+        let limit = options
+            .max_entry_size()
+            .unwrap_or(u64::MAX)
+            .min(options.max_total_size().unwrap_or(u64::MAX))
+            .min(64 * 1024);
+        let link_target = if kind == crate::ArchiveEntryKind::SymbolicLink && header.original_size <= limit {
+            self.read_with_password_and_limit(header, options.password().map(str::to_owned), Some(limit))
+                .ok()
+                .and_then(|data| String::from_utf8(data).ok())
+        } else {
+            None
+        };
+        crate::unified::EntryMetadata { kind, link_target }
     }
 
     /// Set the password for encrypted archives
@@ -179,9 +200,14 @@ impl<T: Read + Seek> SevenZArchive<T> {
 
     /// Read and decompress an entry's data with a specific password
     pub fn read_with_password(&mut self, header: &SevenZFileHeader, password: Option<String>) -> Result<Vec<u8>> {
+        self.read_with_password_and_limit(header, password, None)
+    }
+
+    pub(crate) fn read_with_password_and_limit(&mut self, header: &SevenZFileHeader, password: Option<String>, limit: Option<u64>) -> Result<Vec<u8>> {
         if header.is_directory {
             return Ok(Vec::new());
         }
+        crate::limits::check_size(header.original_size, limit, &header.name)?;
 
         // We need to re-open the archive and read the specific file
         let pwd = match &password {
@@ -189,12 +215,60 @@ impl<T: Read + Seek> SevenZArchive<T> {
             None => sevenz_rust2::Password::empty(),
         };
 
-        let mut archive = sevenz_rust2::ArchiveReader::new(&mut self.reader, pwd).map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
+        let archive =
+            sevenz_rust2::ArchiveReader::new(&mut self.reader, pwd.clone()).map_err(|e| ArchiveError::external_library("sevenz-rust2", e.to_string()))?;
+        let info = archive.archive().clone();
+        drop(archive);
+        let Some(block_index) = info.stream_map.file_block_index[header.index] else {
+            return Ok(Vec::new());
+        };
+        let target = &info.files[header.index];
+        let mut result = None;
+        let mut read_error = None;
+        sevenz_rust2::BlockDecoder::new(1, block_index, &info, &pwd, &mut self.reader)
+            .for_each_entries(&mut |entry, reader| {
+                if std::ptr::eq(entry, target) {
+                    result = match crate::limits::read_to_end_limited(reader, limit, &header.name) {
+                        Ok(data) => Some(data),
+                        Err(error) => {
+                            read_error = Some(error);
+                            None
+                        }
+                    };
+                    Ok(false)
+                } else {
+                    std::io::copy(reader, &mut std::io::sink())?;
+                    Ok(true)
+                }
+            })
+            .map_err(|e| ArchiveError::decompression_failed(&header.name, e.to_string()))?;
+        if let Some(error) = read_error {
+            return Err(error);
+        }
+        result.ok_or_else(|| ArchiveError::decompression_failed(&header.name, "Entry not found"))
+    }
+}
 
-        // Find and extract the file by name
-        archive
-            .read_file(&header.name)
-            .map_err(|e| ArchiveError::decompression_failed(&header.name, e.to_string()))
+fn entry_kind(entry: &sevenz_rust2::ArchiveEntry) -> crate::ArchiveEntryKind {
+    use crate::ArchiveEntryKind;
+    if entry.is_anti_item {
+        return ArchiveEntryKind::Special;
+    }
+    if entry.has_windows_attributes {
+        // 7-Zip's Unix extension stores st_mode in the high word (FILE_ATTRIBUTE_UNIX_EXTENSION).
+        if entry.windows_attributes & 0x8000 != 0 {
+            if let Some(kind) = ArchiveEntryKind::from_unix_mode(entry.windows_attributes >> 16) {
+                return kind;
+            }
+        }
+        if entry.windows_attributes & 0x400 != 0 {
+            return ArchiveEntryKind::Unknown;
+        }
+    }
+    if entry.is_directory {
+        ArchiveEntryKind::Directory
+    } else {
+        ArchiveEntryKind::File
     }
 }
 
@@ -291,5 +365,33 @@ impl<T: Read + Seek> SevenZArchive<T> {
             header.crc32,
             header.original_size,
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn output_limit_is_enforced_even_with_an_understated_header() {
+        let mut writer = sevenz_rust2::ArchiveWriter::new(Cursor::new(Vec::new())).unwrap();
+        writer
+            .push_archive_entry(
+                sevenz_rust2::ArchiveEntry {
+                    name: "file".to_owned(),
+                    ..Default::default()
+                },
+                Some(&b"hello"[..]),
+            )
+            .unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        let mut archive = SevenZArchive::new(Cursor::new(bytes)).unwrap();
+        let mut header = archive.get_next_entry().unwrap().unwrap();
+        header.original_size = 0;
+        assert!(matches!(
+            archive.read_with_password_and_limit(&header, None, Some(3)),
+            Err(ArchiveError::SizeLimitExceeded { limit: 3, .. })
+        ));
     }
 }

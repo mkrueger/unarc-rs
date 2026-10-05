@@ -36,7 +36,7 @@ pub mod zip;
 pub mod zoo;
 
 pub mod unified;
-pub use unified::{ArchiveOptions, VolumeProvider};
+pub use unified::{ArchiveEntryKind, ArchiveOptions, VolumeProvider};
 
 // Password verifiers are shared across threads (e.g. with rayon) when testing passwords in parallel.
 const _: () = {

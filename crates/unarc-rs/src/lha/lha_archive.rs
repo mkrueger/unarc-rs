@@ -81,6 +81,37 @@ pub struct LhaArchive<T: Read> {
 }
 
 impl<T: Read> LhaArchive<T> {
+    fn entry_metadata(&self) -> crate::unified::EntryMetadata {
+        use crate::unified::{ArchiveEntryKind, EntryMetadata};
+        let Some(reader) = &self.reader else {
+            return EntryMetadata {
+                kind: ArchiveEntryKind::Unknown,
+                link_target: None,
+            };
+        };
+        let header = reader.header();
+        let kind = header
+            .parse_unix_permissions()
+            .and_then(|permissions| ArchiveEntryKind::from_unix_mode(u32::from(permissions.bits())))
+            .unwrap_or(if header.is_directory() {
+                ArchiveEntryKind::Directory
+            } else {
+                ArchiveEntryKind::File
+            });
+        let link_target = if kind == ArchiveEntryKind::SymbolicLink {
+            let filename = header
+                .iter_extra()
+                .find_map(|extra| extra.strip_prefix(&[delharc::header::ext::EXT_HEADER_FILENAME]))
+                .unwrap_or(&header.filename);
+            std::str::from_utf8(filename)
+                .ok()
+                .and_then(|name| name.split_once('|').map(|(_, target)| target.to_owned()))
+        } else {
+            None
+        };
+        EntryMetadata { kind, link_target }
+    }
+
     /// Create a new LHA archive reader
     pub fn new(reader: T) -> Result<Self> {
         let lha_reader = LhaDecodeReader::new(reader)?;
@@ -177,6 +208,10 @@ pub struct LhaArchiveSeekable<T: Read + Seek> {
 }
 
 impl<T: Read + Seek> LhaArchiveSeekable<T> {
+    pub(crate) fn entry_metadata(&self) -> crate::unified::EntryMetadata {
+        self.inner.entry_metadata()
+    }
+
     /// Create a new seekable LHA archive reader
     pub fn new(reader: T) -> Result<Self> {
         Ok(Self {

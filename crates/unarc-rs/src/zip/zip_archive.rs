@@ -38,6 +38,33 @@ pub struct ZipArchive<T: Read + Seek> {
 }
 
 impl<T: Read + Seek> ZipArchive<T> {
+    pub(crate) fn entry_metadata(&mut self, header: &ZipFileHeader, options: &crate::ArchiveOptions) -> Result<crate::unified::EntryMetadata> {
+        use crate::unified::{ArchiveEntryKind, EntryMetadata};
+        let file = self
+            .archive
+            .by_index_raw(header.index)
+            .map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
+        let kind = file.unix_mode().and_then(ArchiveEntryKind::from_unix_mode).unwrap_or(if header.is_directory {
+            ArchiveEntryKind::Directory
+        } else {
+            ArchiveEntryKind::File
+        });
+        drop(file);
+        let limit = options
+            .max_entry_size()
+            .unwrap_or(u64::MAX)
+            .min(options.max_total_size().unwrap_or(u64::MAX))
+            .min(64 * 1024);
+        let link_target = if kind == ArchiveEntryKind::SymbolicLink && header.original_size <= limit {
+            self.read_with_password(header, options.password().map(str::as_bytes))
+                .ok()
+                .and_then(|data| String::from_utf8(data).ok())
+        } else {
+            None
+        };
+        Ok(EntryMetadata { kind, link_target })
+    }
+
     /// Create a new ZIP archive reader
     pub fn new(reader: T) -> Result<Self> {
         let archive = zip::ZipArchive::new(reader).map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
