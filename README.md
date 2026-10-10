@@ -200,7 +200,8 @@ Listing does not create or follow links.
 recorded sizes before entry decoding. GZ/BZ2/Z streams and 7z entry output are
 also bounded while decoding; compressed TAR is bounded while opening.
 CAB and Amiga LZX output never exceeds the recorded size, which is checked
-before decoding.
+before decoding. Amiga LZX also counts the merged-group data it decodes and
+discards to reach an entry against the entry limit, and against the total limit.
 ZIP output is bounded by its central-directory size.
 
 These are decompressed-output limits, **not a process memory/CPU budget**.

@@ -17,9 +17,11 @@ cannot read it.
 - Merged groups, where several files are compressed as one stream. Reading a
   file decodes its group up to the end of that file; reading the files of a
   group in order continues where the last read stopped, and reading an earlier
-  file restarts the group. Skipping never decodes anything.
+  file restarts the group. Skipping never decodes anything. See
+  [Size limits](#size-limits) for how the decoded data is bounded.
 - Block types 1 (reuse the previous tree), 2 (verbatim) and 3 (aligned offsets).
-- The CRC-32 of every file (always verified) and of every entry header.
+- The CRC-32 of every file (always verified, as in the other formats;
+  `ArchiveOptions::with_verify_crc` is not consulted) and of every entry header.
 - Amiga protection bits, file comments and dates. Names and comments are
   mapped byte for byte as Latin-1. Entries named with a trailing `/` are
   directories.
@@ -28,6 +30,24 @@ The unified API reports a compressed size of 0 and the method `LZX (merged)`
 (or `Stored (merged)`) for files that share a stream with other files, since
 they have no compressed size of their own. Dates before 1980 cannot be
 represented as `DosDateTime` and are reported as missing.
+
+### Size limits
+
+A read never returns more than the entry's recorded size. To reach an entry of a
+merged group, the decoder also decodes and discards the group's data before
+it, unless an earlier read stopped there. That work is bounded too:
+
+- The limit of a read (`read_with_limit`, or the unified API's entry limit,
+  `ArchiveOptions::with_max_entry_size`) covers the discarded bytes as well as
+  the entry. Both are known before decoding starts, so a read that would
+  exceed the limit fails at once with `ArchiveError::SizeLimitExceeded`.
+- The unified API charges discarded bytes, and the output of reads that fail
+  (for example on a CRC mismatch), to `ArchiveOptions::with_max_total_size`.
+
+Reading a group's files in order decodes the group once. Reading them in
+reverse order decodes it once per file, so without a total limit the work grows
+with the number of files times the group size; set a total limit when reading
+untrusted archives out of order.
 
 A damaged header ends the listing: the entries before it are returned, then
 `get_next_entry` (or `next_entry`) returns the error. Files of a merged group
@@ -53,7 +73,9 @@ All multi-byte fields are little-endian, except the date.
 | 0x00 | 3 | `LZX` |
 | 0x03 | 7 | Version and flags, such as `00 0C 00 0A 04 00 00` |
 
-Only the signature is checked.
+Opening an archive checks only the signature. Format detection also requires a
+first entry header with a valid header CRC, unless its name and comment extend
+past the 512 bytes detection reads.
 
 ### Entry header (31 bytes)
 

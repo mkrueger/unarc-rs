@@ -819,8 +819,8 @@ impl ArchiveFormat {
             return Some(ArchiveFormat::Cab);
         }
 
-        // LZX (Amiga): "LZX"
-        if data.len() >= 3 && data.starts_with(b"LZX") {
+        // LZX (Amiga): "LZX", then a first entry header with a valid CRC
+        if crate::lzx::lzx_archive::has_signature(data) {
             return Some(ArchiveFormat::Lzx);
         }
 
@@ -2364,6 +2364,10 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     }
 
     fn finish_read(&mut self, entry: &ArchiveEntry, limit: Option<u64>, result: Result<Vec<u8>>) -> Result<Vec<u8>> {
+        // Amiga LZX decodes and discards the start of a merged group to reach a later entry; that work counts too.
+        if let ArchiveInner::Lzx(archive) = &mut self.inner {
+            self.total_read = self.total_read.saturating_add(archive.take_discarded_bytes());
+        }
         let data = result.map_err(|e| match e {
             ArchiveError::SizeLimitExceeded { limit, .. } => ArchiveError::size_limit_exceeded(&entry.name, limit),
             e => e,

@@ -10,6 +10,8 @@ use super::decoder::{DecodeError, Decoder};
 
 const INFO_HEADER_SIZE: u64 = 10;
 const ENTRY_HEADER_SIZE: usize = 31;
+/// Bytes that format detection reads from the start of a file
+const DETECTION_BYTES: usize = 512;
 /// Entry header flag set on every entry of a merged group
 const MERGED_FLAG: u8 = 1;
 
@@ -99,6 +101,10 @@ struct Group {
 /// of such a group decodes the group up to the end of that file; reading the files
 /// of a group in order continues where the previous read stopped, while reading an
 /// earlier file restarts the group.
+///
+/// The `limit` of [`read_with_limit`](Self::read_with_limit) bounds every byte the
+/// read decodes, including the earlier files of the group that are decoded and
+/// discarded on the way.
 pub struct LzxArchive<R: Read + Seek> {
     reader: R,
     entries: Vec<LzxEntry>,
@@ -107,11 +113,40 @@ pub struct LzxArchive<R: Read + Seek> {
     error: Option<ArchiveError>,
     next_entry: usize,
     cursor: Option<GroupCursor>,
+    /// Bytes decoded but not returned since the last [`take_discarded_bytes`](Self::take_discarded_bytes)
+    discarded: u64,
 }
 
 struct GroupCursor {
     group: usize,
     decoder: Box<Decoder>,
+}
+
+/// Returns true if `data` (the start of a file) holds the `LZX` info header and a
+/// first entry header whose CRC matches. Only if the name and comment extend past the
+/// 512 bytes that format detection reads is a complete fixed-size header enough.
+pub(crate) fn has_signature(data: &[u8]) -> bool {
+    let start = INFO_HEADER_SIZE as usize;
+    let Some(header) = data.get(start..start + ENTRY_HEADER_SIZE) else {
+        return false;
+    };
+    if !data.starts_with(b"LZX") {
+        return false;
+    }
+    let end = start + ENTRY_HEADER_SIZE + usize::from(header[30]) + usize::from(header[14]);
+    match data.get(start..end) {
+        Some(entry) => header_crc(entry) == u32::from_le_bytes([header[26], header[27], header[28], header[29]]),
+        None => end > DETECTION_BYTES && data.len() >= DETECTION_BYTES,
+    }
+}
+
+/// CRC-32 of an entry header with its CRC field zeroed, followed by the name and comment
+fn header_crc(entry: &[u8]) -> u32 {
+    let mut hasher = crc32fast::Hasher::new();
+    hasher.update(&entry[..26]);
+    hasher.update(&[0; 4]);
+    hasher.update(&entry[30..]);
+    hasher.finalize()
 }
 
 fn corrupt(name: &str, reason: impl Into<String>) -> ArchiveError {
@@ -186,7 +221,15 @@ impl<R: Read + Seek> LzxArchive<R> {
             error,
             next_entry: 0,
             cursor: None,
+            discarded: 0,
         })
+    }
+
+    /// Returns and resets the number of bytes decoded but not returned (the earlier files
+    /// of a merged group, and the output of failed reads), so that the unified API can
+    /// charge them to its total limit.
+    pub(crate) fn take_discarded_bytes(&mut self) -> u64 {
+        std::mem::take(&mut self.discarded)
     }
 
     /// Returns the next entry, or `None` after the last one
@@ -210,10 +253,12 @@ impl<R: Read + Seek> LzxArchive<R> {
         self.read_with_limit(header, None)
     }
 
-    /// Reads, decompresses and CRC-checks an entry, failing if it is larger than `limit` bytes
+    /// Reads, decompresses and CRC-checks an entry, failing if it would decode more than `limit` bytes
     ///
-    /// The output never exceeds the size recorded for the entry, which is checked
-    /// against `limit` before anything is decoded.
+    /// The output never exceeds the size recorded for the entry. In a merged group the
+    /// read also decodes and discards the group's data before the entry, unless an
+    /// earlier read stopped there; those bytes count toward `limit` too. Both are
+    /// checked before anything is decoded.
     pub fn read_with_limit(&mut self, header: &LzxEntry, limit: Option<u64>) -> Result<Vec<u8>> {
         let size = u64::from(header.original_size);
         crate::limits::check_size(size, limit, &header.name)?;
@@ -237,20 +282,22 @@ impl<R: Read + Seek> LzxArchive<R> {
                     self.reader.seek(SeekFrom::Start(offset + header.group_offset))?;
                     crate::limits::read_exact_vec(&mut self.reader, size)?
                 }
-                PackMode::Normal => self.decode(header, offset, packed)?,
+                PackMode::Normal => self.decode(header, offset, packed, limit)?,
                 PackMode::Unknown(mode) => return Err(ArchiveError::unsupported_method("LZX", format!("pack mode {mode}"))),
             }
         };
 
         let crc = crc32fast::hash(&data);
         if crc != header.crc32 {
+            self.discarded += data.len() as u64;
             return Err(ArchiveError::crc_mismatch(&header.name, header.crc32, crc));
         }
         Ok(data)
     }
 
-    fn decode(&mut self, header: &LzxEntry, offset: u64, packed: u64) -> Result<Vec<u8>> {
+    fn decode(&mut self, header: &LzxEntry, offset: u64, packed: u64, limit: Option<u64>) -> Result<Vec<u8>> {
         let start = header.group_offset;
+        let size = u64::from(header.original_size);
         let cursor = match self.cursor.take() {
             Some(cursor) if cursor.group == header.group && cursor.decoder.position() <= start => cursor,
             _ => GroupCursor {
@@ -258,17 +305,23 @@ impl<R: Read + Seek> LzxArchive<R> {
                 decoder: Box::new(Decoder::new(offset, packed)),
             },
         };
-        let cursor = self.cursor.insert(cursor);
-        let mut data = Vec::with_capacity(crate::limits::capacity_hint(u64::from(header.original_size)));
         let skip = start - cursor.decoder.position();
-        let result = cursor.decoder.read(&mut self.reader, skip, &mut |_| {}).and_then(|()| {
-            cursor
-                .decoder
-                .read(&mut self.reader, u64::from(header.original_size), &mut |bytes| data.extend_from_slice(bytes))
-        });
+        crate::limits::check_size(skip.saturating_add(size), limit, &header.name)?;
+        let cursor = self.cursor.insert(cursor);
+        let mut data = Vec::with_capacity(crate::limits::capacity_hint(size));
+        let before = cursor.decoder.position();
+        let result = cursor
+            .decoder
+            .read(&mut self.reader, skip, &mut |_| {})
+            .and_then(|()| cursor.decoder.read(&mut self.reader, size, &mut |bytes| data.extend_from_slice(bytes)));
+        let decoded = cursor.decoder.position() - before;
         match result {
-            Ok(()) => Ok(data),
+            Ok(()) => {
+                self.discarded += decoded - data.len() as u64;
+                Ok(data)
+            }
             Err(error) => {
+                self.discarded += decoded;
                 // The decoder state is unusable after an error; the next read starts over.
                 self.cursor = None;
                 Err(match error {
@@ -304,12 +357,7 @@ impl HeaderScan {
             let name_text = latin1(&name);
 
             let stored_crc = u32::from_le_bytes([header[26], header[27], header[28], header[29]]);
-            header[26..30].fill(0);
-            let mut hasher = crc32fast::Hasher::new();
-            hasher.update(&header);
-            hasher.update(&name);
-            hasher.update(&comment);
-            if hasher.finalize() != stored_crc {
+            if header_crc(&[&header[..], &name, &comment].concat()) != stored_crc {
                 return Err(corrupt(&name_text, "header CRC mismatch"));
             }
 
