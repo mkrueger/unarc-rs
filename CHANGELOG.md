@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CAB MSZIP blocks must reach the end of their Deflate stream. Unfinished streams
+  are rejected even when they produce the declared uncompressed byte count.
 - ARC/PAK crunched (method 8) and squashed members that reset the LZW table
   failed with "infinite loop detected", and squashed archives could panic. The
   reader now skips the padding to the end of a group of eight codes when the

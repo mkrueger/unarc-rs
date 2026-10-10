@@ -103,7 +103,8 @@ Each folder is a single stream: a file's data is found by decoding its folder
 from the first block up to the file's offset.
 
 - **MSZIP**: each block is `CK` followed by a complete raw Deflate stream that
-  may reference the last 32 KiB of the folder's previous blocks.
+  may reference the last 32 KiB of the folder's previous blocks. Unfinished
+  streams are rejected even if they produce the declared uncompressed size.
 - **LZX**: each block is one LZX frame of 32 KiB (the last may be shorter); the
   decoder state persists across the folder's blocks.
 

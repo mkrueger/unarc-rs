@@ -47,7 +47,7 @@ impl MsZipDecoder {
             let produced = self.inflate(&primer, &mut discard, FlushDecompress::Sync);
             self.primer = primer;
             self.discard = discard;
-            if produced? != self.history.len() {
+            if produced?.0 != self.history.len() {
                 return Err("MSZIP history could not be restored".to_string());
             }
         }
@@ -55,9 +55,12 @@ impl MsZipDecoder {
         // One spare byte detects blocks that produce more than they declare.
         output.clear();
         output.resize(size + 1, 0);
-        let produced = self.inflate(data, output, FlushDecompress::Finish)?;
+        let (produced, status) = self.inflate(data, output, FlushDecompress::Finish)?;
         if produced != size {
             return Err(format!("MSZIP block decoded to {produced} bytes, expected {size}"));
+        }
+        if status != Status::StreamEnd {
+            return Err("MSZIP block contains an unfinished Deflate stream".to_string());
         }
         output.truncate(size);
 
@@ -73,7 +76,7 @@ impl MsZipDecoder {
     }
 
     /// Inflates until the stream ends, the output is full or no progress is made
-    fn inflate(&mut self, input: &[u8], output: &mut [u8], flush: FlushDecompress) -> Result<usize, String> {
+    fn inflate(&mut self, input: &[u8], output: &mut [u8], flush: FlushDecompress) -> Result<(usize, Status), String> {
         let (mut consumed, mut produced) = (0usize, 0usize);
         loop {
             let (in_before, out_before) = (self.inflater.total_in(), self.inflater.total_out());
@@ -86,7 +89,7 @@ impl MsZipDecoder {
             consumed += read;
             produced += written;
             if status == Status::StreamEnd || produced == output.len() || (read == 0 && written == 0) {
-                return Ok(produced);
+                return Ok((produced, status));
             }
         }
     }

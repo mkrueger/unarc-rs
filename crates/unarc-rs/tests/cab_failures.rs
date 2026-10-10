@@ -220,6 +220,39 @@ fn block_decoding_to_more_than_declared_is_corrupt() {
 }
 
 #[test]
+fn mszip_requires_a_complete_deflate_stream() {
+    let non_final = b"CK\x00\x03\x00\xfc\xffabc";
+    let terminator = b"\x01\x00\x00\xff\xff";
+    for with_history in [false, true] {
+        for terminator_len in 0..=terminator.len() {
+            let mut payload = non_final.to_vec();
+            payload.extend_from_slice(&terminator[..terminator_len]);
+            let mut blocks = Vec::new();
+            if with_history {
+                blocks.push((3, b"CK\x01\x03\x00\xfc\xffabc".to_vec()));
+            }
+            blocks.push((3, payload));
+            let offset = if with_history { 3 } else { 0 };
+            let data = cabinet(1, &[("x", 3, offset)], &blocks);
+            let mut archive = CabArchive::new(Cursor::new(&data)).unwrap();
+            let entry = archive.get_next_entry().unwrap().unwrap();
+            let direct = archive.read(&entry);
+            let unified = read_first(data, ArchiveOptions::new());
+            for result in [direct, unified] {
+                if terminator_len == terminator.len() {
+                    assert_eq!(result.unwrap(), b"abc", "history={with_history}");
+                } else {
+                    assert!(
+                        matches!(&result, Err(ArchiveError::CorruptedEntry { .. })),
+                        "history={with_history}, terminator_len={terminator_len}: {result:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn corrupt_compressed_data_does_not_panic() {
     let data = cabinet(1, &[("x", 100, 0)], &[(100, b"CK\xff\xff\xff\xff".to_vec())]);
     assert!(read_first(data, ArchiveOptions::new()).is_err());
