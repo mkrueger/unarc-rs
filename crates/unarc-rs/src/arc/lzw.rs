@@ -10,18 +10,26 @@ const SQUASH_BITS: usize = 13;
 const INIT_BITS: usize = 9;
 const FIRST: u16 = 257;
 const CLEAR: u16 = 256;
+/// Codes 0..8191: the largest table, squashing's 13 bits.
+const TABLE_SIZE: usize = 1 << SQUASH_BITS;
+/// The encoder writes codes in groups of eight (`n_bits` bytes), like compress.
+const GROUP_CODES: u32 = 8;
 
 pub struct Lzw {
     oldcode: u16,
     finchar: u8,
     n_bits: usize,
     maxcode: u16,
-    prefix: [u16; 8191],
-    suffix: [u8; 8191],
+    prefix: [u16; TABLE_SIZE],
+    suffix: [u8; TABLE_SIZE],
     clear_flg: bool,
     stack: Vec<u8>,
     free_ent: u16,
     maxcodemax: u16,
+    /// Code width limit of the current method: 12 when crunched, 13 when squashed.
+    max_bits: usize,
+    /// Codes read from the current group of eight.
+    group_codes: u32,
 }
 
 impl Default for Lzw {
@@ -37,20 +45,32 @@ impl Lzw {
             finchar: 0,
             n_bits: 0,
             maxcode: 0,
-            prefix: [0; 8191],
-            suffix: [0; 8191],
+            prefix: [0; TABLE_SIZE],
+            suffix: [0; TABLE_SIZE],
             clear_flg: false,
             stack: Vec::new(),
             free_ent: FIRST,
             maxcodemax: 0,
+            max_bits: CRUNCH_BITS,
+            group_codes: 0,
         }
     }
 
     fn getcode(&mut self, reader: &mut BitReader<&[u8], LittleEndian>) -> Option<u16> {
         if self.clear_flg || self.free_ent > self.maxcode {
+            // A new code width starts a new group: the encoder pads the current one to
+            // eight codes. Width increases happen to fall on group boundaries, but a
+            // CLEAR can come anywhere, so skip the padding as z/lzw.rs does.
+            if self.group_codes != 0 {
+                let padding = (GROUP_CODES - self.group_codes) * self.n_bits as u32;
+                self.group_codes = 0;
+                if reader.skip(padding).is_err() {
+                    return None;
+                }
+            }
             if self.free_ent > self.maxcode {
                 self.n_bits += 1;
-                if self.n_bits == BITS {
+                if self.n_bits == self.max_bits {
                     self.maxcode = self.maxcodemax;
                 } else {
                     self.maxcode = (1 << self.n_bits) - 1;
@@ -63,7 +83,9 @@ impl Lzw {
             }
         }
 
-        reader.read_var::<u16>(self.n_bits as u32).ok()
+        let code = reader.read_var::<u16>(self.n_bits as u32).ok()?;
+        self.group_codes = (self.group_codes + 1) % GROUP_CODES;
+        Some(code)
     }
 
     pub fn decomp(&mut self, input: &[u8], use_crunched: bool) -> Result<Vec<u8>> {
@@ -89,6 +111,9 @@ impl Lzw {
             SQUASH_BITS
         };
         self.maxcodemax = 1 << bits;
+        self.max_bits = bits;
+        self.group_codes = 0;
+        self.stack.clear();
 
         self.clear_flg = false;
         self.n_bits = INIT_BITS;
