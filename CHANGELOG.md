@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+- `ArchiveFormat` gained the variants `Xz`, `Zst`, `Txz` and `Tzst`. Exhaustive
+  matches on it need new arms.
+
+### Added
+
+- xz (`.xz`) and Zstandard (`.zst`) single-file streams, and xz- and
+  Zstandard-compressed TAR archives (`.txz`, `.tar.xz`, `.tzst`, `.tar.zst`), using
+  the pure Rust [`lzma-rust2`](https://crates.io/crates/lzma-rust2) and
+  [`ruzstd`](https://crates.io/crates/ruzstd) crates. Concatenated xz streams and
+  multiple Zstandard frames are decoded in full; skippable frames are ignored.
+  `ArchiveFormat::detect()` returns `Txz` or `Tzst` for xz or Zstandard content
+  named `.txz`, `.tar.xz`, `.tzst` or `.tar.zst`, like the other compressed TARs.
+- Size limits apply to xz and Zstandard output, and the dictionary (window) size a
+  stream announces is checked against the limit before the decoder allocates it.
+
 ### Fixed
 
 - `ArchiveFormat::detect()` returns `Tgz`, `Tbz` or `TarZ` when gzip, bzip2 or

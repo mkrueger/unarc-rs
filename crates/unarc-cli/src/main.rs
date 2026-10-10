@@ -202,7 +202,10 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     let mut archive = open_archive_auto(archive_path, format, ArchiveOptions::new())?;
 
     // For single-file formats, derive the filename from the archive name
-    if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
+    if matches!(
+        format,
+        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst
+    ) {
         if let Some(stem) = archive_path.file_stem() {
             archive.set_single_file_name_box(stem.to_string_lossy().to_string());
         }
@@ -573,7 +576,10 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
     let mut archive = open_archive_auto(archive_path, format, options.clone())?;
 
     // For single-file formats, derive the output filename from the archive name
-    if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
+    if matches!(
+        format,
+        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst
+    ) {
         if let Some(stem) = archive_path.file_stem() {
             archive.set_single_file_name_box(stem.to_string_lossy().to_string());
         }
