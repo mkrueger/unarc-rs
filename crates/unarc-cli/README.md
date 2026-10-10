@@ -230,10 +230,14 @@ unarc tp large_archive.7z -d ~/SecLists/Passwords/ -e "readme.txt"
 | **Z** | `.Z` | — | — |
 | **GZ** | `.gz` | — | — |
 | **BZ2** | `.bz2` | — | — |
+| **XZ** | `.xz` | — | — |
+| **ZST** | `.zst` | — | — |
 | **Pack-Ice** | `.pi9` | — | — |
 | **TGZ** | `.tgz`, `.tar.gz` | — | — |
 | **TBZ** | `.tbz`, `.tar.bz2` | — | — |
 | **TAR.Z** | `.tar.Z` | — | — |
+| **TXZ** | `.txz`, `.tar.xz` | — | — |
+| **TZST** | `.tzst`, `.tar.zst` | — | — |
 
 ## Examples
 
