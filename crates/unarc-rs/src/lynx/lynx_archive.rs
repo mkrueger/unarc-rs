@@ -251,7 +251,8 @@ impl<T: Read + Seek> LynxArchive<T> {
         // last file's recorded size. c1541 and cbmconvert keep what is there; so do we, but only
         // when the container ends inside that file's last block, so a real truncation still fails.
         let available = self.len.saturating_sub(offset);
-        let size = if is_last && size > available && size - available < BLOCK_SIZE {
+        let last_data_block_start = u64::from(data_blocks.saturating_sub(1)) * BLOCK_SIZE;
+        let size = if is_last && size > available && available > last_data_block_start {
             available
         } else {
             size

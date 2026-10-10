@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Lynx short-final-file tolerance requires EOF inside the last data block,
+  including for REL files. Missing final blocks and earlier truncations now fail
+  instead of being returned as successfully shortened files.
 - XZ and TXZ decoding handles short and interrupted input reads and rejects
   trailing stream padding that is not a multiple of four bytes.
 - Zstandard and TZST decoding verifies each frame's declared uncompressed size,

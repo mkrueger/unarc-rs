@@ -87,7 +87,9 @@ skipped, and the remaining blocks hold the record data.
   buffer is allocated from an untrusted size. The one exception is the last
   file: some archivers (Lynx XVI, Star Lynx) end the container a few bytes short
   of its recorded size. When the container ends inside that file's last block,
-  the file is cut to the bytes present, as c1541 and cbmconvert do. A malformed entry returns
+  the file is cut to the bytes present, as c1541 and cbmconvert do. All earlier
+  data blocks and at least one byte of the last data block must be present;
+  REL side sectors do not count as data blocks. A malformed entry returns
   `ArchiveError::CorruptedEntry` and ends the iteration, since the following
   entries cannot be located.
 - **Contents.** PRG files include their load address, as on disk. REL files

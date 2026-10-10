@@ -32,6 +32,52 @@ fn container(directory: &[u8], data: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn final_file_tolerance_starts_inside_the_last_data_block() {
+    for (directory, side_sectors) in [
+        (&b" 1  *LYNX\r 1 \rDATA\r 2 \rP\r 3 \r"[..], 0),
+        (&b" 1  *LYNX\r 1 \rDATA\r 3 \rR\r 32 \r 3 \r"[..], 1),
+    ] {
+        for available in [0, 1, 253, 254, 255, 256] {
+            let mut data = vec![0x55; side_sectors * 254];
+            let content = vec![0xAA; available];
+            data.extend_from_slice(&content);
+            let image = container(directory, &data);
+            let mut archive = LynxArchive::new(Cursor::new(&image)).unwrap();
+            let entry = archive.get_next_entry().unwrap().unwrap();
+            assert_eq!(entry.offset, (1 + side_sectors) as u64 * 254);
+            let result = archive.read(&entry);
+            if available <= 254 {
+                assert_eq!(entry.size, 256, "side sectors: {side_sectors}, available: {available}");
+                assert!(
+                    matches!(result, Err(ArchiveError::CorruptedEntry { .. })),
+                    "side sectors: {side_sectors}, available: {available}"
+                );
+            } else {
+                assert_eq!(entry.size, available as u64);
+                assert_eq!(result.unwrap(), content);
+            }
+
+            let mut archive = ArchiveFormat::Lynx.open(Cursor::new(&image)).unwrap();
+            let entry = archive.next_entry().unwrap().unwrap();
+            if available <= 254 {
+                assert!(matches!(archive.read(&entry), Err(ArchiveError::CorruptedEntry { .. })));
+            } else {
+                assert_eq!(archive.read(&entry).unwrap(), content);
+            }
+        }
+    }
+}
+
+#[test]
+fn missing_single_block_file_is_not_tolerated() {
+    let image = container(b" 1  *LYNX\r 1 \rDATA\r 1 \rP\r 3 \r", &[]);
+    let mut archive = LynxArchive::new(Cursor::new(&image)).unwrap();
+    let entry = archive.get_next_entry().unwrap().unwrap();
+    assert_eq!(entry.size, 2);
+    assert!(matches!(archive.read(&entry), Err(ArchiveError::CorruptedEntry { .. })));
+}
+
+#[test]
 fn not_a_lynx_container() {
     for data in [&b""[..], b"hello world", b" 1  *LYNX\r", b" 0  *LYNX\r 1 \r", &[0u8; 2000]] {
         assert!(matches!(LynxArchive::new(Cursor::new(data)), Err(ArchiveError::InvalidHeader { .. })));
