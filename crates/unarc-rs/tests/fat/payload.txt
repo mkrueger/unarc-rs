@@ -1,0 +1,2 @@
+Self-authored FAT12 floppy-image fixture for unarc-rs.
+Stored unchanged on PC and Atari ST disk images.

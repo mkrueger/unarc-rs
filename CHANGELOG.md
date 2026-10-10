@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking changes
 
-- `ArchiveFormat` gained `Adf` and `Hdf`; exhaustive matches need new arms.
+- `ArchiveFormat` gained `Adf`, `Hdf` and `Fat`; exhaustive matches need new arms.
 - `ArchiveFormat` gained the variants `Xz`, `Zst`, `Txz` and `Tzst`. Exhaustive
   matches on it need new arms.
 
@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   valid root block or RDB checksum and never claims TAR archives; entry paths
   are limited to 4096 bytes. Self-authored fixtures
   are independently generated and verified with `amitools`.
+- FAT12 floppy images (`.img`, `.ima`, Atari ST `.st`) via `ArchiveFormat::Fat` and
+  the `fat` module: PC and Atari ST boot sectors, DOS 1.x disks without a BPB,
+  nested directories, validated VFAT long names and CP437/Atari ST short names.
+  Detection rejects truncated images and invalid reserved FAT entries; reads
+  reject free, bad and reserved clusters even at the end of a file. Images are
+  read with seeks; FAT16/FAT32 and partitioned images return explicit errors.
+  Fixtures are made and verified with mtools and dosfstools.
 - `unarc list --json` prints the listing as a single JSON document, with full entry
   names, entry kinds, sizes, method, modification time, CRC and encryption, for
   programs that drive `unarc`.

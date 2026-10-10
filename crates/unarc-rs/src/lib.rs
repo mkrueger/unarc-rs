@@ -19,6 +19,7 @@ pub mod bz2;
 pub mod cab;
 pub mod cbm;
 pub mod d64;
+pub mod fat;
 pub mod gz;
 pub mod ha;
 pub mod hyp;

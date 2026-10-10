@@ -84,6 +84,14 @@ Files are stored uncompressed. Entries are named `NAME.prg`, `NAME.seq`, etc.; P
 
 See [Amiga support](doc/amiga.md) for supported layouts and limitations.
 
+### PC and Atari ST Floppy Images
+
+| Format | Extensions | Notes |
+| ------ | ---------- | ----- |
+| **FAT12** | `.img`, `.ima`, `.st` | Raw PC and Atari ST floppy images, VFAT long names, DOS 1.x disks |
+
+See [FAT12 support](doc/fat.md) for supported layouts and limitations.
+
 ## Quick Start
 
 ### CLI Tool

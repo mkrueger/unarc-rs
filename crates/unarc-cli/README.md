@@ -223,6 +223,7 @@ unarc tp large_archive.7z -d ~/SecLists/Passwords/ -e "readme.txt"
 | **TAR** | `.tar` | — | — |
 | **ADF** | `.adf` | — | — |
 | **HDF** | `.hdf` | — | — |
+| **FAT12** | `.img`, `.ima`, `.st` | — | — |
 | **ACE** | `.ace` | Blowfish | ✓ |
 | **ARJ** | `.arj` | Garble, GOST40 | ✓ |
 | **ARC/PAK** | `.arc`, `.pak` | XOR | — |
@@ -253,6 +254,14 @@ device-name prefixes such as `DH0/` and `DH1/`. See
 ```bash
 unarc list --json disk.adf
 unarc extract harddisk.hdf DH0/docs/readme.txt -o ./output
+```
+
+PC and Atari ST floppy images (`.img`, `.ima`, `.st`) are read as FAT12, with VFAT
+long names. See [FAT12 support](../../doc/fat.md) for limitations.
+
+```bash
+unarc list --json disk.img
+unarc extract GAME.ST AUTO/README.TXT -o ./output
 ```
 
 Extract an encrypted ARJ archive:

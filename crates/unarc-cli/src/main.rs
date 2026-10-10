@@ -130,6 +130,11 @@ fn main() {
 fn open_archive_auto(archive_path: &Path, format: ArchiveFormat, options: ArchiveOptions) -> Result<Box<dyn ArchiveReader>, ArchiveError> {
     // The user explicitly asked for this archive, so don't apply the library's safety size limit.
     let options = options.with_max_entry_size(None);
+    let options = if archive_path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("st")) {
+        options.with_fat_atari_names(true)
+    } else {
+        options
+    };
 
     // Check if this is a multi-volume split archive (ZIP .001/.z01 or 7z .001)
     if let Some(pattern) = FileVolumeProvider::detect_pattern(archive_path) {
