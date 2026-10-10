@@ -1,0 +1,2 @@
+Self-authored Amiga OFS/FFS disk-image fixture for unarc-rs.
+This file is stored unchanged in floppy images, hardfiles and RDB partitions.

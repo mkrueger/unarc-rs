@@ -62,6 +62,15 @@ Files are stored uncompressed. Entries are named `NAME.prg`, `NAME.seq`, etc.; P
 | **T64** | `.t64` | C64S tape image; wrong end addresses are corrected |
 | **Lynx** | `.lnx` | Lynx container, with or without BASIC loader |
 
+### Amiga Disk Images
+
+| Format | Extensions | Notes |
+| ------ | ---------- | ----- |
+| **ADF** | `.adf` | DD/HD sector images with OFS/FFS (DOS0-DOS5) |
+| **HDF** | `.hdf` | OFS/FFS hardfiles and RDB partitions; partition-prefixed paths |
+
+See [Amiga support](../../doc/amiga.md) for supported layouts and limitations.
+
 ## Installation
 
 Add to your `Cargo.toml`:

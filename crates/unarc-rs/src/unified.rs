@@ -38,6 +38,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::ace::{AceArchive, FileHeader as AceFileHeader};
+use crate::amiga::{AmigaArchive, AmigaEntry, AmigaEntryKind};
 use crate::arc::arc_archive::ArcArchive;
 use crate::arc::local_file_header::LocalFileHeader as ArcHeader;
 use crate::arj::arj_archive::ArjArchive;
@@ -325,6 +326,10 @@ pub enum ArchiveFormat {
     T64,
     /// D64 disk image format (.d64) - Commodore 1541
     D64,
+    /// Amiga DD/HD floppy image containing an OFS/FFS filesystem.
+    Adf,
+    /// Amiga OFS/FFS hardfile, including RDB-partitioned disk images.
+    Hdf,
 }
 
 impl ArchiveFormat {
@@ -359,6 +364,8 @@ impl ArchiveFormat {
         ArchiveFormat::Lynx,
         ArchiveFormat::T64,
         ArchiveFormat::D64,
+        ArchiveFormat::Adf,
+        ArchiveFormat::Hdf,
         ArchiveFormat::Txz,
         ArchiveFormat::Tzst,
     ];
@@ -400,6 +407,8 @@ impl ArchiveFormat {
             "lnx" => Some(ArchiveFormat::Lynx),
             "t64" => Some(ArchiveFormat::T64),
             "d64" => Some(ArchiveFormat::D64),
+            "adf" => Some(ArchiveFormat::Adf),
+            "hdf" => Some(ArchiveFormat::Hdf),
             "txz" => Some(ArchiveFormat::Txz),
             "tzst" => Some(ArchiveFormat::Tzst),
             _ => {
@@ -479,6 +488,8 @@ impl ArchiveFormat {
             ArchiveFormat::Lynx => "lnx",
             ArchiveFormat::T64 => "t64",
             ArchiveFormat::D64 => "d64",
+            ArchiveFormat::Adf => "adf",
+            ArchiveFormat::Hdf => "hdf",
             ArchiveFormat::Txz => "txz",
             ArchiveFormat::Tzst => "tzst",
         }
@@ -516,6 +527,8 @@ impl ArchiveFormat {
             ArchiveFormat::Lynx => "Lynx (C64)",
             ArchiveFormat::T64 => "T64 (C64 tape image)",
             ArchiveFormat::D64 => "D64 (C64 1541 disk image)",
+            ArchiveFormat::Adf => "ADF (Amiga floppy image)",
+            ArchiveFormat::Hdf => "HDF (Amiga hard disk image)",
             ArchiveFormat::Txz => "TXZ (tar.xz)",
             ArchiveFormat::Tzst => "TZST (tar.zst)",
         }
@@ -554,6 +567,8 @@ impl ArchiveFormat {
             ArchiveFormat::Lynx => &["lnx"],
             ArchiveFormat::T64 => &["t64"],
             ArchiveFormat::D64 => &["d64"],
+            ArchiveFormat::Adf => &["adf"],
+            ArchiveFormat::Hdf => &["hdf"],
             ArchiveFormat::Txz => &["txz", "tar.xz"],
             ArchiveFormat::Tzst => &["tzst", "tar.zst"],
         }
@@ -631,6 +646,8 @@ impl ArchiveFormat {
             ArchiveFormat::T64 => Some(&[b"C64S tape image file", b"C64S tape file", b"C64 tape image file"]),
             // D64: no magic, recognised by image size and BAM
             ArchiveFormat::D64 => None,
+            ArchiveFormat::Adf => Some(&[b"DOS"]),
+            ArchiveFormat::Hdf => Some(&[b"RDSK", b"DOS"]),
             // TXZ: xz magic (contains TAR inside)
             ArchiveFormat::Txz => Some(&[&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]]),
             // TZST: Zstandard magic (contains TAR inside)
@@ -672,6 +689,17 @@ impl ArchiveFormat {
     pub fn detect_from_bytes(data: &[u8]) -> Option<Self> {
         if data.len() < 2 {
             return None;
+        }
+
+        if data.starts_with(b"RDSK") {
+            return Some(ArchiveFormat::Hdf);
+        }
+        if data.len() >= 4 && data.starts_with(b"DOS") {
+            return Some(if data.len() <= 512 || matches!(data.len(), 901_120 | 1_802_240) {
+                ArchiveFormat::Adf
+            } else {
+                ArchiveFormat::Hdf
+            });
         }
 
         // Check simple prefix-based formats first (most specific to least)
@@ -839,6 +867,9 @@ impl ArchiveFormat {
     /// a consistent block availability map (BAM).
     /// Returns `Some(format)` if detected, `None` otherwise.
     pub fn detect_from_reader<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<Self>> {
+        if let Some(hard_disk) = AmigaArchive::probe(reader)? {
+            return Ok(Some(if hard_disk { ArchiveFormat::Hdf } else { ArchiveFormat::Adf }));
+        }
         if D64Archive::probe(reader)? {
             return Ok(Some(ArchiveFormat::D64));
         }
@@ -880,6 +911,7 @@ impl ArchiveFormat {
             return Ok(named);
         }
         match (Self::detect_from_reader(reader)?, named) {
+            (Some(ArchiveFormat::Adf | ArchiveFormat::Hdf), Some(ArchiveFormat::Hdf)) => Ok(Some(ArchiveFormat::Hdf)),
             (Some(ArchiveFormat::Gz), Some(ArchiveFormat::Tgz)) => Ok(Some(ArchiveFormat::Tgz)),
             (Some(ArchiveFormat::Bz2), Some(ArchiveFormat::Tbz)) => Ok(Some(ArchiveFormat::Tbz)),
             (Some(ArchiveFormat::Z), Some(ArchiveFormat::TarZ)) => Ok(Some(ArchiveFormat::TarZ)),
@@ -1225,6 +1257,7 @@ enum EntryIndex {
     Lynx(LynxEntry),
     T64(T64Entry),
     D64(D64Entry),
+    Amiga(AmigaEntry),
     /// TXZ uses the same header as TAR
     Txz(TarFileHeader),
     /// TZST uses the same header as TAR
@@ -1294,6 +1327,12 @@ impl ArchiveEntry {
             }
         };
         match &self.index {
+            EntryIndex::Amiga(entry) => match entry.kind {
+                AmigaEntryKind::File => File,
+                AmigaEntryKind::Directory => Directory,
+                AmigaEntryKind::SymbolicLink => SymbolicLink,
+                AmigaEntryKind::HardLink => HardLink,
+            },
             EntryIndex::Ace(header) => dos_kind(header.attributes),
             EntryIndex::Arj(header) => match header.file_type {
                 ArjFileType::Directory => Directory,
@@ -1353,6 +1392,7 @@ impl ArchiveEntry {
             return None;
         }
         match &self.index {
+            EntryIndex::Amiga(entry) => entry.link_target.as_deref(),
             EntryIndex::Tar(header)
             | EntryIndex::Tgz(header)
             | EntryIndex::Tbz(header)
@@ -1443,6 +1483,7 @@ enum ArchiveInner<T: Read + Seek> {
     T64(T64Archive<T>),
     /// D64 images are read into memory, so they don't need the generic reader type
     D64(D64Archive),
+    Amiga(AmigaArchive<T>),
     /// TXZ decompresses to memory, so it doesn't need the generic reader type
     Txz(TxzArchive),
     /// TZST decompresses to memory, so it doesn't need the generic reader type
@@ -1562,6 +1603,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Lynx => ArchiveInner::Lynx(LynxArchive::new(reader)?),
             ArchiveFormat::T64 => ArchiveInner::T64(T64Archive::new(reader)?),
             ArchiveFormat::D64 => ArchiveInner::D64(D64Archive::new(reader)?),
+            ArchiveFormat::Adf => ArchiveInner::Amiga(AmigaArchive::open_adf(reader)?),
+            ArchiveFormat::Hdf => ArchiveInner::Amiga(AmigaArchive::open_hdf(reader)?),
             ArchiveFormat::Txz => ArchiveInner::Txz(TxzArchive::new_with_limit(reader, options.whole_archive_limit())?),
             ArchiveFormat::Tzst => ArchiveInner::Tzst(TzstArchive::new_with_limit(reader, options.whole_archive_limit())?),
         };
@@ -2111,6 +2154,19 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                 encryption: EncryptionMethod::None,
                 index: EntryIndex::D64(header),
             })),
+            ArchiveInner::Amiga(archive) => {
+                let header = archive.get_next_entry()?;
+                Ok(header.map(|header| ArchiveEntry {
+                    name: header.name.clone(),
+                    compressed_size: header.size,
+                    original_size: header.size,
+                    compression_method: format!("Stored ({})", archive.volumes()[header.volume_index()].filesystem()),
+                    modified_time: header.modified_time,
+                    crc: 0,
+                    encryption: EncryptionMethod::None,
+                    index: EntryIndex::Amiga(header),
+                }))
+            }
             ArchiveInner::Txz(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
                     Ok(Some(ArchiveEntry {
@@ -2221,6 +2277,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Lynx(archive), EntryIndex::Lynx(header)) => archive.read(header),
             (ArchiveInner::T64(archive), EntryIndex::T64(header)) => archive.read(header),
             (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.read(header),
+            (ArchiveInner::Amiga(archive), EntryIndex::Amiga(header)) => archive.read_with_limit(header, limit),
             (ArchiveInner::Txz(archive), EntryIndex::Txz(header)) => archive.read(header),
             (ArchiveInner::Tzst(archive), EntryIndex::Tzst(header)) => archive.read(header),
             _ => Err(ArchiveError::IndexMismatch("Entry does not belong to this archive".to_string())),
@@ -2358,6 +2415,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Lynx(archive), EntryIndex::Lynx(header)) => archive.skip(header),
             (ArchiveInner::T64(archive), EntryIndex::T64(header)) => archive.skip(header),
             (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.skip(header),
+            (ArchiveInner::Amiga(archive), EntryIndex::Amiga(header)) => archive.skip(header),
             (ArchiveInner::Txz(archive), EntryIndex::Txz(header)) => archive.skip(header),
             (ArchiveInner::Tzst(archive), EntryIndex::Tzst(header)) => archive.skip(header),
             _ => Err(ArchiveError::IndexMismatch("Entry does not belong to this archive".to_string())),

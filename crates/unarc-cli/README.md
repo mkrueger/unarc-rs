@@ -221,6 +221,8 @@ unarc tp large_archive.7z -d ~/SecLists/Passwords/ -e "readme.txt"
 | **RAR** | `.rar` | AES | — |
 | **LHA/LZH** | `.lha`, `.lzh` | — | — |
 | **TAR** | `.tar` | — | — |
+| **ADF** | `.adf` | — | — |
+| **HDF** | `.hdf` | — | — |
 | **ACE** | `.ace` | Blowfish | ✓ |
 | **ARJ** | `.arj` | Garble, GOST40 | ✓ |
 | **ARC/PAK** | `.arc`, `.pak` | XOR | — |
@@ -243,6 +245,15 @@ unarc tp large_archive.7z -d ~/SecLists/Passwords/ -e "readme.txt"
 | **TZST** | `.tzst`, `.tar.zst` | — | — |
 
 ## Examples
+
+Amiga ADF/HDF images support OFS/FFS (DOS0-DOS5). RDB partition contents use
+device-name prefixes such as `DH0/` and `DH1/`. See
+[Amiga support](../../doc/amiga.md) for limitations.
+
+```bash
+unarc list --json disk.adf
+unarc extract harddisk.hdf DH0/docs/readme.txt -o ./output
+```
 
 Extract an encrypted ARJ archive:
 

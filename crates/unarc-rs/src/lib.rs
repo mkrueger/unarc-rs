@@ -12,6 +12,7 @@ pub use error::{ArchiveError, Result};
 pub use limits::DEFAULT_MAX_ENTRY_SIZE;
 
 pub mod ace;
+pub mod amiga;
 pub mod arc;
 pub mod arj;
 pub mod bz2;
