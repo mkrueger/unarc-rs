@@ -60,6 +60,16 @@ cargo install unarc-cli
 | **TBZ** | `.tbz`, `.tar.bz2` |
 | **TAR.Z** | `.tar.Z` |
 
+### Commodore 64 Containers
+
+Files are stored uncompressed. Entries are named `NAME.prg`, `NAME.seq`, etc.; PRG files include their load address.
+
+| Format | Extensions | Notes |
+| ------ | ---------- | ----- |
+| **D64** | `.d64` | 1541 disk image (35/40/42 tracks, error bytes) |
+| **T64** | `.t64` | C64S tape image; wrong end addresses are corrected |
+| **Lynx** | `.lnx` | Lynx container, with or without BASIC loader |
+
 ## Quick Start
 
 ### CLI Tool
