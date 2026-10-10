@@ -43,6 +43,7 @@ use crate::arc::local_file_header::LocalFileHeader as ArcHeader;
 use crate::arj::arj_archive::ArjArchive;
 use crate::arj::local_file_header::{FileType as ArjFileType, LocalFileHeader as ArjHeader};
 use crate::bz2::Bz2Archive;
+use crate::cab::{CabArchive, CabFileHeader};
 use crate::d64::{D64Archive, D64Entry};
 use crate::date_time::DosDateTime;
 use crate::encryption::{EncryptionMethod, RarEncryption, ZipEncryption};
@@ -316,6 +317,8 @@ pub enum ArchiveFormat {
     Tzst,
     //
     Uc2,
+    /// Microsoft Cabinet format (.cab)
+    Cab,
     /// Lynx container format (.lnx) - Commodore 64
     Lynx,
     /// T64 tape image format (.t64) - Commodore 64
@@ -352,6 +355,7 @@ impl ArchiveFormat {
         ArchiveFormat::Tgz,
         ArchiveFormat::Tbz,
         ArchiveFormat::TarZ,
+        ArchiveFormat::Cab,
         ArchiveFormat::Lynx,
         ArchiveFormat::T64,
         ArchiveFormat::D64,
@@ -392,6 +396,7 @@ impl ArchiveFormat {
             "tar" => Some(ArchiveFormat::Tar),
             "tgz" => Some(ArchiveFormat::Tgz),
             "tbz" | "tbz2" => Some(ArchiveFormat::Tbz),
+            "cab" => Some(ArchiveFormat::Cab),
             "lnx" => Some(ArchiveFormat::Lynx),
             "t64" => Some(ArchiveFormat::T64),
             "d64" => Some(ArchiveFormat::D64),
@@ -470,6 +475,7 @@ impl ArchiveFormat {
             ArchiveFormat::Tgz => "tgz",
             ArchiveFormat::Tbz => "tbz2",
             ArchiveFormat::TarZ => "tar.Z",
+            ArchiveFormat::Cab => "cab",
             ArchiveFormat::Lynx => "lnx",
             ArchiveFormat::T64 => "t64",
             ArchiveFormat::D64 => "d64",
@@ -506,6 +512,7 @@ impl ArchiveFormat {
             ArchiveFormat::Tgz => "TGZ (tar.gz)",
             ArchiveFormat::Tbz => "TBZ (tar.bz2)",
             ArchiveFormat::TarZ => "TAR.Z (tar + Unix compress)",
+            ArchiveFormat::Cab => "CAB (Microsoft Cabinet)",
             ArchiveFormat::Lynx => "Lynx (C64)",
             ArchiveFormat::T64 => "T64 (C64 tape image)",
             ArchiveFormat::D64 => "D64 (C64 1541 disk image)",
@@ -543,6 +550,7 @@ impl ArchiveFormat {
             ArchiveFormat::Tgz => &["tgz", "tar.gz"],
             ArchiveFormat::Tbz => &["tbz", "tbz2", "tar.bz2"],
             ArchiveFormat::TarZ => &["tar.Z"],
+            ArchiveFormat::Cab => &["cab"],
             ArchiveFormat::Lynx => &["lnx"],
             ArchiveFormat::T64 => &["t64"],
             ArchiveFormat::D64 => &["d64"],
@@ -615,6 +623,8 @@ impl ArchiveFormat {
             ArchiveFormat::Tbz => Some(&[b"BZh"]),
             // TAR.Z: Unix compress magic (contains TAR inside)
             ArchiveFormat::TarZ => Some(&[&[0x1F, 0x9D]]),
+            // CAB: "MSCF"
+            ArchiveFormat::Cab => Some(&[b"MSCF"]),
             // Lynx: a "LYNX" signature line after an optional BASIC loader, no fixed offset
             ArchiveFormat::Lynx => None,
             // T64: "C64" signature text, padded to 32 bytes
@@ -723,6 +733,11 @@ impl ArchiveFormat {
         // ZOO: "ZOO " (then version text)
         if data.len() >= 4 && data.starts_with(b"ZOO ") {
             return Some(ArchiveFormat::Zoo);
+        }
+
+        // CAB: "MSCF" (Microsoft Cabinet)
+        if data.len() >= 4 && data.starts_with(b"MSCF") {
+            return Some(ArchiveFormat::Cab);
         }
 
         // T64: "C64S tape file", "C64 tape image file", ... (but not "C64-TAPE-RAW", a TAP file)
@@ -1206,6 +1221,7 @@ enum EntryIndex {
     Tbz(TarFileHeader),
     /// TAR.Z uses the same header as TAR
     TarZ(TarFileHeader),
+    Cab(CabFileHeader),
     Lynx(LynxEntry),
     T64(T64Entry),
     D64(D64Entry),
@@ -1306,6 +1322,7 @@ impl ArchiveEntry {
             EntryIndex::Sqz(header) => dos_kind(u32::from(header.attribute)),
             EntryIndex::Uc2(header) if header.attributes.is_directory() => Directory,
             EntryIndex::Jar(header) => dos_kind(u32::from(header.attributes)),
+            EntryIndex::Cab(header) => dos_kind(u32::from(header.attributes)),
             EntryIndex::Tar(header)
             | EntryIndex::Tgz(header)
             | EntryIndex::Tbz(header)
@@ -1421,6 +1438,7 @@ enum ArchiveInner<T: Read + Seek> {
     Tbz(TbzArchive),
     /// TAR.Z decompresses to memory, so it doesn't need the generic reader type
     TarZ(TarZArchive),
+    Cab(CabArchive<T>),
     Lynx(LynxArchive<T>),
     T64(T64Archive<T>),
     /// D64 images are read into memory, so they don't need the generic reader type
@@ -1540,6 +1558,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Tgz => ArchiveInner::Tgz(TgzArchive::new_with_limit(reader, options.whole_archive_limit())?),
             ArchiveFormat::Tbz => ArchiveInner::Tbz(TbzArchive::new_with_limit(reader, options.whole_archive_limit())?),
             ArchiveFormat::TarZ => ArchiveInner::TarZ(TarZArchive::new_with_limit(reader, options.whole_archive_limit())?),
+            ArchiveFormat::Cab => ArchiveInner::Cab(CabArchive::new(reader)?),
             ArchiveFormat::Lynx => ArchiveInner::Lynx(LynxArchive::new(reader)?),
             ArchiveFormat::T64 => ArchiveInner::T64(T64Archive::new(reader)?),
             ArchiveFormat::D64 => ArchiveInner::D64(D64Archive::new(reader)?),
@@ -2047,6 +2066,21 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 }
             }
+            ArchiveInner::Cab(archive) => Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
+                name: header.name.clone(),
+                // Folders are compressed as a whole; only stored files have their own compressed size.
+                compressed_size: if header.compression_method == crate::cab::CompressionMethod::None {
+                    u64::from(header.original_size)
+                } else {
+                    0
+                },
+                original_size: u64::from(header.original_size),
+                compression_method: header.compression_method.to_string(),
+                modified_time: Some(header.date_time),
+                crc: 0, // CAB checksums cover data blocks, not files
+                encryption: EncryptionMethod::None,
+                index: EntryIndex::Cab(header),
+            })),
             ArchiveInner::Lynx(archive) => Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
                 name: header.name.clone(),
                 compressed_size: header.size,
@@ -2183,6 +2217,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.read(header),
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.read(header),
             (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.read(header),
+            (ArchiveInner::Cab(archive), EntryIndex::Cab(header)) => archive.read_with_limit(header, limit),
             (ArchiveInner::Lynx(archive), EntryIndex::Lynx(header)) => archive.read(header),
             (ArchiveInner::T64(archive), EntryIndex::T64(header)) => archive.read(header),
             (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.read(header),
@@ -2304,6 +2339,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.skip(header),
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.skip(header),
             (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.skip(header),
+            (ArchiveInner::Cab(archive), EntryIndex::Cab(header)) => archive.skip(header),
             (ArchiveInner::Lynx(archive), EntryIndex::Lynx(header)) => archive.skip(header),
             (ArchiveInner::T64(archive), EntryIndex::T64(header)) => archive.skip(header),
             (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.skip(header),
@@ -2397,6 +2433,7 @@ mod tests {
         assert_eq!(ArchiveFormat::from_extension("zip"), Some(ArchiveFormat::Zip));
         assert_eq!(ArchiveFormat::from_extension("rar"), Some(ArchiveFormat::Rar));
         assert_eq!(ArchiveFormat::from_extension("7z"), Some(ArchiveFormat::SevenZ));
+        assert_eq!(ArchiveFormat::from_extension("CAB"), Some(ArchiveFormat::Cab));
     }
 
     #[test]
@@ -2660,6 +2697,9 @@ mod tests {
 
         // Test UE2 (UltraCrypt) detection as UC2
         assert_eq!(ArchiveFormat::detect_from_bytes(b"UE2\x01rest"), Some(ArchiveFormat::Uc2));
+
+        // Test CAB detection
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"MSCF\0\0\0\0rest"), Some(ArchiveFormat::Cab));
 
         // Test unknown format
         assert_eq!(ArchiveFormat::detect_from_bytes(b"random data here"), None);

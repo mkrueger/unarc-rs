@@ -31,6 +31,7 @@ cargo install unarc-cli
 | **RAR** | `.rar` | Full support | AES ✓ | ✓ |
 | **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
 | **TAR** | `.tar` | Full support | — | — |
+| **CAB** | `.cab` | None, MSZIP, LZX (no Quantum) | — | — |
 | **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |
 | **ARJ** | `.arj` | Full support | Garble, GOST40 ✓ | ✓ |
 | **ARC/PAK** | `.arc`, `.pak` | Full support | XOR ✓ | — |
@@ -158,7 +159,7 @@ TAR and compressed TAR expose symbolic/hard links, device/FIFO types, and extend
 link names. ZIP and 7z use Unix file-type attributes; RAR uses Unix modes and RAR5
 redirections (Windows junctions are symbolic links, file copies are regular
 files). LHA uses Unix permissions and the encoded `name|target` destination.
-ACE, ARJ, HA, HYP, JAR, SQZ and UC2 use their available directory/special flags.
+ACE, ARJ, CAB, HA, HYP, JAR, SQZ and UC2 use their available directory/special flags.
 Formats without a type field retain their regular-file/name-suffix fallback.
 An unrecognized explicit type is `Unknown`, not a regular file.
 
@@ -177,6 +178,7 @@ Listing does not create or follow links.
 `ArchiveOptions::with_max_entry_size` and `with_max_total_size` reject oversized
 recorded sizes before entry decoding. GZ/BZ2/Z streams and 7z entry output are
 also bounded while decoding; compressed TAR is bounded while opening.
+CAB output never exceeds the recorded size, which is checked before decoding.
 ZIP output is bounded by its central-directory size.
 
 These are decompressed-output limits, **not a process memory/CPU budget**.
@@ -185,6 +187,8 @@ output before the unified API checks its actual size. RAR independent reads and
 solid/multi-volume caches can also allocate other members before that check.
 The 7z decoder still allocates its own dictionaries and may decode earlier
 solid members, though those members' output is discarded rather than buffered.
+CAB likewise decodes and discards the data preceding an entry in its folder;
+reading a folder's entries out of order restarts the folder each time.
 Input archives, headers, compressed buffers, and caches are not covered by the
 total-output limit. Direct format-specific APIs do not inherit unified options.
 

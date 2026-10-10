@@ -16,6 +16,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **RAR** | `.rar` | RAR 1.3 – RAR 7 | AES ✓ | ✓ |
 | **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
 | **TAR** | `.tar` | Full support | — | — |
+| **CAB** | `.cab` | None, MSZIP, LZX (no Quantum) | — | — |
 | **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |
 | **ARJ** | `.arj` | Full support | Garble, GOST40 ✓ | ✓ |
 | **ARC/PAK** | `.arc`, `.pak` | Full support | XOR ✓ | — |
