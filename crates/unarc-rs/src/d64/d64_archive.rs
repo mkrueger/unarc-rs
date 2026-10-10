@@ -186,6 +186,11 @@ impl D64Archive {
     /// Fails on links outside the disk and on chains that revisit a sector, so
     /// the walk ends after at most one visit per sector.
     fn walk_chain(&self, mut track: u8, mut sector: u8, mut visit: impl FnMut(&[u8])) -> std::result::Result<(), String> {
+        if (track, sector) == (DIRECTORY_TRACK, 0) {
+            // Directory art (separator lines, usually DEL entries) points at the BAM.
+            // It has no data of its own; following the link would dump the directory.
+            return Ok(());
+        }
         let mut visited = vec![false; total_sectors(self.tracks)];
         while track != 0 {
             let index = sector_index(self.tracks, track, sector).ok_or_else(|| format!("invalid track/sector link {track}/{sector}"))?;

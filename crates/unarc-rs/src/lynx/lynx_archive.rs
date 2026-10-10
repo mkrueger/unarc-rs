@@ -247,6 +247,15 @@ impl<T: Read + Seek> LynxArchive<T> {
             (blocks, Some(last)) => u64::from(blocks - 1) * BLOCK_SIZE + u64::from(last) - 1,
             (blocks, None) => (u64::from(blocks) * BLOCK_SIZE).min(self.len.saturating_sub(offset)),
         };
+        // Some archivers (Lynx XVI, Star Lynx) write the container a few bytes short of the
+        // last file's recorded size. c1541 and cbmconvert keep what is there; so do we, but only
+        // when the container ends inside that file's last block, so a real truncation still fails.
+        let available = self.len.saturating_sub(offset);
+        let size = if is_last && size > available && size - available < BLOCK_SIZE {
+            available
+        } else {
+            size
+        };
         self.data_pos = self.data_pos.saturating_add(u64::from(blocks) * BLOCK_SIZE);
         self.index += 1;
 

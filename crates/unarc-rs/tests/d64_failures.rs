@@ -127,3 +127,19 @@ fn unified_read_respects_size_limit() {
     let data = archive.next_entry().unwrap().unwrap();
     assert!(matches!(archive.read(&data), Err(ArchiveError::SizeLimitExceeded { .. })));
 }
+
+#[test]
+fn directory_art_pointing_at_the_bam_is_empty() {
+    // Scene disks list separator lines as DEL entries whose first sector is 18/0
+    let mut image = IMAGE.to_vec();
+    let directory = offset(18, 1);
+    // Turn the first entry into one
+    let slot = directory;
+    image[slot + 2] = 0x80; // closed DEL
+    image[slot + 3] = 18;
+    image[slot + 4] = 0;
+    image[slot + 5..slot + 21].copy_from_slice(b"----------------");
+    let separator = entry(&image, "----------------.del");
+    assert_eq!(separator.size, 0);
+    assert_eq!(read(&image, "----------------.del").unwrap(), b"");
+}

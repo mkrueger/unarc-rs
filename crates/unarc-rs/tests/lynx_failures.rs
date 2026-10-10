@@ -132,3 +132,17 @@ fn huge_directory_and_entry_counts() {
     assert_eq!(entries.len(), 1);
     assert!(err.is_some());
 }
+
+#[test]
+fn last_file_a_few_bytes_short_keeps_what_is_there() {
+    // Lynx XVI and Star Lynx can write the container short of the last file's recorded size
+    let mut archive = LynxArchive::new(Cursor::new(BASIC)).unwrap();
+    let last = std::iter::from_fn(|| archive.get_next_entry().unwrap()).last().unwrap();
+    let full = archive.read(&last).unwrap();
+    let image = &BASIC[..usize::try_from(last.offset + last.size).unwrap() - 1];
+
+    let mut archive = LynxArchive::new(Cursor::new(image)).unwrap();
+    let short = std::iter::from_fn(|| archive.get_next_entry().unwrap()).last().unwrap();
+    assert_eq!(short.size, last.size - 1);
+    assert_eq!(archive.read(&short).unwrap(), &full[..full.len() - 1]);
+}
