@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- ARC/PAK crunched (method 8) and squashed members that reset the LZW table
+  failed with "infinite loop detected", and squashed archives could panic. The
+  reader now skips the padding to the end of a group of eight codes when the
+  table is cleared, as the `.Z` reader already does; squashed codes grow to
+  13 bits instead of stopping at 12; and the tables hold all 8192 codes. Over
+  46 ARC archives from a BBS file base, every member now matches nomarch, where
+  59 of 349 failed before.
 - `ArchiveFormat::detect()` returns `Tgz`, `Tbz` or `TarZ` when gzip, bzip2 or
   compress content has a matching compressed-TAR name (`.tgz`, `.tar.gz`, `.tbz`,
   `.tbz2`, `.tar.bz2`, `.tar.Z`). Previously such archives were detected as a single
