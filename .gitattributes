@@ -3,3 +3,6 @@ crates/*/tests/** -text
 
 # Tests compare extracted data byte for byte against the license text.
 LICENSE -text
+
+# Keep both branches' changelog entries when additions overlap.
+/CHANGELOG.md merge=union
