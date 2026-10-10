@@ -15,6 +15,7 @@ pub mod ace;
 pub mod amiga;
 pub mod arc;
 pub mod arj;
+pub mod atr;
 pub mod bz2;
 pub mod cab;
 pub mod cbm;
