@@ -14,7 +14,7 @@ use crate::error::{ArchiveError, Result};
 /// Header information for an LHA entry
 #[derive(Debug, Clone)]
 pub struct LhaFileHeader {
-    /// File name (may include path)
+    /// File name (may include a path with `/` separators)
     pub name: String,
     /// Compressed size in bytes
     pub compressed_size: u64,
@@ -35,8 +35,7 @@ pub struct LhaFileHeader {
 impl LhaFileHeader {
     /// Create header from delharc's LhaHeader
     pub fn from_lha_header(header: &LhaHeader) -> Self {
-        let path = header.parse_pathname();
-        let name = path.to_string_lossy().to_string();
+        let name = header.parse_pathname_to_str();
 
         // Parse modification time using TimestampResult's to_naive_utc method
         let modified = header.parse_last_modified();

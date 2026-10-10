@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ARC and PAK entries report their real modification time. The header's date and
   time words were read in the wrong order, so every timestamp was garbage (a 2024
   file listed as 2072, or with month 0).
+- LHA entry names use `/` path separators on every platform, fixing Windows
+  listings and the LHA metadata regression test without changing link targets.
 - `ArchiveFormat::detect()` returns `Tgz`, `Tbz` or `TarZ` when gzip, bzip2 or
   compress content has a matching compressed-TAR name (`.tgz`, `.tar.gz`, `.tbz`,
   `.tbz2`, `.tar.bz2`, `.tar.Z`). Previously such archives were detected as a single
