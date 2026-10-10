@@ -43,6 +43,7 @@ use crate::arc::local_file_header::LocalFileHeader as ArcHeader;
 use crate::arj::arj_archive::ArjArchive;
 use crate::arj::local_file_header::{FileType as ArjFileType, LocalFileHeader as ArjHeader};
 use crate::bz2::Bz2Archive;
+use crate::d64::{D64Archive, D64Entry};
 use crate::date_time::DosDateTime;
 use crate::encryption::{EncryptionMethod, RarEncryption, ZipEncryption};
 use crate::error::{ArchiveError, Result};
@@ -54,6 +55,7 @@ use crate::hyp::hyp_archive::HypArchive;
 use crate::ice::IceArchive;
 use crate::jar::jar_archive::{JarArchive, JarEntry};
 use crate::lha::lha_archive::{LhaArchiveSeekable, LhaFileHeader};
+use crate::lynx::{LynxArchive, LynxEntry};
 use crate::packice::PackIceArchive;
 use crate::rar::rar_archive::{RarArchive, RarFileHeader};
 use crate::sevenz::sevenz_archive::{SevenZArchive, SevenZFileHeader};
@@ -61,16 +63,21 @@ use crate::sq::header::Header as SqHeader;
 use crate::sq::sq_archive::SqArchive;
 use crate::sqz::file_header::FileHeader as SqzFileHeader;
 use crate::sqz::sqz_archive::SqzArchive;
+use crate::t64::{T64Archive, T64Entry};
 use crate::tar::{TarArchive, TarFileHeader};
 use crate::tarz::TarZArchive;
 use crate::tbz::TbzArchive;
 use crate::tgz::TgzArchive;
+use crate::txz::TxzArchive;
+use crate::tzst::TzstArchive;
 use crate::uc2::uc2_archive::{Uc2Archive, Uc2ArchiveEntry as Uc2Header};
+use crate::xz::XzArchive;
 use crate::z::ZArchive;
 use crate::zip::multi_volume::MultiVolumeReader;
 use crate::zip::zip_archive::{ZipArchive, ZipFileHeader};
 use crate::zoo::dirent::DirectoryEntry as ZooEntry;
 use crate::zoo::zoo_archive::ZooArchive;
+use crate::zst::ZstArchive;
 
 /// Trait for providing additional volumes for multi-volume archives.
 ///
@@ -129,7 +136,7 @@ impl std::fmt::Debug for dyn VolumeProvider {
 /// are rejected with [`ArchiveError::SizeLimitExceeded`] by default. Use
 /// [`with_max_entry_size`](Self::with_max_entry_size) and
 /// [`with_max_total_size`](Self::with_max_total_size) to adjust this.
-/// Formats that are decompressed as a whole when opened (`.tar.gz`, `.tar.bz2`, `.tar.Z`)
+/// Formats that are decompressed as a whole when opened (`.tar.gz`, `.tar.bz2`, `.tar.Z`, `.tar.xz`, `.tar.zst`)
 /// apply the total limit, or the entry limit if no total limit is set, to the whole TAR stream.
 ///
 /// # Example
@@ -273,6 +280,10 @@ pub enum ArchiveFormat {
     Gz,
     /// Bzip2 single file format (.bz2)
     Bz2,
+    /// XZ single file format (.xz)
+    Xz,
+    /// Zstandard single file format (.zst)
+    Zst,
     /// ICE compressed file format (.ice) - Legacy DOS ICE
     Ice,
     /// Pack-Ice compressed format (.pi9, etc.) - Atari ST Pack-Ice
@@ -299,8 +310,18 @@ pub enum ArchiveFormat {
     Tbz,
     /// TAR.Z (tar + Unix compress) archive format (.tar.Z)
     TarZ,
+    /// TXZ (tar.xz) archive format (.txz, .tar.xz)
+    Txz,
+    /// TZST (tar.zst) archive format (.tzst, .tar.zst)
+    Tzst,
     //
     Uc2,
+    /// Lynx container format (.lnx) - Commodore 64
+    Lynx,
+    /// T64 tape image format (.t64) - Commodore 64
+    T64,
+    /// D64 disk image format (.d64) - Commodore 1541
+    D64,
 }
 
 impl ArchiveFormat {
@@ -315,6 +336,8 @@ impl ArchiveFormat {
         ArchiveFormat::Z,
         ArchiveFormat::Gz,
         ArchiveFormat::Bz2,
+        ArchiveFormat::Xz,
+        ArchiveFormat::Zst,
         ArchiveFormat::Ice,
         ArchiveFormat::PackIce,
         ArchiveFormat::Hyp,
@@ -329,6 +352,11 @@ impl ArchiveFormat {
         ArchiveFormat::Tgz,
         ArchiveFormat::Tbz,
         ArchiveFormat::TarZ,
+        ArchiveFormat::Lynx,
+        ArchiveFormat::T64,
+        ArchiveFormat::D64,
+        ArchiveFormat::Txz,
+        ArchiveFormat::Tzst,
     ];
 
     /// Try to detect the archive format from a file extension (internal use only)
@@ -344,6 +372,8 @@ impl ArchiveFormat {
             "z" => Some(ArchiveFormat::Z),
             "gz" => Some(ArchiveFormat::Gz),
             "bz2" => Some(ArchiveFormat::Bz2),
+            "xz" => Some(ArchiveFormat::Xz),
+            "zst" => Some(ArchiveFormat::Zst),
             "ice" => Some(ArchiveFormat::Ice),
             // Pack-Ice compressed pictures commonly use .PI9
             "pi9" => Some(ArchiveFormat::PackIce),
@@ -362,6 +392,11 @@ impl ArchiveFormat {
             "tar" => Some(ArchiveFormat::Tar),
             "tgz" => Some(ArchiveFormat::Tgz),
             "tbz" | "tbz2" => Some(ArchiveFormat::Tbz),
+            "lnx" => Some(ArchiveFormat::Lynx),
+            "t64" => Some(ArchiveFormat::T64),
+            "d64" => Some(ArchiveFormat::D64),
+            "txz" => Some(ArchiveFormat::Txz),
+            "tzst" => Some(ArchiveFormat::Tzst),
             _ => {
                 // Check for ?Q? pattern (e.g., .BQK, .CQM, .DQC)
                 let bytes = ext_lower.as_bytes();
@@ -397,6 +432,12 @@ impl ArchiveFormat {
         if filename_lower.ends_with(".tar.z") {
             return Some(ArchiveFormat::TarZ);
         }
+        if filename_lower.ends_with(".tar.xz") {
+            return Some(ArchiveFormat::Txz);
+        }
+        if filename_lower.ends_with(".tar.zst") {
+            return Some(ArchiveFormat::Tzst);
+        }
 
         path.extension().and_then(|ext| ext.to_str()).and_then(Self::from_extension)
     }
@@ -413,6 +454,8 @@ impl ArchiveFormat {
             ArchiveFormat::Z => "Z",
             ArchiveFormat::Gz => "gz",
             ArchiveFormat::Bz2 => "bz2",
+            ArchiveFormat::Xz => "xz",
+            ArchiveFormat::Zst => "zst",
             ArchiveFormat::Ice => "ice",
             ArchiveFormat::PackIce => "pi9",
             ArchiveFormat::Hyp => "hyp",
@@ -427,6 +470,11 @@ impl ArchiveFormat {
             ArchiveFormat::Tgz => "tgz",
             ArchiveFormat::Tbz => "tbz2",
             ArchiveFormat::TarZ => "tar.Z",
+            ArchiveFormat::Lynx => "lnx",
+            ArchiveFormat::T64 => "t64",
+            ArchiveFormat::D64 => "d64",
+            ArchiveFormat::Txz => "txz",
+            ArchiveFormat::Tzst => "tzst",
         }
     }
 
@@ -442,6 +490,8 @@ impl ArchiveFormat {
             ArchiveFormat::Z => "Z (Unix compress)",
             ArchiveFormat::Gz => "GZ (gzip)",
             ArchiveFormat::Bz2 => "BZ2 (bzip2)",
+            ArchiveFormat::Xz => "XZ",
+            ArchiveFormat::Zst => "ZST (Zstandard)",
             ArchiveFormat::Ice => "ICE (Legacy DOS)",
             ArchiveFormat::PackIce => "Pack-Ice (Atari ST)",
             ArchiveFormat::Hyp => "HYP (Hyper)",
@@ -456,6 +506,11 @@ impl ArchiveFormat {
             ArchiveFormat::Tgz => "TGZ (tar.gz)",
             ArchiveFormat::Tbz => "TBZ (tar.bz2)",
             ArchiveFormat::TarZ => "TAR.Z (tar + Unix compress)",
+            ArchiveFormat::Lynx => "Lynx (C64)",
+            ArchiveFormat::T64 => "T64 (C64 tape image)",
+            ArchiveFormat::D64 => "D64 (C64 1541 disk image)",
+            ArchiveFormat::Txz => "TXZ (tar.xz)",
+            ArchiveFormat::Tzst => "TZST (tar.zst)",
         }
     }
 
@@ -471,6 +526,8 @@ impl ArchiveFormat {
             ArchiveFormat::Z => &["Z"],
             ArchiveFormat::Gz => &["gz"],
             ArchiveFormat::Bz2 => &["bz2"],
+            ArchiveFormat::Xz => &["xz"],
+            ArchiveFormat::Zst => &["zst"],
             ArchiveFormat::Ice => &["ice"],
             ArchiveFormat::PackIce => &["pi9"],
             ArchiveFormat::Hyp => &["hyp"],
@@ -486,6 +543,11 @@ impl ArchiveFormat {
             ArchiveFormat::Tgz => &["tgz", "tar.gz"],
             ArchiveFormat::Tbz => &["tbz", "tbz2", "tar.bz2"],
             ArchiveFormat::TarZ => &["tar.Z"],
+            ArchiveFormat::Lynx => &["lnx"],
+            ArchiveFormat::T64 => &["t64"],
+            ArchiveFormat::D64 => &["d64"],
+            ArchiveFormat::Txz => &["txz", "tar.xz"],
+            ArchiveFormat::Tzst => &["tzst", "tar.zst"],
         }
     }
 
@@ -521,6 +583,10 @@ impl ArchiveFormat {
             ArchiveFormat::Gz => Some(&[&[0x1F, 0x8B]]),
             // Bzip2: "BZh"
             ArchiveFormat::Bz2 => Some(&[b"BZh"]),
+            // XZ: 0xFD "7zXZ" 0x00
+            ArchiveFormat::Xz => Some(&[&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]]),
+            // Zstandard: 0x28 0xB5 0x2F 0xFD (a leading skippable frame is also accepted)
+            ArchiveFormat::Zst => Some(&[&[0x28, 0xB5, 0x2F, 0xFD]]),
             // ICE: no fixed magic, starts with size (Legacy DOS format)
             ArchiveFormat::Ice => None,
             // Pack-Ice: "ICE!", "Ice!", "TMM!", "TSM!", "SHE!" at offset 0
@@ -549,6 +615,16 @@ impl ArchiveFormat {
             ArchiveFormat::Tbz => Some(&[b"BZh"]),
             // TAR.Z: Unix compress magic (contains TAR inside)
             ArchiveFormat::TarZ => Some(&[&[0x1F, 0x9D]]),
+            // Lynx: a "LYNX" signature line after an optional BASIC loader, no fixed offset
+            ArchiveFormat::Lynx => None,
+            // T64: "C64" signature text, padded to 32 bytes
+            ArchiveFormat::T64 => Some(&[b"C64S tape image file", b"C64S tape file", b"C64 tape image file"]),
+            // D64: no magic, recognised by image size and BAM
+            ArchiveFormat::D64 => None,
+            // TXZ: xz magic (contains TAR inside)
+            ArchiveFormat::Txz => Some(&[&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]]),
+            // TZST: Zstandard magic (contains TAR inside)
+            ArchiveFormat::Tzst => Some(&[&[0x28, 0xB5, 0x2F, 0xFD]]),
         }
     }
 
@@ -605,6 +681,18 @@ impl ArchiveFormat {
             return Some(ArchiveFormat::Rar);
         }
 
+        // XZ: 0xFD "7zXZ" 0x00 (6 bytes)
+        if data.starts_with(&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]) {
+            // Could be TXZ, but we can't know without decompressing
+            return Some(ArchiveFormat::Xz);
+        }
+
+        // Zstandard: 0x28 0xB5 0x2F 0xFD, or a skippable frame (0x50..=0x5F 0x2A 0x4D 0x18)
+        if data.len() >= 4 && crate::zst::is_frame_magic([data[0], data[1], data[2], data[3]]) {
+            // Could be TZST, but we can't know without decompressing
+            return Some(ArchiveFormat::Zst);
+        }
+
         // SQZ: "HLSQZ" (5 bytes)
         if data.len() >= 5 && data.starts_with(b"HLSQZ") {
             return Some(ArchiveFormat::Sqz);
@@ -635,6 +723,11 @@ impl ArchiveFormat {
         // ZOO: "ZOO " (then version text)
         if data.len() >= 4 && data.starts_with(b"ZOO ") {
             return Some(ArchiveFormat::Zoo);
+        }
+
+        // T64: "C64S tape file", "C64 tape image file", ... (but not "C64-TAPE-RAW", a TAP file)
+        if crate::t64::t64_archive::has_signature(data) {
+            return Some(ArchiveFormat::T64);
         }
 
         // BZ2: "BZh" (3 bytes)
@@ -697,6 +790,11 @@ impl ArchiveFormat {
             return Some(ArchiveFormat::Lha);
         }
 
+        // Lynx: text header with a "LYNX" signature, usually behind a BASIC loader
+        if crate::lynx::lynx_archive::has_signature(data) {
+            return Some(ArchiveFormat::Lynx);
+        }
+
         // TAR: "ustar" at offset 257 (POSIX format)
         if data.len() >= 263 && &data[257..262] == b"ustar" {
             return Some(ArchiveFormat::Tar);
@@ -722,8 +820,13 @@ impl ArchiveFormat {
     /// Detect archive format from a reader.
     ///
     /// Reads up to 512 bytes from the reader, then seeks back to the original position.
+    /// D64 disk images have no magic bytes; they are recognised by their exact size and
+    /// a consistent block availability map (BAM).
     /// Returns `Some(format)` if detected, `None` otherwise.
     pub fn detect_from_reader<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<Self>> {
+        if D64Archive::probe(reader)? {
+            return Ok(Some(ArchiveFormat::D64));
+        }
         let pos = reader.stream_position()?;
         let mut buffer = [0u8; 512];
         let bytes_read = reader.read(&mut buffer)?;
@@ -737,9 +840,13 @@ impl ArchiveFormat {
     /// 1. First tries to detect from file content (magic bytes)
     /// 2. Falls back to extension-based detection if content detection fails
     ///
-    /// Compressed TAR archives start with plain gzip, bzip2 or compress magic bytes.
-    /// When the path names the matching TAR variant (`.tgz`, `.tar.gz`, `.tbz`,
-    /// `.tbz2`, `.tar.bz2`, `.tar.Z`), that variant is returned instead.
+    /// Compressed TAR archives start with plain gzip, bzip2, compress, xz or Zstandard
+    /// magic bytes. When the path names the matching TAR variant (`.tgz`, `.tar.gz`, `.tbz`,
+    /// `.tbz2`, `.tar.bz2`, `.tar.Z`, `.txz`, `.tar.xz`, `.tzst`, `.tar.zst`), that variant
+    /// is returned instead.
+    ///
+    /// D64 disk images have no magic bytes, so a `.d64` path with the size of a D64
+    /// image is detected as D64 even if its first sector happens to look like another format.
     ///
     /// # Example
     /// ```no_run
@@ -754,10 +861,15 @@ impl ArchiveFormat {
     /// ```
     pub fn detect<R: Read + Seek>(reader: &mut R, path: Option<&Path>) -> std::io::Result<Option<Self>> {
         let named = path.and_then(Self::from_path);
+        if named == Some(ArchiveFormat::D64) && D64Archive::has_image_size(reader)? {
+            return Ok(named);
+        }
         match (Self::detect_from_reader(reader)?, named) {
             (Some(ArchiveFormat::Gz), Some(ArchiveFormat::Tgz)) => Ok(Some(ArchiveFormat::Tgz)),
             (Some(ArchiveFormat::Bz2), Some(ArchiveFormat::Tbz)) => Ok(Some(ArchiveFormat::Tbz)),
             (Some(ArchiveFormat::Z), Some(ArchiveFormat::TarZ)) => Ok(Some(ArchiveFormat::TarZ)),
+            (Some(ArchiveFormat::Xz), Some(ArchiveFormat::Txz)) => Ok(Some(ArchiveFormat::Txz)),
+            (Some(ArchiveFormat::Zst), Some(ArchiveFormat::Tzst)) => Ok(Some(ArchiveFormat::Tzst)),
             (Some(format), _) => Ok(Some(format)),
             (None, named) => Ok(named),
         }
@@ -804,8 +916,11 @@ impl ArchiveFormat {
         let reader = BufReader::new(file);
         let mut archive = format.open(reader)?;
 
-        // For single-file formats (.Z, .gz, .bz2), derive the output filename from the archive name
-        if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
+        // For single-file formats (.Z, .gz, .bz2, .xz, .zst), derive the output filename from the archive name
+        if matches!(
+            format,
+            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst
+        ) {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 archive.set_single_file_name(stem.to_string());
             }
@@ -848,8 +963,11 @@ impl ArchiveFormat {
         let reader = BufReader::new(file);
         let mut archive = format.open_with_options(reader, options)?;
 
-        // For single-file formats (.Z, .gz, .bz2), derive the output filename from the archive name
-        if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
+        // For single-file formats (.Z, .gz, .bz2, .xz, .zst), derive the output filename from the archive name
+        if matches!(
+            format,
+            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst
+        ) {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 archive.set_single_file_name(stem.to_string());
             }
@@ -1065,6 +1183,10 @@ enum EntryIndex {
     Gz,
     /// BZ2 format has no header per file, just one file
     Bz2,
+    /// XZ format has no header per file, just one file
+    Xz,
+    /// ZST format has no header per file, just one file
+    Zst,
     /// ICE format has no header per file, just one file (Legacy DOS)
     Ice,
     /// Pack-Ice format has no header per file, just one file (Atari ST)
@@ -1084,6 +1206,13 @@ enum EntryIndex {
     Tbz(TarFileHeader),
     /// TAR.Z uses the same header as TAR
     TarZ(TarFileHeader),
+    Lynx(LynxEntry),
+    T64(T64Entry),
+    D64(D64Entry),
+    /// TXZ uses the same header as TAR
+    Txz(TarFileHeader),
+    /// TZST uses the same header as TAR
+    Tzst(TarFileHeader),
 }
 
 impl ArchiveEntry {
@@ -1177,7 +1306,12 @@ impl ArchiveEntry {
             EntryIndex::Sqz(header) => dos_kind(u32::from(header.attribute)),
             EntryIndex::Uc2(header) if header.attributes.is_directory() => Directory,
             EntryIndex::Jar(header) => dos_kind(u32::from(header.attributes)),
-            EntryIndex::Tar(header) | EntryIndex::Tgz(header) | EntryIndex::Tbz(header) | EntryIndex::TarZ(header) => match header.entry_type {
+            EntryIndex::Tar(header)
+            | EntryIndex::Tgz(header)
+            | EntryIndex::Tbz(header)
+            | EntryIndex::TarZ(header)
+            | EntryIndex::Txz(header)
+            | EntryIndex::Tzst(header) => match header.entry_type {
                 crate::tar::TarEntryType::Regular | crate::tar::TarEntryType::Continuous => File,
                 crate::tar::TarEntryType::Directory => Directory,
                 crate::tar::TarEntryType::Symlink => SymbolicLink,
@@ -1202,7 +1336,12 @@ impl ArchiveEntry {
             return None;
         }
         match &self.index {
-            EntryIndex::Tar(header) | EntryIndex::Tgz(header) | EntryIndex::Tbz(header) | EntryIndex::TarZ(header) => header.link_name.as_deref(),
+            EntryIndex::Tar(header)
+            | EntryIndex::Tgz(header)
+            | EntryIndex::Tbz(header)
+            | EntryIndex::TarZ(header)
+            | EntryIndex::Txz(header)
+            | EntryIndex::Tzst(header) => header.link_name.as_deref(),
             EntryIndex::Lha(_, metadata) | EntryIndex::Zip(_, metadata) | EntryIndex::Rar(_, metadata) | EntryIndex::SevenZ(_, metadata) => {
                 metadata.link_target.as_deref()
             }
@@ -1263,6 +1402,8 @@ enum ArchiveInner<T: Read + Seek> {
     Z(ZArchive<T>, bool),          // bool = already read
     Gz(GzArchive<T>, bool),        // bool = already read
     Bz2(Bz2Archive<T>, bool),      // bool = already read
+    Xz(XzArchive<T>, bool),        // bool = already read
+    Zst(ZstArchive<T>, bool),      // bool = already read
     Ice(IceArchive, bool),         // bool = already read (Legacy DOS)
     PackIce(PackIceArchive, bool), // bool = already read (Atari ST)
     Hyp(HypArchive<T>),
@@ -1280,13 +1421,21 @@ enum ArchiveInner<T: Read + Seek> {
     Tbz(TbzArchive),
     /// TAR.Z decompresses to memory, so it doesn't need the generic reader type
     TarZ(TarZArchive),
+    Lynx(LynxArchive<T>),
+    T64(T64Archive<T>),
+    /// D64 images are read into memory, so they don't need the generic reader type
+    D64(D64Archive),
+    /// TXZ decompresses to memory, so it doesn't need the generic reader type
+    Txz(TxzArchive),
+    /// TZST decompresses to memory, so it doesn't need the generic reader type
+    Tzst(TzstArchive),
 }
 
 /// Unified archive reader that provides a common interface for all supported formats
 pub struct UnifiedArchive<T: Read + Seek> {
     inner: ArchiveInner<T>,
     format: ArchiveFormat,
-    /// For single-file formats (.Z, .gz, .bz2): store the original filename if known
+    /// For single-file formats (.Z, .gz, .bz2, .xz, .zst): store the original filename if known
     single_file_name: Option<String>,
     /// Options for archive operations (password, CRC verification, etc.)
     options: ArchiveOptions,
@@ -1357,6 +1506,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Z => ArchiveInner::Z(ZArchive::new(reader)?, false),
             ArchiveFormat::Gz => ArchiveInner::Gz(GzArchive::new(reader)?, false),
             ArchiveFormat::Bz2 => ArchiveInner::Bz2(Bz2Archive::new(reader)?, false),
+            ArchiveFormat::Xz => ArchiveInner::Xz(XzArchive::new(reader)?, false),
+            ArchiveFormat::Zst => ArchiveInner::Zst(ZstArchive::new(reader)?, false),
             ArchiveFormat::Ice => ArchiveInner::Ice(IceArchive::new_with_limit(reader, options.max_entry_size)?, false),
             ArchiveFormat::PackIce => ArchiveInner::PackIce(PackIceArchive::from_reader_with_limit(reader, options.max_entry_size)?, false),
             ArchiveFormat::Hyp => ArchiveInner::Hyp(HypArchive::new(reader)?),
@@ -1389,6 +1540,11 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Tgz => ArchiveInner::Tgz(TgzArchive::new_with_limit(reader, options.whole_archive_limit())?),
             ArchiveFormat::Tbz => ArchiveInner::Tbz(TbzArchive::new_with_limit(reader, options.whole_archive_limit())?),
             ArchiveFormat::TarZ => ArchiveInner::TarZ(TarZArchive::new_with_limit(reader, options.whole_archive_limit())?),
+            ArchiveFormat::Lynx => ArchiveInner::Lynx(LynxArchive::new(reader)?),
+            ArchiveFormat::T64 => ArchiveInner::T64(T64Archive::new(reader)?),
+            ArchiveFormat::D64 => ArchiveInner::D64(D64Archive::new(reader)?),
+            ArchiveFormat::Txz => ArchiveInner::Txz(TxzArchive::new_with_limit(reader, options.whole_archive_limit())?),
+            ArchiveFormat::Tzst => ArchiveInner::Tzst(TzstArchive::new_with_limit(reader, options.whole_archive_limit())?),
         };
 
         Ok(Self {
@@ -1405,7 +1561,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
         self.format
     }
 
-    /// Set the filename for single-file formats (.Z, .gz, .bz2) since they don't contain the filename
+    /// Set the filename for single-file formats (.Z, .gz, .bz2, .xz, .zst) since they don't contain the filename
     ///
     /// This is typically derived from the archive filename by removing the extension.
     pub fn set_single_file_name(&mut self, name: String) {
@@ -1612,6 +1768,42 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                         crc: 0,
                         encryption: EncryptionMethod::None,
                         index: EntryIndex::Bz2,
+                    }))
+                }
+            }
+            ArchiveInner::Xz(_, ref mut read) => {
+                if *read {
+                    Ok(None)
+                } else {
+                    *read = true;
+                    let name = self.single_file_name.clone().unwrap_or_else(|| "compressed".to_string());
+                    Ok(Some(ArchiveEntry {
+                        name,
+                        compressed_size: 0, // Would need to seek to get this
+                        original_size: 0,   // Unknown until decompressed
+                        compression_method: "LZMA2".to_string(),
+                        modified_time: None,
+                        crc: 0,
+                        encryption: EncryptionMethod::None,
+                        index: EntryIndex::Xz,
+                    }))
+                }
+            }
+            ArchiveInner::Zst(_, ref mut read) => {
+                if *read {
+                    Ok(None)
+                } else {
+                    *read = true;
+                    let name = self.single_file_name.clone().unwrap_or_else(|| "compressed".to_string());
+                    Ok(Some(ArchiveEntry {
+                        name,
+                        compressed_size: 0, // Would need to seek to get this
+                        original_size: 0,   // Unknown until decompressed
+                        compression_method: "Zstandard".to_string(),
+                        modified_time: None,
+                        crc: 0,
+                        encryption: EncryptionMethod::None,
+                        index: EntryIndex::Zst,
                     }))
                 }
             }
@@ -1855,6 +2047,68 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                     Ok(None)
                 }
             }
+            ArchiveInner::Lynx(archive) => Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
+                name: header.name.clone(),
+                compressed_size: header.size,
+                original_size: header.size,
+                compression_method: "Stored".to_string(),
+                modified_time: None,
+                crc: 0,
+                encryption: EncryptionMethod::None,
+                index: EntryIndex::Lynx(header),
+            })),
+            ArchiveInner::T64(archive) => Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
+                name: header.name.clone(),
+                compressed_size: header.size(),
+                original_size: header.size(),
+                compression_method: "Stored".to_string(),
+                modified_time: None,
+                crc: 0,
+                encryption: EncryptionMethod::None,
+                index: EntryIndex::T64(header),
+            })),
+            ArchiveInner::D64(archive) => Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
+                name: header.name.clone(),
+                compressed_size: header.size,
+                original_size: header.size,
+                compression_method: "Stored".to_string(),
+                modified_time: None,
+                crc: 0,
+                encryption: EncryptionMethod::None,
+                index: EntryIndex::D64(header),
+            })),
+            ArchiveInner::Txz(archive) => {
+                if let Some(header) = archive.get_next_entry()? {
+                    Ok(Some(ArchiveEntry {
+                        name: header.name.clone(),
+                        compressed_size: header.size, // Original TAR size (uncompressed)
+                        original_size: header.size,
+                        compression_method: "XZ + Stored".to_string(),
+                        modified_time: header.modified_time(),
+                        crc: 0, // TAR doesn't use CRC
+                        encryption: EncryptionMethod::None,
+                        index: EntryIndex::Txz(header),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
+            ArchiveInner::Tzst(archive) => {
+                if let Some(header) = archive.get_next_entry()? {
+                    Ok(Some(ArchiveEntry {
+                        name: header.name.clone(),
+                        compressed_size: header.size, // Original TAR size (uncompressed)
+                        original_size: header.size,
+                        compression_method: "Zstandard + Stored".to_string(),
+                        modified_time: header.modified_time(),
+                        crc: 0, // TAR doesn't use CRC
+                        encryption: EncryptionMethod::None,
+                        index: EntryIndex::Tzst(header),
+                    }))
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
 
@@ -1911,6 +2165,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Z(archive, _), EntryIndex::Z) => archive.read_with_limit(limit),
             (ArchiveInner::Gz(archive, _), EntryIndex::Gz) => archive.read_with_limit(limit),
             (ArchiveInner::Bz2(archive, _), EntryIndex::Bz2) => archive.read_with_limit(limit),
+            (ArchiveInner::Xz(archive, _), EntryIndex::Xz) => archive.read_with_limit(limit),
+            (ArchiveInner::Zst(archive, _), EntryIndex::Zst) => archive.read_with_limit(limit),
             (ArchiveInner::Ice(archive, _), EntryIndex::Ice) => archive.read(),
             (ArchiveInner::PackIce(archive, _), EntryIndex::PackIce) => archive.read(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.read(header),
@@ -1927,6 +2183,11 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.read(header),
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.read(header),
             (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.read(header),
+            (ArchiveInner::Lynx(archive), EntryIndex::Lynx(header)) => archive.read(header),
+            (ArchiveInner::T64(archive), EntryIndex::T64(header)) => archive.read(header),
+            (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.read(header),
+            (ArchiveInner::Txz(archive), EntryIndex::Txz(header)) => archive.read(header),
+            (ArchiveInner::Tzst(archive), EntryIndex::Tzst(header)) => archive.read(header),
             _ => Err(ArchiveError::IndexMismatch("Entry does not belong to this archive".to_string())),
         }
     }
@@ -2027,6 +2288,8 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Z(archive, _), EntryIndex::Z) => archive.skip(),
             (ArchiveInner::Gz(archive, _), EntryIndex::Gz) => archive.skip(),
             (ArchiveInner::Bz2(archive, _), EntryIndex::Bz2) => archive.skip(),
+            (ArchiveInner::Xz(archive, _), EntryIndex::Xz) => archive.skip(),
+            (ArchiveInner::Zst(archive, _), EntryIndex::Zst) => archive.skip(),
             (ArchiveInner::Ice(archive, _), EntryIndex::Ice) => archive.skip(),
             (ArchiveInner::PackIce(archive, _), EntryIndex::PackIce) => archive.skip(),
             (ArchiveInner::Hyp(archive), EntryIndex::Hyp(header)) => archive.skip(header),
@@ -2041,6 +2304,11 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Tgz(archive), EntryIndex::Tgz(header)) => archive.skip(header),
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.skip(header),
             (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.skip(header),
+            (ArchiveInner::Lynx(archive), EntryIndex::Lynx(header)) => archive.skip(header),
+            (ArchiveInner::T64(archive), EntryIndex::T64(header)) => archive.skip(header),
+            (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.skip(header),
+            (ArchiveInner::Txz(archive), EntryIndex::Txz(header)) => archive.skip(header),
+            (ArchiveInner::Tzst(archive), EntryIndex::Tzst(header)) => archive.skip(header),
             _ => Err(ArchiveError::IndexMismatch("Entry does not belong to this archive".to_string())),
         }
     }
@@ -2161,6 +2429,8 @@ mod tests {
         assert!(exts.contains(&"Z"));
         assert!(exts.contains(&"gz"));
         assert!(exts.contains(&"bz2"));
+        assert!(exts.contains(&"xz"));
+        assert!(exts.contains(&"zst"));
         assert!(exts.contains(&"hyp"));
         assert!(exts.contains(&"rar"));
         assert!(exts.contains(&"7z"));
@@ -2186,20 +2456,42 @@ mod tests {
     }
 
     #[test]
+    fn test_xz_zst_format_detection() {
+        assert_eq!(ArchiveFormat::from_extension("xz"), Some(ArchiveFormat::Xz));
+        assert_eq!(ArchiveFormat::from_extension("ZST"), Some(ArchiveFormat::Zst));
+        assert_eq!(ArchiveFormat::from_extension("txz"), Some(ArchiveFormat::Txz));
+        assert_eq!(ArchiveFormat::from_extension("tzst"), Some(ArchiveFormat::Tzst));
+
+        assert_eq!(ArchiveFormat::from_path(Path::new("file.xz")), Some(ArchiveFormat::Xz));
+        assert_eq!(ArchiveFormat::from_path(Path::new("file.zst")), Some(ArchiveFormat::Zst));
+        assert_eq!(ArchiveFormat::from_path(Path::new("file.tar.xz")), Some(ArchiveFormat::Txz));
+        assert_eq!(ArchiveFormat::from_path(Path::new("FILE.TAR.ZST")), Some(ArchiveFormat::Tzst));
+    }
+
+    #[test]
     fn test_detect_prefers_compressed_tar_names_and_falls_back_to_extension() {
         use std::io::Cursor;
         let detect = |data: &[u8], name: &str| ArchiveFormat::detect(&mut Cursor::new(data), Some(Path::new(name))).unwrap();
         let gz = [0x1F, 0x8B, 0x08, 0x00];
         let compress = [0x1F, 0x9D, 0x90, 0x00];
+        let xz = [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00];
+        let zst = [0x28, 0xB5, 0x2F, 0xFD];
 
         assert_eq!(detect(&gz, "file.tgz"), Some(ArchiveFormat::Tgz));
         assert_eq!(detect(&gz, "FILE.TAR.GZ"), Some(ArchiveFormat::Tgz));
         assert_eq!(detect(b"BZh9data", "file.tbz2"), Some(ArchiveFormat::Tbz));
         assert_eq!(detect(b"BZh9data", "file.tar.bz2"), Some(ArchiveFormat::Tbz));
         assert_eq!(detect(&compress, "file.tar.Z"), Some(ArchiveFormat::TarZ));
+        assert_eq!(detect(&xz, "file.txz"), Some(ArchiveFormat::Txz));
+        assert_eq!(detect(&xz, "file.tar.xz"), Some(ArchiveFormat::Txz));
+        assert_eq!(detect(&zst, "file.tzst"), Some(ArchiveFormat::Tzst));
+        assert_eq!(detect(&zst, "file.tar.zst"), Some(ArchiveFormat::Tzst));
 
         // A plain compressed file and a misleading name keep the content-detected format.
         assert_eq!(detect(&gz, "file.gz"), Some(ArchiveFormat::Gz));
+        assert_eq!(detect(&xz, "file.xz"), Some(ArchiveFormat::Xz));
+        assert_eq!(detect(&zst, "file.zst"), Some(ArchiveFormat::Zst));
+        assert_eq!(detect(&xz, "file.tar.zst"), Some(ArchiveFormat::Xz));
         assert_eq!(detect(&gz, "file.zip"), Some(ArchiveFormat::Gz));
         assert_eq!(detect(b"PK\x03\x04rest", "file.tgz"), Some(ArchiveFormat::Zip));
 
@@ -2207,6 +2499,32 @@ mod tests {
         assert_eq!(detect(b"no magic", "file.ice"), Some(ArchiveFormat::Ice));
         assert_eq!(detect(b"no magic", "file.txt"), None);
         assert_eq!(ArchiveFormat::detect(&mut Cursor::new(&gz), None).unwrap(), Some(ArchiveFormat::Gz));
+    }
+
+    #[test]
+    fn test_c64_formats() {
+        assert_eq!(ArchiveFormat::from_extension("lnx"), Some(ArchiveFormat::Lynx));
+        assert_eq!(ArchiveFormat::from_extension("T64"), Some(ArchiveFormat::T64));
+        assert_eq!(ArchiveFormat::from_extension("d64"), Some(ArchiveFormat::D64));
+        let exts = supported_extensions();
+        assert!(exts.contains(&"lnx") && exts.contains(&"t64") && exts.contains(&"d64"));
+
+        let mut t64 = b"C64S tape image file".to_vec();
+        t64.resize(64, 0);
+        assert_eq!(ArchiveFormat::detect_from_bytes(&t64), Some(ArchiveFormat::T64));
+        t64[..12].copy_from_slice(b"C64-TAPE-RAW");
+        assert_ne!(ArchiveFormat::detect_from_bytes(&t64), Some(ArchiveFormat::T64));
+
+        assert_eq!(ArchiveFormat::detect_from_bytes(b" 1  *LYNX XV\r 3 \r"), Some(ArchiveFormat::Lynx));
+        assert_eq!(
+            ArchiveFormat::detect_from_bytes(b"\x01\x08\x0b\x08\x0a\x00\x99\x00\x00\x00\r 2  LYNX IX\r 10 \r"),
+            Some(ArchiveFormat::Lynx)
+        );
+        assert_eq!(ArchiveFormat::detect_from_bytes(b" 1  NOT AN ARCHIVE\r 3 \r"), None);
+
+        // D64 has no magic bytes; detect_from_reader checks size and BAM.
+        assert_eq!(ArchiveFormat::D64.preambles(), None);
+        assert_eq!(ArchiveFormat::detect_from_bytes(&[0u8; 512]), None);
     }
 
     #[test]
@@ -2309,6 +2627,13 @@ mod tests {
 
         // Test bzip2 detection
         assert_eq!(ArchiveFormat::detect_from_bytes(b"BZh9data"), Some(ArchiveFormat::Bz2));
+
+        // Test xz detection
+        assert_eq!(ArchiveFormat::detect_from_bytes(b"\xfd7zXZ\x00\x00\x04"), Some(ArchiveFormat::Xz));
+
+        // Test Zstandard detection, including a leading skippable frame
+        assert_eq!(ArchiveFormat::detect_from_bytes(&[0x28, 0xB5, 0x2F, 0xFD, 0x04]), Some(ArchiveFormat::Zst));
+        assert_eq!(ArchiveFormat::detect_from_bytes(&[0x5E, 0x2A, 0x4D, 0x18, 0x00]), Some(ArchiveFormat::Zst));
 
         // Test SQZ detection
         assert_eq!(ArchiveFormat::detect_from_bytes(b"HLSQZrest"), Some(ArchiveFormat::Sqz));

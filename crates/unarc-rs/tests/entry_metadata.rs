@@ -25,7 +25,11 @@ fn existing_regular_entries_keep_their_type_and_payload() {
         (ArchiveFormat::Z, "tests/Z/LICENSE.Z"),
         (ArchiveFormat::Gz, "tests/gz/LICENSE.gz"),
         (ArchiveFormat::Bz2, "tests/bz2/LICENSE.bz2"),
+        (ArchiveFormat::Xz, "tests/xz/LICENSE.xz"),
+        (ArchiveFormat::Zst, "tests/zst/LICENSE.zst"),
         (ArchiveFormat::TarZ, "tests/tarz/license.tar.Z"),
+        (ArchiveFormat::Txz, "tests/txz/license.tar.xz"),
+        (ArchiveFormat::Tzst, "tests/tzst/license.tar.zst"),
     ] {
         let bytes = std::fs::read(path).unwrap();
         let mut archive = open(bytes, format);
@@ -387,12 +391,15 @@ fn ha_explicit_directory_and_special_entries() {
 
 #[test]
 fn lha_unix_symlink_and_directory_without_suffix() {
-    for (mode, name, kind, target) in [
-        (0o120777u16, "link|file", ArchiveEntryKind::SymbolicLink, Some("file")),
-        (0o120777, "link|/../file", ArchiveEntryKind::SymbolicLink, Some("/../file")),
-        (0o040755, "dir", ArchiveEntryKind::Directory, None),
-        (0o010644, "fifo", ArchiveEntryKind::Special, None),
-        (0o100644, "file", ArchiveEntryKind::File, None),
+    for (mode, name, expected_name, kind, target) in [
+        (0o120777u16, "link|file", "link|file", ArchiveEntryKind::SymbolicLink, Some("file")),
+        (0o120777, "link|/../file", "link|/file", ArchiveEntryKind::SymbolicLink, Some("/../file")),
+        (0o040755, "dir", "dir", ArchiveEntryKind::Directory, None),
+        (0o010644, "fifo", "fifo", ArchiveEntryKind::Special, None),
+        (0o100644, "file", "file", ArchiveEntryKind::File, None),
+        (0o100644, "nested/file", "nested/file", ArchiveEntryKind::File, None),
+        (0o100644, "nested\\file", "nested/file", ArchiveEntryKind::File, None),
+        (0o040755, "nested\\dir\\", "nested/dir/", ArchiveEntryKind::Directory, None),
     ] {
         let mut bytes = vec![0, 0];
         bytes.extend_from_slice(if kind == ArchiveEntryKind::File { b"-lh0-" } else { b"-lhd-" });
@@ -409,7 +416,7 @@ fn lha_unix_symlink_and_directory_without_suffix() {
         bytes.push(0);
         let mut archive = open(bytes, ArchiveFormat::Lha);
         let entry = archive.next_entry().unwrap().unwrap();
-        assert_eq!(entry.name(), if name == "link|/../file" { "link|/file" } else { name });
+        assert_eq!(entry.name(), expected_name);
         assert_eq!(entry.kind(), kind);
         assert_eq!(entry.link_target(), target);
         assert_eq!(entry.is_directory(), kind == ArchiveEntryKind::Directory);

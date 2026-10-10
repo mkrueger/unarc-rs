@@ -81,7 +81,9 @@ impl LocalFileHeader {
         let name = String::from_utf8_lossy(&header_bytes[0..idx]).to_string();
         header_bytes = &header_bytes[13..];
         convert_u32!(compressed_size, header_bytes);
-        convert_u32!(date_time, header_bytes);
+        // ARC stores the DOS date before the time, the reverse of DosDateTime's layout
+        convert_u16!(date, header_bytes);
+        convert_u16!(time, header_bytes);
         convert_u16!(crc16, header_bytes);
         convert_u32!(original_size, header_bytes);
 
@@ -89,7 +91,7 @@ impl LocalFileHeader {
             compression_method: compression_method.into(),
             name,
             compressed_size,
-            date_time: DosDateTime::new(date_time),
+            date_time: DosDateTime::new(u32::from(date) << 16 | u32::from(time)),
             crc16,
             original_size,
         })
