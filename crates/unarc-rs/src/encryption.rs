@@ -130,6 +130,8 @@ pub enum EncryptionMethod {
     Ace,
     /// ARJ encryption
     Arj(ArjEncryption),
+    /// DMS encryption (XOR with a 16-bit rolling key)
+    Dms,
     /// Unknown encryption method (encrypted but method not determined)
     Unknown,
 }
@@ -148,6 +150,7 @@ impl EncryptionMethod {
                 | EncryptionMethod::Rar(RarEncryption::Legacy)
                 | EncryptionMethod::Arj(ArjEncryption::Garble)
                 | EncryptionMethod::Arj(ArjEncryption::Gost40)
+                | EncryptionMethod::Dms
         )
     }
 
@@ -171,6 +174,7 @@ impl EncryptionMethod {
             EncryptionMethod::Arj(ArjEncryption::Gost40) => "ARJ GOST40 (weak)",
             EncryptionMethod::Arj(ArjEncryption::Gost256) => "ARJ GOST-256",
             EncryptionMethod::Arj(ArjEncryption::Unknown) => "ARJ Encrypted",
+            EncryptionMethod::Dms => "DMS (weak)",
             EncryptionMethod::Unknown => "Unknown",
         }
     }

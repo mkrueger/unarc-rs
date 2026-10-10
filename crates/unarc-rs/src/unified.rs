@@ -47,6 +47,7 @@ use crate::bz2::Bz2Archive;
 use crate::cab::{CabArchive, CabFileHeader};
 use crate::d64::{D64Archive, D64Entry};
 use crate::date_time::DosDateTime;
+use crate::dms::{DmsArchive, DmsEntry, DmsEntryKind};
 use crate::encryption::{EncryptionMethod, RarEncryption, ZipEncryption};
 use crate::error::{ArchiveError, Result};
 use crate::fat::{FatArchive, FatEntry};
@@ -349,6 +350,8 @@ pub enum ArchiveFormat {
     Hdf,
     /// FAT12 floppy-disk image (PC `.img`/`.ima` or Atari ST `.st`).
     Fat,
+    /// DMS (DiskMasher) compressed Amiga floppy image (.dms).
+    Dms,
 }
 
 /// Returns true if `data` starts with a TAR header whose stored checksum matches (POSIX or pre-POSIX).
@@ -412,6 +415,7 @@ impl ArchiveFormat {
         ArchiveFormat::Adf,
         ArchiveFormat::Hdf,
         ArchiveFormat::Fat,
+        ArchiveFormat::Dms,
         ArchiveFormat::Txz,
         ArchiveFormat::Tzst,
     ];
@@ -456,6 +460,7 @@ impl ArchiveFormat {
             "adf" => Some(ArchiveFormat::Adf),
             "hdf" => Some(ArchiveFormat::Hdf),
             "img" | "ima" | "st" => Some(ArchiveFormat::Fat),
+            "dms" => Some(ArchiveFormat::Dms),
             "txz" => Some(ArchiveFormat::Txz),
             "tzst" => Some(ArchiveFormat::Tzst),
             _ => {
@@ -538,6 +543,7 @@ impl ArchiveFormat {
             ArchiveFormat::Adf => "adf",
             ArchiveFormat::Hdf => "hdf",
             ArchiveFormat::Fat => "img",
+            ArchiveFormat::Dms => "dms",
             ArchiveFormat::Txz => "txz",
             ArchiveFormat::Tzst => "tzst",
         }
@@ -578,6 +584,7 @@ impl ArchiveFormat {
             ArchiveFormat::Adf => "ADF (Amiga floppy image)",
             ArchiveFormat::Hdf => "HDF (Amiga hard disk image)",
             ArchiveFormat::Fat => "FAT12 (PC/Atari ST floppy image)",
+            ArchiveFormat::Dms => "DMS (Amiga DiskMasher)",
             ArchiveFormat::Txz => "TXZ (tar.xz)",
             ArchiveFormat::Tzst => "TZST (tar.zst)",
         }
@@ -619,6 +626,7 @@ impl ArchiveFormat {
             ArchiveFormat::Adf => &["adf"],
             ArchiveFormat::Hdf => &["hdf"],
             ArchiveFormat::Fat => &["img", "ima", "st"],
+            ArchiveFormat::Dms => &["dms"],
             ArchiveFormat::Txz => &["txz", "tar.xz"],
             ArchiveFormat::Tzst => &["tzst", "tar.zst"],
         }
@@ -700,6 +708,8 @@ impl ArchiveFormat {
             ArchiveFormat::Hdf => Some(&[b"RDSK", b"DOS"]),
             // FAT12: no magic, recognised by a boot sector BPB consistent with the image size
             ArchiveFormat::Fat => None,
+            // DMS: "DMS!" at offset 0
+            ArchiveFormat::Dms => Some(&[b"DMS!"]),
             // TXZ: xz magic (contains TAR inside)
             ArchiveFormat::Txz => Some(&[&[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]]),
             // TZST: Zstandard magic (contains TAR inside)
@@ -770,6 +780,11 @@ impl ArchiveFormat {
         if data.len() >= 4 && crate::zst::is_frame_magic([data[0], data[1], data[2], data[3]]) {
             // Could be TZST, but we can't know without decompressing
             return Some(ArchiveFormat::Zst);
+        }
+
+        // DMS: "DMS!" (4 bytes)
+        if data.len() >= 4 && data.starts_with(b"DMS!") {
+            return Some(ArchiveFormat::Dms);
         }
 
         // SQZ: "HLSQZ" (5 bytes)
@@ -1039,10 +1054,10 @@ impl ArchiveFormat {
         let reader = BufReader::new(file);
         let mut archive = format.open_with_options(reader, ArchiveOptions::new().with_path_defaults(path))?;
 
-        // For single-file formats (.Z, .gz, .bz2, .xz, .zst), derive the output filename from the archive name
+        // For single-file formats (.Z, .gz, .bz2, .xz, .zst) and DMS disk images, derive the output filename from the archive name
         if matches!(
             format,
-            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst
+            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst | ArchiveFormat::Dms
         ) {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 archive.set_single_file_name(stem.to_string());
@@ -1086,10 +1101,10 @@ impl ArchiveFormat {
         let reader = BufReader::new(file);
         let mut archive = format.open_with_options(reader, options.with_path_defaults(path))?;
 
-        // For single-file formats (.Z, .gz, .bz2, .xz, .zst), derive the output filename from the archive name
+        // For single-file formats (.Z, .gz, .bz2, .xz, .zst) and DMS disk images, derive the output filename from the archive name
         if matches!(
             format,
-            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst
+            ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst | ArchiveFormat::Dms
         ) {
             if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 archive.set_single_file_name(stem.to_string());
@@ -1335,6 +1350,7 @@ enum EntryIndex {
     D64(D64Entry),
     Amiga(AmigaEntry),
     Fat(FatEntry),
+    Dms(DmsEntry),
     /// TXZ uses the same header as TAR
     Txz(TarFileHeader),
     /// TZST uses the same header as TAR
@@ -1417,6 +1433,12 @@ impl ArchiveEntry {
                     File
                 }
             }
+            EntryIndex::Dms(entry) => match entry.kind {
+                DmsEntryKind::Amiga(AmigaEntryKind::File) | DmsEntryKind::DiskImage | DmsEntryKind::FileId | DmsEntryKind::Banner => File,
+                DmsEntryKind::Amiga(AmigaEntryKind::Directory) => Directory,
+                DmsEntryKind::Amiga(AmigaEntryKind::SymbolicLink) => SymbolicLink,
+                DmsEntryKind::Amiga(AmigaEntryKind::HardLink) => HardLink,
+            },
             EntryIndex::Ace(header) => dos_kind(header.attributes),
             EntryIndex::Arj(header) => match header.file_type {
                 ArjFileType::Directory => Directory,
@@ -1477,6 +1499,7 @@ impl ArchiveEntry {
         }
         match &self.index {
             EntryIndex::Amiga(entry) => entry.link_target.as_deref(),
+            EntryIndex::Dms(entry) => entry.link_target(),
             EntryIndex::Tar(header)
             | EntryIndex::Tgz(header)
             | EntryIndex::Tbz(header)
@@ -1569,6 +1592,8 @@ enum ArchiveInner<T: Read + Seek> {
     D64(D64Archive),
     Amiga(AmigaArchive<T>),
     Fat(FatArchive<T>),
+    /// DMS disks are decoded into memory, so they don't need the generic reader type
+    Dms(DmsArchive),
     /// TXZ decompresses to memory, so it doesn't need the generic reader type
     Txz(TxzArchive),
     /// TZST decompresses to memory, so it doesn't need the generic reader type
@@ -1691,6 +1716,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Adf => ArchiveInner::Amiga(AmigaArchive::open_adf(reader)?),
             ArchiveFormat::Hdf => ArchiveInner::Amiga(AmigaArchive::open_hdf(reader)?),
             ArchiveFormat::Fat => ArchiveInner::Fat(FatArchive::open(reader, options.fat_atari_names)?),
+            ArchiveFormat::Dms => ArchiveInner::Dms(DmsArchive::open(reader, password.as_deref())?),
             ArchiveFormat::Txz => ArchiveInner::Txz(TxzArchive::new_with_limit(reader, options.whole_archive_limit())?),
             ArchiveFormat::Tzst => ArchiveInner::Tzst(TzstArchive::new_with_limit(reader, options.whole_archive_limit())?),
         };
@@ -1712,7 +1738,12 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// Set the filename for single-file formats (.Z, .gz, .bz2, .xz, .zst) since they don't contain the filename
     ///
     /// This is typically derived from the archive filename by removing the extension.
+    /// For DMS, it names the raw disk image (`name.adf`) listed when the disk has no
+    /// AmigaDOS filesystem.
     pub fn set_single_file_name(&mut self, name: String) {
+        if let ArchiveInner::Dms(archive) = &mut self.inner {
+            archive.set_image_name(format!("{name}.adf"));
+        }
         self.single_file_name = Some(name);
     }
 
@@ -2263,6 +2294,20 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                 encryption: EncryptionMethod::None,
                 index: EntryIndex::Fat(header),
             })),
+            ArchiveInner::Dms(archive) => {
+                let mode = archive.info().mode_name();
+                let header = archive.get_next_entry()?;
+                Ok(header.map(|header| ArchiveEntry {
+                    name: header.name.clone(),
+                    compressed_size: header.packed_size,
+                    original_size: header.size,
+                    compression_method: format!("DMS {mode}"),
+                    modified_time: header.modified_time(),
+                    crc: 0,
+                    encryption: if header.encrypted { EncryptionMethod::Dms } else { EncryptionMethod::None },
+                    index: EntryIndex::Dms(header),
+                }))
+            }
             ArchiveInner::Txz(archive) => {
                 if let Some(header) = archive.get_next_entry()? {
                     Ok(Some(ArchiveEntry {
@@ -2375,6 +2420,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.read(header),
             (ArchiveInner::Amiga(archive), EntryIndex::Amiga(header)) => archive.read_with_limit(header, limit),
             (ArchiveInner::Fat(archive), EntryIndex::Fat(header)) => archive.read_with_limit(header, limit),
+            (ArchiveInner::Dms(archive), EntryIndex::Dms(header)) => archive.read_with_limit(header, limit),
             (ArchiveInner::Txz(archive), EntryIndex::Txz(header)) => archive.read(header),
             (ArchiveInner::Tzst(archive), EntryIndex::Tzst(header)) => archive.read(header),
             _ => Err(ArchiveError::IndexMismatch("Entry does not belong to this archive".to_string())),
@@ -2514,6 +2560,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.skip(header),
             (ArchiveInner::Amiga(archive), EntryIndex::Amiga(header)) => archive.skip(header),
             (ArchiveInner::Fat(archive), EntryIndex::Fat(header)) => archive.skip(header),
+            (ArchiveInner::Dms(archive), EntryIndex::Dms(header)) => archive.skip(header),
             (ArchiveInner::Txz(archive), EntryIndex::Txz(header)) => archive.skip(header),
             (ArchiveInner::Tzst(archive), EntryIndex::Tzst(header)) => archive.skip(header),
             _ => Err(ArchiveError::IndexMismatch("Entry does not belong to this archive".to_string())),

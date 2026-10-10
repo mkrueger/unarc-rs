@@ -68,8 +68,9 @@ Files are stored uncompressed. Entries are named `NAME.prg`, `NAME.seq`, etc.; P
 | ------ | ---------- | ----- |
 | **ADF** | `.adf` | DD/HD sector images with OFS/FFS (DOS0-DOS5) |
 | **HDF** | `.hdf` | OFS/FFS hardfiles and RDB partitions; partition-prefixed paths |
+| **DMS** | `.dms` | DiskMasher archives, all modes; the disk's files, or the raw image, plus FILE_ID.DIZ and banners |
 
-See [Amiga support](../../doc/amiga.md) for supported layouts and limitations.
+See [Amiga support](../../doc/amiga.md) for supported layouts and limitations, and [DMS support](../../doc/dms.md) for DMS archives.
 
 ### PC and Atari ST Floppy Images
 

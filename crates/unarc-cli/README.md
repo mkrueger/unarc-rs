@@ -223,6 +223,7 @@ unarc tp large_archive.7z -d ~/SecLists/Passwords/ -e "readme.txt"
 | **TAR** | `.tar` | — | — |
 | **ADF** | `.adf` | — | — |
 | **HDF** | `.hdf` | — | — |
+| **DMS** | `.dms` | XOR | — |
 | **FAT12** | `.img`, `.ima`, `.st` | — | — |
 | **ACE** | `.ace` | Blowfish | ✓ |
 | **ARJ** | `.arj` | Garble, GOST40 | ✓ |
@@ -254,6 +255,16 @@ device-name prefixes such as `DH0/` and `DH1/`. See
 ```bash
 unarc list --json disk.adf
 unarc extract harddisk.hdf DH0/docs/readme.txt -o ./output
+```
+
+DMS archives are listed like the disk they contain. A disk without an AmigaDOS
+filesystem is listed as one image named after the archive (`game.adf`), and an
+attached FILE_ID.DIZ or banner as `FILE_ID.DIZ` or `BANNER.TXT`. See
+[DMS support](../../doc/dms.md).
+
+```bash
+unarc list game.dms
+unarc extract game.dms FILE_ID.DIZ -o ./output
 ```
 
 PC and Atari ST floppy images (`.img`, `.ima`, `.st`) are read as FAT12, with VFAT

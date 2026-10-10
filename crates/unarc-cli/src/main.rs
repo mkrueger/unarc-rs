@@ -285,10 +285,10 @@ fn cmd_list(archive_path: &Path, json: bool) -> Result<(), ArchiveError> {
 fn for_each_entry(archive_path: &Path, format: ArchiveFormat, mut visit: impl FnMut(&ArchiveEntry)) -> Result<(), ArchiveError> {
     let mut archive = open_archive_auto(archive_path, format, ArchiveOptions::new())?;
 
-    // For single-file formats, derive the filename from the archive name
+    // For single-file formats and DMS disk images, derive the filename from the archive name
     if matches!(
         format,
-        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst
+        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst | ArchiveFormat::Dms
     ) {
         if let Some(stem) = archive_path.file_stem() {
             archive.set_single_file_name_box(stem.to_string_lossy().to_string());
@@ -614,10 +614,10 @@ fn cmd_extract(archive_path: &Path, files: &[String], output_dir: &Path, force: 
 
     let mut archive = open_archive_auto(archive_path, format, options.clone())?;
 
-    // For single-file formats, derive the output filename from the archive name
+    // For single-file formats and DMS disk images, derive the output filename from the archive name
     if matches!(
         format,
-        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst
+        ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2 | ArchiveFormat::Xz | ArchiveFormat::Zst | ArchiveFormat::Dms
     ) {
         if let Some(stem) = archive_path.file_stem() {
             archive.set_single_file_name_box(stem.to_string_lossy().to_string());
