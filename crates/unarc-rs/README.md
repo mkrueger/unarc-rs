@@ -51,6 +51,16 @@ A Rust library for reading and extracting various archive formats, with a focus 
 
 > **Note:** Single-file formats (`.Z`, `.gz`, `.bz2`, `.xz`, `.zst`) compress one file only. When a path like `file.tar.gz` is opened, the library detects it as a compressed TAR archive, returning all entries from the inner TAR.
 
+### Commodore 64 Containers
+
+Files are stored uncompressed. Entries are named `NAME.prg`, `NAME.seq`, etc.; PRG files include their load address.
+
+| Format | Extensions | Notes |
+| ------ | ---------- | ----- |
+| **D64** | `.d64` | 1541 disk image (35/40/42 tracks, error bytes) |
+| **T64** | `.t64` | C64S tape image; wrong end addresses are corrected |
+| **Lynx** | `.lnx` | Lynx container, with or without BASIC loader |
+
 ## Installation
 
 Add to your `Cargo.toml`:

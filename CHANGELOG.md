@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Commodore 64 containers: Lynx (`.lnx`), T64 tape images (`.t64`) and D64 1541 disk
+  images (`.d64`, 35/40/42 tracks, with or without error bytes), via the new `lynx`,
+  `t64` and `d64` modules and `ArchiveFormat::Lynx`, `ArchiveFormat::T64` and
+  `ArchiveFormat::D64`. Entries are named after their PETSCII name plus a CBM type
+  extension (`GAME.prg`, `DATA.seq`); PRG files keep their load address. D64 images,
+  which have no magic bytes, are detected by size and BAM. Since `ArchiveFormat` is not
+  `#[non_exhaustive]`, the new variants break exhaustive `match`es on it.
+- Self-authored D64, T64 and Lynx fixtures, cross-checked against VICE `c1541` and
+  cbmconvert, and tests for truncated images, sector chain loops and bad links.
 - xz (`.xz`) and Zstandard (`.zst`) single-file streams, and xz- and
   Zstandard-compressed TAR archives (`.txz`, `.tar.xz`, `.tzst`, `.tar.zst`), using
   the pure Rust [`lzma-rust2`](https://crates.io/crates/lzma-rust2) and
