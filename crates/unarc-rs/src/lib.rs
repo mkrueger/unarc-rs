@@ -15,6 +15,7 @@ pub mod ace;
 pub mod arc;
 pub mod arj;
 pub mod bz2;
+pub mod cab;
 pub mod gz;
 pub mod ha;
 pub mod hyp;

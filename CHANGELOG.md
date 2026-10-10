@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Microsoft Cabinet (`.cab`) support: `ArchiveFormat::Cab` and the `cab` module
+  read single cabinets with None, MSZIP and LZX (2^15 to 2^21 windows) folders,
+  UTF-8 and code-page names, DOS times and attributes, verifying data-block
+  checksums. LZX decoding uses the pure Rust [`lzxd`](https://crates.io/crates/lzxd)
+  crate. Quantum entries return `ArchiveError::UnsupportedMethod`; files
+  continued across a multi-cabinet set are listed but return
+  `ArchiveError::UnsupportedFormat` when read. Adding the `ArchiveFormat::Cab`
+  variant is a breaking change for exhaustive matches on `ArchiveFormat`.
+- Self-authored CAB fixtures (gcab, and LZX written with the lzxc encoder),
+  verified with cabextract.
+
 ### Fixed
 
 - `ArchiveFormat::detect()` returns `Tgz`, `Tbz` or `TarZ` when gzip, bzip2 or
