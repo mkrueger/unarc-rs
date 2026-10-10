@@ -17,6 +17,7 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
 | **TAR** | `.tar` | Full support | — | — |
 | **CAB** | `.cab` | None, MSZIP, LZX (no Quantum) | — | — |
+| **LZX (Amiga)** | `.lzx` | Stored, LZX, merged groups | — | — |
 | **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |
 | **ARJ** | `.arj` | Full support | Garble, GOST40 ✓ | ✓ |
 | **ARC/PAK** | `.arc`, `.pak` | Full support | XOR ✓ | — |
@@ -27,6 +28,9 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support | — | — |
 | **SQZ** | `.sqz` | Full support | — | — |
 | **HYP** | `.hyp` | Full support | — | — |
+
+Amiga LZX archives are unrelated to the LZX method inside CAB files; see
+[LZX (Amiga)](../../doc/lzx.md).
 
 ### Single-File Compression
 

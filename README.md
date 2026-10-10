@@ -32,6 +32,7 @@ cargo install unarc-cli
 | **LHA/LZH** | `.lha`, `.lzh` | Full support | — | — |
 | **TAR** | `.tar` | Full support | — | — |
 | **CAB** | `.cab` | None, MSZIP, LZX (no Quantum) | — | — |
+| **LZX (Amiga)** | `.lzx` | Stored, LZX, merged groups | — | — |
 | **ACE** | `.ace` | Stored, LZ77, Blocked | Blowfish ✓ | ✓ |
 | **ARJ** | `.arj` | Full support | Garble, GOST40 ✓ | ✓ |
 | **ARC/PAK** | `.arc`, `.pak` | Full support | XOR ✓ | — |
@@ -42,6 +43,9 @@ cargo install unarc-cli
 | **SQ/SQ2** | `.sq`, `.sq2`, `.qqq`, `?q?` | Full support | — | — |
 | **SQZ** | `.sqz` | Full support | — | — |
 | **HYP** | `.hyp` | Full support | — | — |
+
+Amiga LZX archives are unrelated to the LZX method inside CAB files; see
+[LZX (Amiga)](doc/lzx.md).
 
 ### Single-File Compression
 
@@ -195,7 +199,8 @@ Listing does not create or follow links.
 `ArchiveOptions::with_max_entry_size` and `with_max_total_size` reject oversized
 recorded sizes before entry decoding. GZ/BZ2/Z streams and 7z entry output are
 also bounded while decoding; compressed TAR is bounded while opening.
-CAB output never exceeds the recorded size, which is checked before decoding.
+CAB and Amiga LZX output never exceeds the recorded size, which is checked
+before decoding.
 ZIP output is bounded by its central-directory size.
 
 These are decompressed-output limits, **not a process memory/CPU budget**.
@@ -204,8 +209,9 @@ output before the unified API checks its actual size. RAR independent reads and
 solid/multi-volume caches can also allocate other members before that check.
 The 7z decoder still allocates its own dictionaries and may decode earlier
 solid members, though those members' output is discarded rather than buffered.
-CAB likewise decodes and discards the data preceding an entry in its folder;
-reading a folder's entries out of order restarts the folder each time.
+CAB likewise decodes and discards the data preceding an entry in its folder,
+and Amiga LZX in its merged group; reading such entries out of order restarts
+the folder or group each time.
 Input archives, headers, compressed buffers, and caches are not covered by the
 total-output limit. Direct format-specific APIs do not inherit unified options.
 

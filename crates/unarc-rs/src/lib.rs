@@ -27,6 +27,7 @@ pub mod ice;
 pub mod jar;
 pub mod lha;
 pub mod lynx;
+pub mod lzx;
 pub mod packice;
 pub mod rar;
 pub mod sevenz;

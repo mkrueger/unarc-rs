@@ -221,6 +221,7 @@ unarc tp large_archive.7z -d ~/SecLists/Passwords/ -e "readme.txt"
 | **RAR** | `.rar` | AES | — |
 | **LHA/LZH** | `.lha`, `.lzh` | — | — |
 | **TAR** | `.tar` | — | — |
+| **LZX (Amiga)** | `.lzx` | — | — |
 | **ADF** | `.adf` | — | — |
 | **HDF** | `.hdf` | — | — |
 | **FAT12** | `.img`, `.ima`, `.st` | — | — |
