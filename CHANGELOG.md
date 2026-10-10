@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- XZ and TXZ decoding handles short and interrupted input reads and rejects
+  trailing stream padding that is not a multiple of four bytes.
+- Zstandard and TZST decoding verifies each frame's declared uncompressed size,
+  rejecting streams with mismatched content sizes.
 - ARC and PAK entries report their real modification time. The header's date and
   time words were read in the wrong order, so every timestamp was garbage (a 2024
   file listed as 2072, or with month 0).

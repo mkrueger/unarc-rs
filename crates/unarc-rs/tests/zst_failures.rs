@@ -32,6 +32,62 @@ fn empty_frame(window_log: u8) -> Vec<u8> {
     frame
 }
 
+fn raw_frame(header: &[u8], content: &[u8]) -> Vec<u8> {
+    let mut frame = vec![0x28, 0xB5, 0x2F, 0xFD];
+    frame.extend_from_slice(header);
+    let block_header = (u32::try_from(content.len()).unwrap() << 3) | 1;
+    frame.extend_from_slice(&block_header.to_le_bytes()[..3]);
+    frame.extend_from_slice(content);
+    frame
+}
+
+#[test]
+fn content_size_mismatch() {
+    for size in [0, 2, 4] {
+        let data = raw_frame(&[0x20, size], b"abc");
+        let error = read_zst(&data).unwrap_err();
+        assert!(error.to_string().contains("content size"), "{error}");
+        let error = read_unified(&data, ArchiveFormat::Zst, ArchiveOptions::new()).unwrap_err();
+        assert!(error.to_string().contains("content size"), "{error}");
+        let error = match TzstArchive::new(Cursor::new(&data)) {
+            Err(error) => error,
+            Ok(_) => panic!("accepted incorrect content size"),
+        };
+        assert!(error.to_string().contains("content size"), "{error}");
+    }
+}
+
+#[test]
+fn content_size_is_checked_per_frame() {
+    let mut data = raw_frame(&[0x20, 3], b"abc");
+    data.extend_from_slice(&raw_frame(&[0x20, 3], b"def"));
+    assert_eq!(read_zst(&data).unwrap(), b"abcdef");
+
+    let mut data = raw_frame(&[0x20, 4], b"abc");
+    data.extend_from_slice(&raw_frame(&[0x20, 2], b"def"));
+    assert!(read_zst(&data).unwrap_err().to_string().contains("content size"));
+
+    let mut data = raw_frame(&[0x20, 3], b"abc");
+    data.extend_from_slice(&raw_frame(&[0x20, 4], b"def"));
+    assert!(read_zst(&data).unwrap_err().to_string().contains("content size"));
+}
+
+#[test]
+fn optional_and_empty_content_sizes() {
+    for header in [&[0x00, 0x00][..], &[0x20, 0][..]] {
+        assert_eq!(read_zst(&raw_frame(header, b"")).unwrap(), b"");
+    }
+    for header in [&[0x00, 0x00][..], &[0x20, 3][..], &[0xA0, 3, 0, 0, 0][..], &[0xE0, 3, 0, 0, 0, 0, 0, 0, 0][..]] {
+        assert_eq!(read_zst(&raw_frame(header, b"abc")).unwrap(), b"abc");
+    }
+    // Two-byte content sizes store the actual size minus 256.
+    let content = vec![b'a'; 256];
+    for header in [&[0x60, 0, 0][..], &[0x40, 0, 0, 0][..]] {
+        assert_eq!(read_zst(&raw_frame(header, &content)).unwrap(), content);
+        assert!(read_zst(&raw_frame(header, b"abc")).unwrap_err().to_string().contains("content size"));
+    }
+}
+
 #[test]
 fn invalid_magic() {
     assert!(matches!(

@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::io::{self, Cursor, Read};
 
 use unarc_rs::error::ArchiveError;
 use unarc_rs::txz::TxzArchive;
@@ -69,6 +69,80 @@ fn trailing_garbage() {
     let mut data = LICENSE_XZ.to_vec();
     data.extend_from_slice(b"garbage!");
     assert!(read_xz(&data).is_err());
+}
+
+struct ShortReads<R> {
+    inner: R,
+    chunk_size: usize,
+    interrupt: bool,
+}
+
+impl<R: Read> Read for ShortReads<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if !buf.is_empty() {
+            self.interrupt = !self.interrupt;
+            if self.interrupt {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+        }
+        let len = buf.len().min(self.chunk_size);
+        self.inner.read(&mut buf[..len])
+    }
+}
+
+#[test]
+fn short_and_interrupted_reads() {
+    for chunk_size in [1, 2, 3, 7] {
+        for data in [LICENSE_XZ, &include_bytes!("xz/multi_stream.xz")[..]] {
+            let reader = ShortReads {
+                inner: Cursor::new(data),
+                chunk_size,
+                interrupt: false,
+            };
+            assert_eq!(XzArchive::new(reader).unwrap().read().unwrap(), include_bytes!("../../../LICENSE"));
+        }
+        let reader = ShortReads {
+            inner: Cursor::new(include_bytes!("txz/license.tar.xz")),
+            chunk_size,
+            interrupt: false,
+        };
+        let mut archive = TxzArchive::new(reader).unwrap();
+        let entry = archive.get_next_entry().unwrap().unwrap();
+        assert_eq!(archive.read(&entry).unwrap(), include_bytes!("../../../LICENSE"));
+    }
+}
+
+#[test]
+fn stream_padding_must_be_a_multiple_of_four() {
+    for padding in 0..=8 {
+        let mut data = LICENSE_XZ.to_vec();
+        data.extend(std::iter::repeat_n(0, padding));
+        let result = read_xz(&data);
+        if padding % 4 == 0 {
+            assert_eq!(result.unwrap(), include_bytes!("../../../LICENSE"));
+        } else {
+            assert!(result.unwrap_err().to_string().contains("padding"));
+        }
+
+        data.extend_from_slice(LICENSE_XZ);
+        let result = read_xz(&data);
+        if padding % 4 == 0 {
+            assert_eq!(result.unwrap(), include_bytes!("../../../LICENSE").repeat(2));
+        } else {
+            assert!(result.unwrap_err().to_string().contains("padding"));
+        }
+    }
+}
+
+#[test]
+fn txz_rejects_invalid_trailing_padding() {
+    let mut data = include_bytes!("txz/license.tar.xz").to_vec();
+    data.push(0);
+    let error = match TxzArchive::new(Cursor::new(&data)) {
+        Err(error) => error,
+        Ok(_) => panic!("accepted invalid trailing padding"),
+    };
+    assert!(error.to_string().contains("padding"), "{error}");
 }
 
 #[test]

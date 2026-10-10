@@ -6,7 +6,7 @@
 //! This module provides read-only access to .xz files. Concatenated xz streams are
 //! decoded one after another, as `xz -d` does.
 
-use std::io::Read;
+use std::io::{self, Read};
 
 use lzma_rust2::XzReader;
 
@@ -70,9 +70,39 @@ impl<T: Read> XzArchive<T> {
 /// [`crate::limits::window_limit`] before the decoder allocates it.
 pub(crate) fn decompress<R: Read>(reader: R, limit: Option<u64>, entry: &str) -> Result<Vec<u8>> {
     let window_kb = u32::try_from(crate::limits::window_limit(limit) / 1024).unwrap_or(u32::MAX);
+    let reader = XzInput {
+        source: reader,
+        padding_modulo: 0,
+    };
     let decoder = XzReader::new_mem_limit(reader, true, window_kb.saturating_add(DECODER_OVERHEAD_KB));
     crate::limits::read_to_end_limited(decoder, limit, entry).map_err(|e| match e {
         ArchiveError::Io(e) => ArchiveError::io_error(format!("Failed to decompress xz: {e}")),
         e => e,
     })
+}
+
+// lzma-rust2 expects full block-padding reads and omits padding alignment checks at EOF.
+struct XzInput<R> {
+    source: R,
+    padding_modulo: u8,
+}
+
+impl<R: Read> Read for XzInput<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        let read = crate::limits::read_up_to(&mut self.source, buf)?;
+        if read == 0 {
+            // Every complete stream ends in "YZ", so trailing zeros are stream padding.
+            if self.padding_modulo != 0 {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "stream padding size not multiple of 4"));
+            }
+            return Ok(0);
+        }
+        let trailing_zeros = buf[..read].iter().rev().take_while(|&&byte| byte == 0).count();
+        let modulo = (trailing_zeros % 4) as u8;
+        self.padding_modulo = if trailing_zeros == read { (self.padding_modulo + modulo) % 4 } else { modulo };
+        Ok(read)
+    }
 }

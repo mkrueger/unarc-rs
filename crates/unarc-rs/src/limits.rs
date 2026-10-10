@@ -44,6 +44,20 @@ pub(crate) fn read_exact_vec<R: Read + ?Sized>(reader: &mut R, len: u64) -> io::
     Ok(data)
 }
 
+/// Reads until `buf` is full or the input ends, returning the number of bytes read.
+pub(crate) fn read_up_to<R: Read>(reader: &mut R, buf: &mut [u8]) -> io::Result<usize> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match reader.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(filled)
+}
+
 /// Reads a (decompressing) stream to its end, failing once it produces more than `limit` bytes.
 pub(crate) fn read_to_end_limited<R: Read>(reader: R, limit: Option<u64>, entry: &str) -> Result<Vec<u8>> {
     let mut data = Vec::new();

@@ -90,6 +90,8 @@ struct ZstdDecoder<R: Read> {
     decoder: FrameDecoder,
     in_frame: bool,
     started: bool,
+    expected_content_size: Option<u64>,
+    frame_bytes_read: u64,
 }
 
 impl<R: Read> ZstdDecoder<R> {
@@ -101,6 +103,8 @@ impl<R: Read> ZstdDecoder<R> {
             decoder,
             in_frame: false,
             started: false,
+            expected_content_size: None,
+            frame_bytes_read: 0,
         }
     }
 
@@ -109,7 +113,7 @@ impl<R: Read> ZstdDecoder<R> {
     fn start_frame(&mut self) -> io::Result<bool> {
         loop {
             let mut magic = [0u8; 4];
-            let read = read_up_to(&mut self.source, &mut magic)?;
+            let read = crate::limits::read_up_to(&mut self.source, &mut magic)?;
             if read == 0 && self.started {
                 return Ok(false);
             }
@@ -128,22 +132,38 @@ impl<R: Read> ZstdDecoder<R> {
                 continue;
             }
 
-            // The frame header follows the magic number we already consumed
-            self.decoder.reset(Cursor::new(magic).chain(&mut self.source)).map_err(io::Error::other)?;
+            let mut descriptor = [0u8; 1];
+            self.source.read_exact(&mut descriptor)?;
+            let header = Cursor::new(magic).chain(Cursor::new(descriptor)).chain(&mut self.source);
+            self.decoder.reset(header).map_err(io::Error::other)?;
+            // A zero size is ambiguous in ruzstd's API; the descriptor distinguishes absent from empty.
+            self.expected_content_size = (descriptor[0] & 0xE0 != 0).then(|| self.decoder.content_size());
+            self.frame_bytes_read = 0;
             self.in_frame = true;
             return Ok(true);
         }
     }
 
-    /// Verifies the content checksum of a fully read frame, if it has one
+    /// Verifies the size and checksum of a fully read frame, if present
     fn finish_frame(&mut self) -> io::Result<()> {
-        self.in_frame = false;
+        self.check_content_size(true)?;
         match self.decoder.get_checksum_from_data() {
             Some(expected) if self.decoder.get_calculated_checksum() != Some(expected) => {
-                Err(io::Error::new(io::ErrorKind::InvalidData, "zstd frame checksum mismatch"))
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "zstd frame checksum mismatch"));
             }
-            _ => Ok(()),
+            _ => {}
         }
+        self.in_frame = false;
+        Ok(())
+    }
+
+    fn check_content_size(&self, finished: bool) -> io::Result<()> {
+        if let Some(expected) = self.expected_content_size {
+            if self.frame_bytes_read > expected || (finished && self.frame_bytes_read != expected) {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "zstd frame content size mismatch"));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -164,23 +184,14 @@ impl<R: Read> Read for ZstdDecoder<R> {
             }
             let read = self.decoder.read(buf)?;
             if read > 0 {
+                self.frame_bytes_read = self
+                    .frame_bytes_read
+                    .checked_add(read as u64)
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "zstd frame content size overflow"))?;
+                self.check_content_size(false)?;
                 return Ok(read);
             }
             self.finish_frame()?;
         }
     }
-}
-
-/// Reads until `buf` is full or the input ends, returning the number of bytes read
-fn read_up_to<R: Read>(reader: &mut R, buf: &mut [u8]) -> io::Result<usize> {
-    let mut filled = 0;
-    while filled < buf.len() {
-        match reader.read(&mut buf[filled..]) {
-            Ok(0) => break,
-            Ok(n) => filled += n,
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(e),
-        }
-    }
-    Ok(filled)
 }
