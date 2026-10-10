@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- LHA entry names use `/` path separators on every platform, fixing Windows
+  listings and the LHA metadata regression test without changing link targets.
 - `ArchiveFormat::detect()` returns `Tgz`, `Tbz` or `TarZ` when gzip, bzip2 or
   compress content has a matching compressed-TAR name (`.tgz`, `.tar.gz`, `.tbz`,
   `.tbz2`, `.tar.bz2`, `.tar.Z`). Previously such archives were detected as a single
