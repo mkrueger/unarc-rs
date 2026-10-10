@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `unarc list --json` prints the listing as a single JSON document, with full entry
+  names, entry kinds, sizes, method, modification time, CRC and encryption, for
+  programs that drive `unarc`.
+- `unarc extract` accepts entry names after the archive and extracts only those. A
+  name missing from the archive is reported and makes `unarc` exit with an error.
+
 - Microsoft Cabinet (`.cab`) support: `ArchiveFormat::Cab` and the `cab` module
   read single cabinets with None, MSZIP and LZX (2^15 to 2^21 windows) folders,
   UTF-8 and code-page names, DOS times and attributes, verifying data-block
@@ -42,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named `.txz`, `.tar.xz`, `.tzst` or `.tar.zst`, like the other compressed TARs.
 - Size limits apply to xz and Zstandard output, and the dictionary (window) size a
   stream announces is checked against the limit before the decoder allocates it.
+### Changed
+
+- `unarc` reports multi-volume discovery ("Detected N volumes", "Opening volume")
+  on stderr instead of stdout.
 
 ### Fixed
 

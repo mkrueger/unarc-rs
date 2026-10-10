@@ -27,11 +27,12 @@ fn check_archive(dir: &Path, name: &str, expected_volumes: Option<usize>) {
         .output()
         .unwrap();
     assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
-    let stdout = String::from_utf8(result.stdout).unwrap();
+    // Volume discovery is reported on stderr, keeping stdout for output
+    let stderr = String::from_utf8(result.stderr).unwrap();
     if let Some(count) = expected_volumes {
-        assert!(stdout.contains(&format!("Detected {count} volumes")), "{stdout}");
+        assert!(stderr.contains(&format!("Detected {count} volumes")), "{stderr}");
     } else {
-        assert!(!stdout.contains("Detected"), "{stdout}");
+        assert!(!stderr.contains("Detected"), "{stderr}");
     }
     assert_eq!(fs::read(dir.join("output/file.txt")).unwrap(), b"archive contents");
 }
@@ -56,4 +57,21 @@ fn split_zip_discovery_uses_exact_names_and_correct_order() {
         fs::write(temp.path().join(names[0].replace("backup", "backup-other")), b"unrelated").unwrap();
         check_archive(temp.path(), names[0], Some(2));
     }
+}
+
+#[test]
+fn split_zip_json_listing_is_not_mixed_with_progress() {
+    let bytes = zip_bytes();
+    let split = bytes.len() / 2;
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("backup.001"), &bytes[..split]).unwrap();
+    fs::write(temp.path().join("backup.002"), &bytes[split..]).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_unarc"))
+        .current_dir(temp.path())
+        .args(["list", "--json", "backup.001"])
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    let listing: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(listing["entries"][0]["name"], "file.txt");
 }
