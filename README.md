@@ -49,6 +49,8 @@ cargo install unarc-cli
 | **Z** | `.Z` | Unix compress (LZW) |
 | **GZ** | `.gz` | Gzip (Deflate) |
 | **BZ2** | `.bz2` | Bzip2 |
+| **XZ** | `.xz` | XZ (LZMA2) |
+| **ZST** | `.zst` | Zstandard |
 | **ICE** | `.ice` | Legacy DOS ICE (LH1) |
 | **Pack-Ice** | `.pi9` | Atari ST Pack-Ice (v0/v1/v2) |
 
@@ -59,6 +61,8 @@ cargo install unarc-cli
 | **TGZ** | `.tgz`, `.tar.gz` |
 | **TBZ** | `.tbz`, `.tar.bz2` |
 | **TAR.Z** | `.tar.Z` |
+| **TXZ** | `.txz`, `.tar.xz` |
+| **TZST** | `.tzst`, `.tar.zst` |
 
 ### Commodore 64 Containers
 

@@ -273,6 +273,12 @@ fn test_is_supported() {
     assert!(is_supported_archive(Path::new("file.tar.gz")));
     assert!(is_supported_archive(Path::new("file.tbz2")));
     assert!(is_supported_archive(Path::new("file.tar.bz2")));
+    assert!(is_supported_archive(Path::new("file.xz")));
+    assert!(is_supported_archive(Path::new("file.txz")));
+    assert!(is_supported_archive(Path::new("file.tar.xz")));
+    assert!(is_supported_archive(Path::new("file.zst")));
+    assert!(is_supported_archive(Path::new("file.tzst")));
+    assert!(is_supported_archive(Path::new("file.tar.zst")));
     assert!(is_supported_archive(Path::new("file.ice")));
     assert!(!is_supported_archive(Path::new("file.txt")));
 }
@@ -298,6 +304,12 @@ fn test_supported_extensions_list() {
     assert!(exts.contains(&"tbz"));
     assert!(exts.contains(&"tbz2"));
     assert!(exts.contains(&"tar.bz2"));
+    assert!(exts.contains(&"xz"));
+    assert!(exts.contains(&"txz"));
+    assert!(exts.contains(&"tar.xz"));
+    assert!(exts.contains(&"zst"));
+    assert!(exts.contains(&"tzst"));
+    assert!(exts.contains(&"tar.zst"));
     assert!(exts.contains(&"ice"));
 }
 

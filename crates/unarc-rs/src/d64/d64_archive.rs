@@ -225,7 +225,7 @@ impl D64Archive {
                 break;
             }
             let data = &self.image[index * SECTOR_SIZE..(index + 1) * SECTOR_SIZE];
-            for raw in data.chunks_exact(ENTRY_SIZE) {
+            for raw in data.as_chunks::<ENTRY_SIZE>().0 {
                 if let Some(entry) = self.parse_entry(raw) {
                     entries.push(entry);
                 }

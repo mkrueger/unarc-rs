@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+- `ArchiveFormat` gained the variants `Xz`, `Zst`, `Txz` and `Tzst`. Exhaustive
+  matches on it need new arms.
+
 ### Added
 
 - Commodore 64 containers: Lynx (`.lnx`), T64 tape images (`.t64`) and D64 1541 disk
@@ -18,9 +23,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `#[non_exhaustive]`, the new variants break exhaustive `match`es on it.
 - Self-authored D64, T64 and Lynx fixtures, cross-checked against VICE `c1541` and
   cbmconvert, and tests for truncated images, sector chain loops and bad links.
+- xz (`.xz`) and Zstandard (`.zst`) single-file streams, and xz- and
+  Zstandard-compressed TAR archives (`.txz`, `.tar.xz`, `.tzst`, `.tar.zst`), using
+  the pure Rust [`lzma-rust2`](https://crates.io/crates/lzma-rust2) and
+  [`ruzstd`](https://crates.io/crates/ruzstd) crates. Concatenated xz streams and
+  multiple Zstandard frames are decoded in full; skippable frames are ignored.
+  `ArchiveFormat::detect()` returns `Txz` or `Tzst` for xz or Zstandard content
+  named `.txz`, `.tar.xz`, `.tzst` or `.tar.zst`, like the other compressed TARs.
+- Size limits apply to xz and Zstandard output, and the dictionary (window) size a
+  stream announces is checked against the limit before the decoder allocates it.
 
 ### Fixed
 
+- XZ and TXZ decoding handles short and interrupted input reads and rejects
+  trailing stream padding that is not a multiple of four bytes.
+- Zstandard and TZST decoding verifies each frame's declared uncompressed size,
+  rejecting streams with mismatched content sizes.
+- ARC and PAK entries report their real modification time. The header's date and
+  time words were read in the wrong order, so every timestamp was garbage (a 2024
+  file listed as 2072, or with month 0).
+- LHA entry names use `/` path separators on every platform, fixing Windows
+  listings and the LHA metadata regression test without changing link targets.
 - `ArchiveFormat::detect()` returns `Tgz`, `Tbz` or `TarZ` when gzip, bzip2 or
   compress content has a matching compressed-TAR name (`.tgz`, `.tar.gz`, `.tbz`,
   `.tbz2`, `.tar.bz2`, `.tar.Z`). Previously such archives were detected as a single
