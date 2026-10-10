@@ -55,6 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Selective CLI extraction preserves solid ACE dictionary history by decoding
+  skipped predecessors with the supplied password, including existing-output
+  skips. Repeated requested names no longer cause false "not found" errors.
+- CLI JSON filename fixtures write awkward TAR names as raw archive bytes so
+  Windows path normalization does not alter the names under test.
 - CAB MSZIP blocks must reach the end of their Deflate stream. Unfinished streams
   are rejected even when they produce the declared uncompressed byte count.
 - ARC/PAK crunched (method 8) and squashed members that reset the LZW table

@@ -6,6 +6,9 @@ use std::{
     process::{Command, Output},
 };
 
+#[path = "../../unarc-rs/tests/common/ace.rs"]
+mod ace;
+
 fn unarc(args: &[&std::ffi::OsStr]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_unarc")).args(args).output().unwrap()
 }
@@ -19,6 +22,11 @@ fn make_tar(path: &Path, members: &[(&str, tar::EntryType, &[u8])]) {
         header.set_mode(0o644);
         if *kind == tar::EntryType::Symlink {
             builder.append_link(&mut header, name, "target.txt").unwrap();
+        } else if name.len() <= 100 {
+            // Write raw TAR names rather than host-dependent filesystem paths.
+            header.as_mut_bytes()[..name.len()].copy_from_slice(name.as_bytes());
+            header.set_cksum();
+            builder.append(&header, *data).unwrap();
         } else {
             builder.append_data(&mut header, name, *data).unwrap();
         }
@@ -112,6 +120,98 @@ fn extracts_only_the_named_entries() {
 }
 
 #[test]
+fn selective_extraction_decodes_solid_ace_predecessors() {
+    for stored_prefix in [false, true] {
+        for existing_prefix in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let archive = temp.path().join("solid.ace");
+            let output = temp.path().join("output");
+            fs::write(&archive, ace::synthetic_ace(true, stored_prefix)).unwrap();
+            let mut args = vec!["extract".as_ref(), archive.as_os_str()];
+            if existing_prefix {
+                fs::create_dir(&output).unwrap();
+                fs::write(output.join("first.txt"), b"keep").unwrap();
+            } else {
+                args.push("second.txt".as_ref());
+            }
+            args.extend(["-o".as_ref(), output.as_os_str()]);
+            let result = unarc(&args);
+            assert!(result.status.success(), "{result:?}");
+            assert_eq!(fs::read(output.join("second.txt")).unwrap(), b"AA");
+            if existing_prefix {
+                assert_eq!(fs::read(output.join("first.txt")).unwrap(), b"keep");
+            } else {
+                assert!(!output.join("first.txt").exists());
+            }
+        }
+    }
+}
+
+#[test]
+fn selective_ace_extraction_uses_password_only_when_history_requires_it() {
+    for solid in [false, true] {
+        for password in [None, Some("wrong"), Some("test")] {
+            let temp = tempfile::tempdir().unwrap();
+            let archive = temp.path().join("encrypted.ace");
+            let output = temp.path().join("output");
+            fs::write(&archive, ace::synthetic_encrypted_ace(solid)).unwrap();
+            assert_eq!(list_json(&archive)["entries"].as_array().unwrap().len(), 2);
+            let mut args = vec!["extract".as_ref(), archive.as_os_str(), "second.txt".as_ref()];
+            if let Some(password) = password {
+                args.push("-p".as_ref());
+                args.push(password.as_ref());
+            }
+            args.extend(["-o".as_ref(), output.as_os_str()]);
+            let result = unarc(&args);
+            if solid && password != Some("test") {
+                assert!(!result.status.success(), "{result:?}");
+                assert!(!output.join("second.txt").exists());
+                assert!(!result.stderr.is_empty());
+            } else {
+                assert!(result.status.success(), "{result:?}");
+                assert_eq!(fs::read(output.join("second.txt")).unwrap(), if solid { &b"AA"[..] } else { &b"B"[..] });
+            }
+            assert!(!output.join("first.txt").exists());
+        }
+    }
+}
+
+#[test]
+fn repeated_requested_names_are_extracted_once() {
+    let temp = tempfile::tempdir().unwrap();
+    let archive = temp.path().join("release.tar");
+    let output = temp.path().join("output");
+    make_tar(&archive, &[("a.txt", tar::EntryType::Regular, b"first")]);
+    let result = unarc(&[
+        "extract".as_ref(),
+        archive.as_os_str(),
+        "a.txt".as_ref(),
+        "a.txt".as_ref(),
+        "-o".as_ref(),
+        output.as_os_str(),
+    ]);
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(fs::read(output.join("a.txt")).unwrap(), b"first");
+    assert!(String::from_utf8_lossy(&result.stdout).contains("Extracted 1 file(s)"));
+}
+
+#[test]
+fn single_stream_listings_preserve_archive_derived_names() {
+    for (extension, data) in [
+        ("xz", &include_bytes!("../../unarc-rs/tests/xz/LICENSE.xz")[..]),
+        ("zst", &include_bytes!("../../unarc-rs/tests/zst/LICENSE.zst")[..]),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join(format!("renamed.txt.{extension}"));
+        fs::write(&archive, data).unwrap();
+        assert_eq!(list_json(&archive)["entries"][0]["name"], "renamed.txt");
+        let result = unarc(&["list".as_ref(), archive.as_os_str()]);
+        assert!(result.status.success(), "{result:?}");
+        assert!(String::from_utf8_lossy(&result.stdout).contains("renamed.txt"));
+    }
+}
+
+#[test]
 fn a_missing_name_fails_but_the_rest_are_extracted() {
     let temp = tempfile::tempdir().unwrap();
     let archive = temp.path().join("release.tar");
@@ -123,10 +223,12 @@ fn a_missing_name_fails_but_the_rest_are_extracted() {
         archive.as_os_str(),
         "a.txt".as_ref(),
         "README.1ST".as_ref(),
+        "README.1ST".as_ref(),
         "-o".as_ref(),
         output.as_os_str(),
     ]);
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("README.1ST not found"));
+    assert_eq!(String::from_utf8_lossy(&result.stderr).matches("README.1ST not found").count(), 1);
     assert_eq!(fs::read(output.join("a.txt")).unwrap(), b"first");
 }

@@ -179,6 +179,7 @@ trait ArchiveReader {
     fn next_entry_box(&mut self) -> Result<Option<unarc_rs::unified::ArchiveEntry>, ArchiveError>;
     fn read_with_options_box(&mut self, entry: &unarc_rs::unified::ArchiveEntry, options: &ArchiveOptions) -> Result<Vec<u8>, ArchiveError>;
     fn skip_box(&mut self, entry: &unarc_rs::unified::ArchiveEntry) -> Result<(), ArchiveError>;
+    fn skip_with_options_box(&mut self, entry: &ArchiveEntry, options: &ArchiveOptions) -> Result<(), ArchiveError>;
     fn set_single_file_name_box(&mut self, name: String);
 }
 
@@ -191,6 +192,9 @@ impl<T: std::io::Read + std::io::Seek> ArchiveReader for UnifiedArchive<T> {
     }
     fn skip_box(&mut self, entry: &unarc_rs::unified::ArchiveEntry) -> Result<(), ArchiveError> {
         self.skip(entry)
+    }
+    fn skip_with_options_box(&mut self, entry: &ArchiveEntry, options: &ArchiveOptions) -> Result<(), ArchiveError> {
+        self.skip_with_options(entry, options)
     }
     fn set_single_file_name_box(&mut self, name: String) {
         self.set_single_file_name(name);
@@ -621,7 +625,12 @@ fn cmd_extract(archive_path: &Path, files: &[String], output_dir: &Path, force: 
     let mut errors = 0;
 
     // Requested names not yet seen; an empty request means every entry
-    let mut wanted: Vec<&str> = files.iter().map(String::as_str).collect();
+    let mut wanted = Vec::new();
+    for name in files {
+        if !wanted.contains(&name.as_str()) {
+            wanted.push(name.as_str());
+        }
+    }
 
     loop {
         // Stop reading once everything requested is out
@@ -634,7 +643,7 @@ fn cmd_extract(archive_path: &Path, files: &[String], output_dir: &Path, force: 
 
         if !files.is_empty() {
             let Some(position) = wanted.iter().position(|name| *name == entry.name()) else {
-                skip_entry(archive.as_mut(), &entry)?;
+                skip_entry(archive.as_mut(), &entry, &options, format)?;
                 continue;
             };
             wanted.swap_remove(position);
@@ -644,14 +653,14 @@ fn cmd_extract(archive_path: &Path, files: &[String], output_dir: &Path, force: 
             Some(path) => path,
             None => {
                 eprintln!("  Skipping {} (unsafe path)", entry.name());
-                skip_entry(archive.as_mut(), &entry)?;
+                skip_entry(archive.as_mut(), &entry, &options, format)?;
                 errors += 1;
                 continue;
             }
         };
         if entry.is_directory() {
             output.create_dir_all(&relative_path)?;
-            skip_entry(archive.as_mut(), &entry)?;
+            skip_entry(archive.as_mut(), &entry, &options, format)?;
             continue;
         }
 
@@ -659,7 +668,7 @@ fn cmd_extract(archive_path: &Path, files: &[String], output_dir: &Path, force: 
         if !force && output.exists(&relative_path)? {
             eprintln!("  Skipping {} (already exists, use -f to overwrite)", entry.name());
             // Still need to skip the entry data
-            skip_entry(archive.as_mut(), &entry)?;
+            skip_entry(archive.as_mut(), &entry, &options, format)?;
             continue;
         }
 
@@ -697,10 +706,10 @@ fn cmd_extract(archive_path: &Path, files: &[String], output_dir: &Path, force: 
     Ok(())
 }
 
-/// Skips an entry's data; a truncated final entry is not an error.
-fn skip_entry(archive: &mut dyn ArchiveReader, entry: &ArchiveEntry) -> Result<(), ArchiveError> {
-    match archive.skip_box(entry) {
-        Err(ArchiveError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(()),
+/// Preserves extraction state when skipping; ACE decoding errors must propagate.
+fn skip_entry(archive: &mut dyn ArchiveReader, entry: &ArchiveEntry, options: &ArchiveOptions, format: ArchiveFormat) -> Result<(), ArchiveError> {
+    match archive.skip_with_options_box(entry, options) {
+        Err(ArchiveError::Io(e)) if format != ArchiveFormat::Ace && e.kind() == io::ErrorKind::UnexpectedEof => Ok(()),
         result => result,
     }
 }

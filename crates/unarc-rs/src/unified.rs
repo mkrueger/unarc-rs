@@ -2309,9 +2309,24 @@ impl<T: Read + Seek> UnifiedArchive<T> {
         Ok(data.len() as u64)
     }
 
+    /// Skip an entry while preserving state needed to extract later entries.
+    ///
+    /// Solid ACE predecessors are decoded and discarded using the supplied
+    /// password and size limits. Their decoded bytes count toward the total
+    /// size limit. Other formats use their normal skip operation.
+    pub fn skip_with_options(&mut self, entry: &ArchiveEntry, options: &ArchiveOptions) -> Result<()> {
+        if matches!((&self.inner, &entry.index), (ArchiveInner::Ace(archive), EntryIndex::Ace(_)) if archive.is_solid()) {
+            self.read_with_options(entry, options).map(|_| ())
+        } else {
+            self.skip(entry)
+        }
+    }
+
     /// Skip an entry without reading its data
     ///
     /// This is more efficient than reading if you only need to process certain files.
+    /// For extraction from solid ACE archives, use [`Self::skip_with_options`]
+    /// instead so that later entries retain their required dictionary history.
     pub fn skip(&mut self, entry: &ArchiveEntry) -> Result<()> {
         match (&mut self.inner, &entry.index) {
             (ArchiveInner::Ace(archive), EntryIndex::Ace(header)) => archive.skip(header),

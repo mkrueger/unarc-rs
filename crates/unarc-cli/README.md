@@ -150,6 +150,9 @@ Options:
 
 Named entries keep their paths below the output directory. If any named entry is
 not in the archive, the others are still extracted and `unarc` exits with an error.
+Repeated requested names are treated as a single request. Solid ACE predecessors
+are decoded and discarded when necessary, using `--password` for encrypted entries;
+they are not written unless requested.
 
 ### `unarc formats`
 
