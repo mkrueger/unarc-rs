@@ -35,6 +35,8 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **Z** | `.Z` | Full support |
 | **GZ** | `.gz` | Gzip (Deflate) |
 | **BZ2** | `.bz2` | Bzip2 |
+| **XZ** | `.xz` | XZ (LZMA2) |
+| **ZST** | `.zst` | Zstandard |
 | **ICE** | `.ice` | Full support |
 | **Pack-Ice** | `.pi9` | Full support |
 
@@ -45,8 +47,20 @@ A Rust library for reading and extracting various archive formats, with a focus 
 | **TGZ** | `.tgz`, `.tar.gz` | Gzip-compressed TAR |
 | **TBZ** | `.tbz`, `.tbz2`, `.tar.bz2` | Bzip2-compressed TAR |
 | **TAR.Z** | `.tar.Z` | LZW-compressed TAR |
+| **TXZ** | `.txz`, `.tar.xz` | XZ-compressed TAR |
+| **TZST** | `.tzst`, `.tar.zst` | Zstandard-compressed TAR |
 
-> **Note:** Single-file formats (`.Z`, `.gz`, `.bz2`) compress one file only. When a path like `file.tar.gz` is opened, the library detects it as a compressed TAR archive, returning all entries from the inner TAR.
+> **Note:** Single-file formats (`.Z`, `.gz`, `.bz2`, `.xz`, `.zst`) compress one file only. When a path like `file.tar.gz` is opened, the library detects it as a compressed TAR archive, returning all entries from the inner TAR.
+
+### Commodore 64 Containers
+
+Files are stored uncompressed. Entries are named `NAME.prg`, `NAME.seq`, etc.; PRG files include their load address.
+
+| Format | Extensions | Notes |
+| ------ | ---------- | ----- |
+| **D64** | `.d64` | 1541 disk image (35/40/42 tracks, error bytes) |
+| **T64** | `.t64` | C64S tape image; wrong end addresses are corrected |
+| **Lynx** | `.lnx` | Lynx container, with or without BASIC loader |
 
 ## Installation
 
@@ -228,7 +242,9 @@ let mut archive = ArchiveFormat::open_path_with_options("upload.zip", options)?;
 let options = ArchiveOptions::new().with_max_entry_size(None);
 ```
 
-`.tar.gz`, `.tar.bz2` and `.tar.Z` archives are decompressed as a whole when opened; the total limit (or the entry limit, if no total limit is set) applies to the whole TAR stream.
+`.tar.gz`, `.tar.bz2`, `.tar.Z`, `.tar.xz` and `.tar.zst` archives are decompressed as a whole when opened; the total limit (or the entry limit, if no total limit is set) applies to the whole TAR stream.
+
+xz and Zstandard streams announce their dictionary (window) size up front. It is checked before anything is allocated: the decoders accept windows up to the applicable size limit, but always at least 128 MiB (enough for every standard preset) and never more than 2 GiB.
 
 ## Format-Specific Notes
 
@@ -294,7 +310,7 @@ CP/M and DOS "squeeze" format. Huffman-based compression used for single files, 
 
 ### TAR Variants
 
-TAR archives can be wrapped with compression. The library auto-detects `.tar.gz`, `.tar.bz2`, and `.tar.Z` from the file path and handles decompression transparently.
+TAR archives can be wrapped with compression. The library auto-detects `.tar.gz`, `.tar.bz2`, `.tar.Z`, `.tar.xz`, and `.tar.zst` from the file path and handles decompression transparently.
 
 ## Background
 

@@ -3,7 +3,7 @@ name = "unarc-rs"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Universal archive extraction & decompression library for retro + modern formats (7z, ZIP, RAR, CAB, LHA/LZH, TAR, ACE, ARJ, ARC/PAK, ZOO, HA, JAR, UC2, SQ/SQ2, SQZ, HYP, gz, bz2, Z, ICE, Pack-Ice)."
+description = "Universal archive extraction & decompression library for retro + modern formats (7z, ZIP, RAR, CAB, LHA/LZH, TAR, ACE, ARJ, ARC/PAK, ZOO, HA, JAR, UC2, SQ/SQ2, SQZ, HYP, gz, bz2, xz, zst, Z, ICE, Pack-Ice, D64, T64, Lynx)."
 authors.workspace = true
 homepage.workspace = true
 repository.workspace = true
@@ -37,6 +37,8 @@ tar = "0.4"
 flate2 = "1.1"
 lzxd = "0.2.7"
 bzip2 = "0.6"
+lzma-rust2 = { version = "0.21", default-features = false, features = ["std", "xz"] }
+ruzstd = { version = "0.9", default-features = false, features = ["std", "hash"] }
 blowfish = "0.10.0"
 sha1 = "0.11"
 
