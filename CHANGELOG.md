@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `unarc list --json` prints the listing as a single JSON document, with full entry
+  names, entry kinds, sizes, method, modification time, CRC and encryption, for
+  programs that drive `unarc`.
+- `unarc extract` accepts entry names after the archive and extracts only those. A
+  name missing from the archive is reported and makes `unarc` exit with an error.
+
+### Changed
+
+- `unarc` reports multi-volume discovery ("Detected N volumes", "Opening volume")
+  on stderr instead of stdout.
+
 ### Fixed
 
 - `ArchiveFormat::detect()` returns `Tgz`, `Tbz` or `TarZ` when gzip, bzip2 or

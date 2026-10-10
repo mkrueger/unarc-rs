@@ -29,6 +29,7 @@ The binary will be available at `target/release/unarc`.
 ```bash
 unarc list archive.arj
 unarc l archive.zip      # short alias
+unarc list --json archive.lzh   # for scripts and other programs
 ```
 
 Example output:
@@ -51,6 +52,7 @@ unarc extract archive.arj                    # Extract to current directory
 unarc x archive.zip -o ./output              # Extract to specific directory
 unarc extract -f archive.rar                 # Overwrite existing files
 unarc extract -p secret encrypted.arj        # Decrypt with password
+unarc x archive.zip FILE_ID.DIZ docs/read.me # Extract only these entries
 
 # Multi-volume archives (auto-detects all volumes)
 unarc extract archive.zip.001 -o ./output    # Split ZIP (.001, .002, ...)
@@ -89,21 +91,55 @@ unarc tp large_archive.rar -f passwords.txt -e "small_file.txt"
 List contents of an archive.
 
 ```text
-Usage: unarc list <ARCHIVE>
+Usage: unarc list [OPTIONS] <ARCHIVE>
 
 Arguments:
   <ARCHIVE>  Archive file to list
+
+Options:
+      --json  Print the listing as JSON, for scripts and other programs
+  -h, --help  Print help
 ```
+
+The table shortens long names to fit. `--json` prints every name in full, as stored
+in the archive, with nothing else on stdout:
+
+```json
+{
+  "archive": "release.zip",
+  "format": "ZIP",
+  "entries": [
+    {
+      "name": "FILE_ID.DIZ",
+      "kind": "file",
+      "size": 384,
+      "compressed_size": 39,
+      "method": "Deflated",
+      "modified": "1994-03-12T10:22:30",
+      "crc": 2330302245,
+      "encrypted": false,
+      "encryption": null,
+      "link_target": null
+    }
+  ]
+}
+```
+
+`kind` is one of `file`, `directory`, `symlink`, `hardlink`, `special` or `unknown`.
+`modified` is the time as recorded, with no time zone, or `null` when the format
+has none. Names are not sanitized: check them before using one as a path. New
+fields may be added; existing ones keep their names.
 
 ### `unarc extract` (alias: `x`)
 
 Extract files from an archive.
 
 ```text
-Usage: unarc extract [OPTIONS] <ARCHIVE>
+Usage: unarc extract [OPTIONS] <ARCHIVE> [FILES]...
 
 Arguments:
-  <ARCHIVE>  Archive file to extract
+  <ARCHIVE>   Archive file to extract
+  [FILES]...  Entries to extract, named exactly as `list` shows them (default: all)
 
 Options:
   -o, --output <OUTPUT>      Output directory [default: .]
@@ -111,6 +147,9 @@ Options:
   -p, --password <PASSWORD>  Password for encrypted archives
   -h, --help                 Print help
 ```
+
+Named entries keep their paths below the output directory. If any named entry is
+not in the archive, the others are still extracted and `unarc` exits with an error.
 
 ### `unarc formats`
 

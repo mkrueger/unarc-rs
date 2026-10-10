@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 mod extraction;
+mod listing;
 mod password;
 
 use clap::{Parser, Subcommand};
@@ -13,7 +14,7 @@ use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use unarc_rs::error::ArchiveError;
-use unarc_rs::unified::{ArchiveFormat, ArchiveOptions, UnifiedArchive, VolumeProvider};
+use unarc_rs::unified::{ArchiveEntry, ArchiveFormat, ArchiveOptions, UnifiedArchive, VolumeProvider};
 
 #[derive(Parser)]
 #[command(name = "unarc")]
@@ -30,6 +31,10 @@ enum Commands {
     List {
         /// Archive file to list
         archive: PathBuf,
+
+        /// Print the listing as JSON, for scripts and other programs
+        #[arg(long)]
+        json: bool,
     },
 
     /// Extract files from an archive
@@ -37,6 +42,9 @@ enum Commands {
     Extract {
         /// Archive file to extract
         archive: PathBuf,
+
+        /// Entries to extract, named exactly as `list` shows them (default: all)
+        files: Vec<String>,
 
         /// Output directory (default: current directory)
         #[arg(short, long, default_value = ".")]
@@ -86,13 +94,14 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::List { archive } => cmd_list(&archive),
+        Commands::List { archive, json } => cmd_list(&archive, json),
         Commands::Extract {
             archive,
+            files,
             output,
             force,
             password,
-        } => cmd_extract(&archive, &output, force, password.as_deref()),
+        } => cmd_extract(&archive, &files, &output, force, password.as_deref()),
         Commands::TryPasswords {
             archive,
             password_file,
@@ -129,7 +138,7 @@ fn open_archive_auto(archive_path: &Path, format: ArchiveFormat, options: Archiv
                 // For .001/.7z.001 style, we need to use the MultiVolumeReader
                 let volumes = FileVolumeProvider::find_all_volumes(archive_path);
                 if volumes.len() > 1 {
-                    println!("  Detected {} volumes", volumes.len());
+                    eprintln!("  Detected {} volumes", volumes.len());
                     match format {
                         ArchiveFormat::Zip => {
                             let archive = ArchiveFormat::open_multi_volume_zip(&volumes, options)?;
@@ -147,7 +156,7 @@ fn open_archive_auto(archive_path: &Path, format: ArchiveFormat, options: Archiv
                 // For .zip/.z01 style
                 let volumes = FileVolumeProvider::find_all_volumes(archive_path);
                 if volumes.len() > 1 {
-                    println!("  Detected {} volumes", volumes.len());
+                    eprintln!("  Detected {} volumes", volumes.len());
                     let archive = ArchiveFormat::open_multi_volume_zip(&volumes, options)?;
                     return Ok(Box::new(archive));
                 }
@@ -188,8 +197,20 @@ impl<T: std::io::Read + std::io::Seek> ArchiveReader for UnifiedArchive<T> {
     }
 }
 
-fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
+fn cmd_list(archive_path: &Path, json: bool) -> Result<(), ArchiveError> {
     let format = detect_format(archive_path)?;
+
+    if json {
+        let mut entries = Vec::new();
+        for_each_entry(archive_path, format, |entry| entries.push(listing::Entry::from(entry)))?;
+        let listing = listing::Listing {
+            archive: archive_path.to_string_lossy().into_owned(),
+            format: format.name(),
+            entries,
+        };
+        println!("{}", listing.to_json());
+        return Ok(());
+    }
 
     println!("Archive: {} ({})", archive_path.display(), format.name());
     println!();
@@ -199,28 +220,12 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     );
     println!("{}", "-".repeat(105));
 
-    let mut archive = open_archive_auto(archive_path, format, ArchiveOptions::new())?;
-
-    // For single-file formats, derive the filename from the archive name
-    if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
-        if let Some(stem) = archive_path.file_stem() {
-            archive.set_single_file_name_box(stem.to_string_lossy().to_string());
-        }
-    }
-
     let mut total_compressed = 0u64;
     let mut total_original = 0u64;
     let mut count = 0;
     let mut encrypted_count = 0;
 
-    loop {
-        let entry = match archive.next_entry_box() {
-            Ok(Some(e)) => e,
-            Ok(None) => break,
-            Err(ArchiveError::Io(ref e)) if e.kind() == io::ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(e),
-        };
-
+    for_each_entry(archive_path, format, |entry| {
         let ratio = if entry.original_size() > 0 {
             format!("{:>6.1}%", entry.compression_ratio() * 100.0)
         } else {
@@ -247,15 +252,7 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
         total_compressed += entry.compressed_size();
         total_original += entry.original_size();
         count += 1;
-
-        // Skip to next entry (don't decompress)
-        if let Err(e) = archive.skip_box(&entry) {
-            if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
-                return Err(e);
-            }
-            break;
-        }
-    }
+    })?;
 
     println!("{}", "-".repeat(105));
     let total_ratio = if total_original > 0 {
@@ -271,6 +268,39 @@ fn cmd_list(archive_path: &Path) -> Result<(), ArchiveError> {
     };
 
     println!("{:<40} {:>12} {:>12} {:>8}", summary, total_compressed, total_original, total_ratio);
+
+    Ok(())
+}
+
+/// Calls `visit` for every entry in the archive without decompressing any of them.
+fn for_each_entry(archive_path: &Path, format: ArchiveFormat, mut visit: impl FnMut(&ArchiveEntry)) -> Result<(), ArchiveError> {
+    let mut archive = open_archive_auto(archive_path, format, ArchiveOptions::new())?;
+
+    // For single-file formats, derive the filename from the archive name
+    if matches!(format, ArchiveFormat::Z | ArchiveFormat::Gz | ArchiveFormat::Bz2) {
+        if let Some(stem) = archive_path.file_stem() {
+            archive.set_single_file_name_box(stem.to_string_lossy().to_string());
+        }
+    }
+
+    loop {
+        let entry = match archive.next_entry_box() {
+            Ok(Some(e)) => e,
+            Ok(None) => break,
+            Err(ArchiveError::Io(ref e)) if e.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(e),
+        };
+
+        visit(&entry);
+
+        // Skip to next entry (don't decompress)
+        if let Err(e) = archive.skip_box(&entry) {
+            if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
+                return Err(e);
+            }
+            break;
+        }
+    }
 
     Ok(())
 }
@@ -521,7 +551,7 @@ impl VolumeProvider for FileVolumeProvider {
         };
 
         if volume_number > 0 {
-            println!("  Opening volume: {}", path.display());
+            eprintln!("  Opening volume: {}", path.display());
         }
 
         Some(Box::new(BufReader::new(file)) as Box<dyn Read + Send>)
@@ -555,7 +585,7 @@ fn sanitize_entry_path(name: &str) -> Option<PathBuf> {
     }
 }
 
-fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Option<&str>) -> Result<(), ArchiveError> {
+fn cmd_extract(archive_path: &Path, files: &[String], output_dir: &Path, force: bool, password: Option<&str>) -> Result<(), ArchiveError> {
     let format = detect_format(archive_path)?;
 
     println!("Extracting {} archive: {}", format.name(), archive_path.display());
@@ -584,27 +614,38 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
     let mut count = 0;
     let mut errors = 0;
 
-    while let Some(entry) = archive.next_entry_box()? {
+    // Requested names not yet seen; an empty request means every entry
+    let mut wanted: Vec<&str> = files.iter().map(String::as_str).collect();
+
+    loop {
+        // Stop reading once everything requested is out
+        if !files.is_empty() && wanted.is_empty() {
+            break;
+        }
+        let Some(entry) = archive.next_entry_box()? else {
+            break;
+        };
+
+        if !files.is_empty() {
+            let Some(position) = wanted.iter().position(|name| *name == entry.name()) else {
+                skip_entry(archive.as_mut(), &entry)?;
+                continue;
+            };
+            wanted.swap_remove(position);
+        }
+
         let relative_path = match sanitize_entry_path(entry.name()) {
             Some(path) => path,
             None => {
                 eprintln!("  Skipping {} (unsafe path)", entry.name());
-                if let Err(e) = archive.skip_box(&entry) {
-                    if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
-                        return Err(e);
-                    }
-                }
+                skip_entry(archive.as_mut(), &entry)?;
                 errors += 1;
                 continue;
             }
         };
         if entry.is_directory() {
             output.create_dir_all(&relative_path)?;
-            if let Err(e) = archive.skip_box(&entry) {
-                if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
-                    return Err(e);
-                }
-            }
+            skip_entry(archive.as_mut(), &entry)?;
             continue;
         }
 
@@ -612,11 +653,7 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
         if !force && output.exists(&relative_path)? {
             eprintln!("  Skipping {} (already exists, use -f to overwrite)", entry.name());
             // Still need to skip the entry data
-            if let Err(e) = archive.skip_box(&entry) {
-                if !matches!(&e, ArchiveError::Io(io_err) if io_err.kind() == io::ErrorKind::UnexpectedEof) {
-                    return Err(e);
-                }
-            }
+            skip_entry(archive.as_mut(), &entry)?;
             continue;
         }
 
@@ -638,6 +675,11 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
         }
     }
 
+    for name in &wanted {
+        eprintln!("  {} not found in archive", name);
+        errors += 1;
+    }
+
     println!();
     if errors > 0 {
         println!("Extracted {} file(s), {} error(s)", count, errors);
@@ -647,6 +689,14 @@ fn cmd_extract(archive_path: &Path, output_dir: &Path, force: bool, password: Op
     }
 
     Ok(())
+}
+
+/// Skips an entry's data; a truncated final entry is not an error.
+fn skip_entry(archive: &mut dyn ArchiveReader, entry: &ArchiveEntry) -> Result<(), ArchiveError> {
+    match archive.skip_box(entry) {
+        Err(ArchiveError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(()),
+        result => result,
+    }
 }
 
 fn cmd_formats() -> Result<(), ArchiveError> {
