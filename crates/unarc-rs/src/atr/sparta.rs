@@ -1,7 +1,7 @@
 //! SpartaDOS: files and directories located through sector maps, 23-byte directory
 //! entries with sizes and time stamps.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 
 use chrono::NaiveDate;
 
@@ -38,35 +38,43 @@ fn root_map(image: &Image) -> Option<u16> {
         .then_some(root)
 }
 
-/// Collects the first `count` data sector numbers (0 for unallocated sectors) from a map chain.
-fn data_sectors(image: &Image, visited: &mut Visited, first_map: u16, count: u64) -> std::result::Result<Vec<u16>, String> {
+/// Collects the first `count` data sector numbers (0 for unallocated sectors) from a map
+/// chain, passing each map's sector number to `on_map`.
+fn data_sectors(image: &Image, visited: &mut Visited, first_map: u16, count: u64, mut on_map: impl FnMut(u16)) -> std::result::Result<Vec<u16>, String> {
     visited.start();
     let mut sectors = Vec::with_capacity(crate::limits::capacity_hint(count.saturating_mul(2)) / 2);
-    let mut map = usize::from(first_map);
+    let mut map = first_map;
     while (sectors.len() as u64) < count {
         if map == 0 {
             return Err("sector map ends before the end of the file".into());
         }
-        let data = image.sector(map).ok_or_else(|| format!("sector map {map} lies beyond the end of the image"))?;
-        visited.visit(map)?;
+        let data = image
+            .sector(usize::from(map))
+            .ok_or_else(|| format!("sector map {map} lies beyond the end of the image"))?;
+        visited.visit(usize::from(map))?;
+        on_map(map);
         let wanted = (count - sectors.len() as u64).min(((data.len() - MAP_HEADER) / 2) as u64) as usize;
         sectors.extend(data[MAP_HEADER..].as_chunks::<2>().0[..wanted].iter().map(|&pair| u16::from_le_bytes(pair)));
-        map = usize::from(u16_at(data, 0));
+        map = u16_at(data, 0);
     }
     Ok(sectors)
 }
 
-/// Reads `size` bytes of a file or directory through its sector maps.
-pub(super) fn read(image: &Image, visited: &mut Visited, first_map: u16, size: u64) -> std::result::Result<Vec<u8>, String> {
-    let sector_size = image.sector_size() as u64;
-    let count = size.div_ceil(sector_size);
+/// Returns the number of sectors that hold `size` bytes, failing if the disk cannot hold them.
+fn sector_count(image: &Image, size: u64) -> std::result::Result<u64, String> {
+    let count = size.div_ceil(image.sector_size() as u64);
     if count > image.sectors() as u64 {
         return Err(format!("size {size} exceeds the disk"));
     }
-    let sectors = data_sectors(image, visited, first_map, count)?;
+    Ok(count)
+}
+
+/// Reads the first `size` bytes of `sectors`.
+fn read_sectors(image: &Image, visited: &mut Visited, sectors: &[u16], size: u64) -> std::result::Result<Vec<u8>, String> {
+    let sector_size = image.sector_size() as u64;
     visited.spend(sectors.len())?;
     let mut data = Vec::with_capacity(crate::limits::capacity_hint(size));
-    for sector in sectors {
+    for &sector in sectors {
         let take = (size - data.len() as u64).min(sector_size) as usize;
         if sector == 0 {
             // Unallocated sectors of sparse files read as zeros.
@@ -82,6 +90,13 @@ pub(super) fn read(image: &Image, visited: &mut Visited, first_map: u16, size: u
     Ok(data)
 }
 
+/// Reads `size` bytes of a file through its sector maps.
+pub(super) fn read(image: &Image, visited: &mut Visited, first_map: u16, size: u64) -> std::result::Result<Vec<u8>, String> {
+    let count = sector_count(image, size)?;
+    let sectors = data_sectors(image, visited, first_map, count, |_| {})?;
+    read_sectors(image, visited, &sectors, size)
+}
+
 /// Converts a day/month/year, hour/minute/second stamp; years 80-99 are 1980-1999, 0-79 are 2000-2079.
 fn time_stamp(stamp: &[u8]) -> Option<DosDateTime> {
     let (day, month, year, hour, minute, second) = (stamp[0], stamp[1], stamp[2], stamp[3], stamp[4], stamp[5]);
@@ -95,23 +110,57 @@ fn time_stamp(stamp: &[u8]) -> Option<DosDateTime> {
 }
 
 /// Reads a directory: its first 23-byte entry holds the directory's own length.
-fn read_directory(image: &Image, visited: &mut Visited, map: u16) -> Result<Vec<u8>> {
-    let header = read(image, visited, map, ENTRY_SIZE as u64).map_err(|reason| corrupt(format!("directory: {reason}")))?;
-    let size = u24_at(&header, 3);
-    if size < ENTRY_SIZE as u64 || size > (image.sectors() * image.sector_size()) as u64 {
-        return Err(corrupt(format!("directory length {size}")));
+///
+/// The directory's maps and data sectors may not belong to another directory (or appear
+/// twice), and directories are never sparse, so all directories together hold at most
+/// the image's bytes and their entries cannot be multiplied by sharing sectors. `owned`
+/// marks the sectors of directories read so far.
+fn read_directory(image: &Image, visited: &mut Visited, owned: &mut [bool], map: u16) -> std::result::Result<Vec<u8>, String> {
+    if owned.get(usize::from(map)).is_some_and(|&owned| owned) {
+        return Err(format!("sector map {map} belongs to another directory"));
     }
-    read(image, visited, map, size).map_err(|reason| corrupt(format!("directory: {reason}")))
+    let header = read(image, visited, map, ENTRY_SIZE as u64)?;
+    let size = u24_at(&header, 3);
+    if size < ENTRY_SIZE as u64 {
+        return Err(format!("directory length {size}"));
+    }
+    let count = sector_count(image, size)?;
+    let mut maps = Vec::new();
+    let sectors = data_sectors(image, visited, map, count, |map| maps.push(map))?;
+    let mut claimed = Vec::with_capacity(maps.len() + sectors.len());
+    for &sector in maps.iter().chain(&sectors) {
+        let sector = usize::from(sector);
+        let problem = match owned.get(sector) {
+            _ if sector == 0 => Some("an unallocated sector".to_string()),
+            Some(false) => None,
+            Some(true) => Some(format!("sector {sector}, which belongs to another directory")),
+            None => Some(format!("sector {sector}, which lies beyond the end of the image")),
+        };
+        if let Some(problem) = problem {
+            // Release this directory's sectors so a later, valid directory can claim them.
+            for &sector in &claimed {
+                owned[sector] = false;
+            }
+            return Err(format!("directory has {problem}"));
+        }
+        owned[sector] = true;
+        claimed.push(sector);
+    }
+    read_sectors(image, visited, &sectors, size)
 }
 
 /// Lists a SpartaDOS filesystem, or returns `None` if the boot sector describes none.
+///
+/// A subdirectory that cannot be read is listed as an empty directory, so the rest of
+/// the disk stays listable; an unreadable root directory fails.
 pub(super) fn list(image: &Image, visited: &mut Visited) -> Result<Option<Tree>> {
     let Some(root) = root_map(image) else {
         return Ok(None);
     };
-    let mut tree = Tree::default();
-    let mut seen = HashSet::from([root]);
-    let mut pending = VecDeque::from([(None, read_directory(image, visited, root)?)]);
+    let mut tree = Tree::new(image);
+    let mut owned = vec![false; image.sectors() + 1];
+    let root_directory = read_directory(image, visited, &mut owned, root).map_err(|reason| corrupt(format!("root directory: {reason}")))?;
+    let mut pending = VecDeque::from([(None, root_directory)]);
     while let Some((parent, directory)) = pending.pop_front() {
         // The first entry describes the directory itself.
         for entry in directory.as_chunks::<ENTRY_SIZE>().0.iter().skip(1) {
@@ -134,8 +183,10 @@ pub(super) fn list(image: &Image, visited: &mut Visited) -> Result<Option<Tree>>
                 start_sector: map,
                 data: if is_directory { Data::None } else { Data::Sparta { map } },
             })?;
-            if is_directory && seen.insert(map) {
-                pending.push_back((Some(index), read_directory(image, visited, map)?));
+            if is_directory {
+                if let Ok(directory) = read_directory(image, visited, &mut owned, map) {
+                    pending.push_back((Some(index), directory));
+                }
             }
         }
     }

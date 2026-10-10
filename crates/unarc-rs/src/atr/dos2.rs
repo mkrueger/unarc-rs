@@ -114,9 +114,10 @@ impl Entry {
 /// Returns the listed entries of the directory in the 8 sectors from `first`, up to the
 /// first entry that was never used.
 ///
-/// Listed are files in use, including those never closed after writing (`$43`), DOS 2.5
-/// files that use sectors above 719 (flag `$03`, hidden from DOS 2.0) and MyDOS
-/// subdirectories (`$10`). Deleted files are hidden.
+/// Listed are entries in use (`$40`), including those never closed after writing (bit
+/// `$01`, as in `$43`), DOS 2.5 files that use sectors above 719 (flag `$03`, hidden from
+/// DOS 2.0) and MyDOS subdirectories (`$10`). Deleted entries (`$80`) and other entries
+/// without `$40` are hidden.
 fn read_directory(image: &Image, first: usize) -> Vec<Entry> {
     let mut entries = Vec::new();
     for (index, raw) in (first..first + DIRECTORY_SECTORS)
@@ -185,7 +186,7 @@ pub(super) fn list(image: &Image, visited: &mut Visited) -> Result<Option<(AtrFi
         return Err(ArchiveError::unsupported_format("Atari DOS 1.0 disks"));
     }
 
-    let mut tree = Tree::default();
+    let mut tree = Tree::new(image);
     let mut mydos = false;
     // Each sector may belong to one directory only, so subdirectories cannot loop.
     let mut directory_sectors = vec![false; image.sectors() + 1];

@@ -221,9 +221,9 @@ pub(super) struct Node {
 }
 
 /// Collects the entries of a filesystem.
-#[derive(Default)]
 pub(super) struct Tree {
     nodes: Vec<Node>,
+    max_nodes: usize,
 }
 
 /// An entry to add to a [`Tree`].
@@ -239,8 +239,21 @@ pub(super) struct NewNode {
 }
 
 impl Tree {
+    /// A tree for `image`. Directories may not share sectors, so an image holds at most
+    /// one entry per 16 bytes (DOS 2) or 23 bytes (SpartaDOS); more entries than one
+    /// per 16 bytes are refused as a safeguard.
+    pub(super) fn new(image: &Image) -> Self {
+        Self {
+            nodes: Vec::new(),
+            max_nodes: image.sectors() * image.sector_size() / 16,
+        }
+    }
+
     /// Adds an entry and returns its index.
     pub(super) fn push(&mut self, node: NewNode) -> Result<usize> {
+        if self.nodes.len() >= self.max_nodes {
+            return Err(corrupt("more entries than the image can hold"));
+        }
         let parent_len = node.parent.map_or(0, |p| self.nodes[p].path_len);
         let path_len = parent_len + node.component.len() + usize::from(node.is_directory);
         if path_len > MAX_PATH_BYTES {
@@ -468,6 +481,26 @@ mod tests {
             *b = (i / 128) as u8 | 0x80;
         }
         Image::new(data, sector_size, true)
+    }
+
+    #[test]
+    fn entries_are_limited_by_the_image_size() {
+        // 4 sectors of 128 bytes hold at most 32 entries of 16 bytes.
+        let mut tree = Tree::new(&image(128, 4 * 128));
+        let node = || NewNode {
+            parent: None,
+            component: "A".into(),
+            size: 0,
+            is_directory: false,
+            locked: false,
+            modified_time: None,
+            start_sector: 0,
+            data: Data::None,
+        };
+        for _ in 0..32 {
+            tree.push(node()).unwrap();
+        }
+        assert!(matches!(tree.push(node()), Err(ArchiveError::CorruptedEntry { .. })));
     }
 
     #[test]

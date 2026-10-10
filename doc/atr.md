@@ -26,13 +26,15 @@ The last three bytes of each data sector hold the file number (the directory
 index, upper six bits), a 10-bit link to the next sector and the number of data
 bytes in the sector.
 
-- Listed are files in use (flag bit `$40`), including locked files (`$20`), and
-  DOS 2.5 files that use sectors above 719 (`$03`, `$23`), which DOS 2.5 hides from
-  DOS 2.0 by leaving bit `$40` clear.
-- Not listed, as DOS does not list them: deleted files (`$80`), files that were
-  opened for writing and never closed (`$43`, and any entry with bit `$01` but not
-  the DOS 2.5 pattern), and entries with no in-use bit. The directory ends at the
-  first entry that was never used (`$00`).
+- Listed are entries in use (flag bit `$40`), including locked files (`$20`) and
+  files opened for writing and never closed (bit `$01`: `$41`, `$43`, `$61`, `$63`),
+  which DOS hides; DOS 2.5 files that use sectors above 719 (`$03`, `$23`), which
+  DOS 2.5 hides from DOS 2.0 by leaving bit `$40` clear; and MyDOS subdirectories
+  (`$10`, `$30`).
+- Not listed: deleted entries (bit `$80`), and entries without bit `$40` other than
+  the DOS 2.5 and MyDOS patterns above (for example `$01`, `$02`, `$21`, `$31`-`$3F`).
+- The directory ends at the first entry that was never used (`$00`), as in DOS and
+  the `atr` tool; entries after it are not listed even if they look valid.
 - Entries whose start sector is 0 are directory art: title and separator lines
   without data, written by disk editors and menu makers. They are listed as empty
   files, the way DOS shows them; duplicate names are not made unique.
@@ -59,7 +61,12 @@ directory's sector map, and byte 32 the filesystem version (`$11`, `$20`, `$21`)
 - Directories are read as files of 23-byte entries; the first entry describes
   the directory itself and records its length. Entries with status bit `$08`
   (in use) and without `$10` (deleted) are listed; `$20` marks a subdirectory
-  and `$01` a write-protected file.
+  and `$01` a write-protected file. A directory ends at the first entry with
+  status `$00`; entries after it are not listed.
+- A subdirectory that cannot be read (its sector map or length is damaged, it is
+  sparse, or its sectors belong to another directory) is listed as an empty
+  directory, so the rest of the disk stays listable. A damaged root directory
+  fails with `ArchiveError::CorruptedEntry`.
 - Each entry records its size and a date and time (day, month, two-digit year,
   hour, minute, second). Years 80-99 are 1980-1999 and 0-79 are 2000-2079, as
   SpartaDOS X counts them; impossible values are reported as missing.
@@ -132,10 +139,14 @@ The image is read into memory when opened (at most 65535 sectors). Opening reads
 the directories and follows every DOS 2 sector chain to find the file sizes; a
 damaged chain gives the size of its readable part, and reading the entry reports
 the damage. Chains and sector maps may not loop or leave the image, and a sector
-may not claim more data bytes than it holds. MyDOS subdirectories may not share
-sectors with another directory, and SpartaDOS directories are read once each, so
-directory trees cannot loop. Listing reads at most 16 sectors per sector of the
-image; images whose entries share sectors beyond that fail with
+may not claim more data bytes than it holds. No sector may belong to two
+directories: MyDOS subdirectories may not overlap another directory, and a
+SpartaDOS directory's sector maps and data sectors may not belong to another
+directory or appear twice, and may not be unallocated. So directory trees cannot
+loop, and all directories together hold at most the image's bytes; the number of
+entries is limited to one per 16 bytes of the image, and the directory data held
+while listing to the image size. Listing reads at most 16 sectors per sector of
+the image; images whose files share sectors beyond that fail with
 `ArchiveError::CorruptedEntry`. Entry paths are limited to `MAX_PATH_BYTES`
 (4096 bytes); only the last path component is stored per entry. The direct and
 unified APIs enforce per-entry size limits; the unified API also enforces

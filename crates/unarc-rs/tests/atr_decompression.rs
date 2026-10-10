@@ -182,6 +182,55 @@ fn dos2_directory_details() {
     assert_eq!(entries[2].start_sector, 0);
 }
 
+/// Which DOS 2 and MyDOS directory flags are listed: anything in use (`$40`), whether or
+/// not it was closed or is locked; DOS 2.5 files above sector 719 (`$03`, `$23`); and MyDOS
+/// directories (`$10`, `$30`). Other flags without `$40`, and deleted entries, are hidden.
+#[test]
+fn dos2_entry_flags() {
+    // (flag, listed, locked, directory)
+    let cases = [
+        (0x42, true, false, false),
+        (0x41, true, false, false),
+        (0x43, true, false, false),
+        (0x61, true, true, false),
+        (0x62, true, true, false),
+        (0x63, true, true, false),
+        (0x03, true, false, false),
+        (0x23, true, true, false),
+        (0x10, true, false, true),
+        (0x30, true, true, true),
+        (0x01, false, false, false),
+        (0x02, false, false, false),
+        (0x21, false, false, false),
+        (0x31, false, false, false),
+        (0x32, false, false, false),
+        (0x33, false, false, false),
+        (0x34, false, false, false),
+        (0x38, false, false, false),
+        (0x80, false, false, false),
+        (0xC2, false, false, false),
+        (0xE3, false, false, false),
+    ];
+    for (flag, listed, locked, directory) in cases {
+        let mut disk = Disk::new(128, 720);
+        vtoc(&mut disk, 600);
+        file(&mut disk, 361, 0, 4, "OK.TXT", b"ok");
+        file(&mut disk, 361, 1, 10, "TEST", b"test");
+        disk.sector(361)[16] = flag;
+        if directory {
+            disk.sector(361)[16 + 3] = 100; // an empty directory in sectors 100-107
+        }
+        let mut archive = open(&disk.atr());
+        let entries = entries(&mut archive);
+        let test = entries.get(1);
+        assert_eq!(test.is_some(), listed, "{flag:#04x}");
+        if let Some(test) = test {
+            assert_eq!((test.locked, test.is_directory), (locked, directory), "{flag:#04x}");
+            assert_eq!(archive.read(test).unwrap(), if directory { &b""[..] } else { b"test" }, "{flag:#04x}");
+        }
+    }
+}
+
 /// A directory with only art is accepted when the VTOC looks like DOS; an empty one too.
 #[test]
 fn dos2_disks_without_files() {

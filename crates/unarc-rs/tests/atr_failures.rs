@@ -202,6 +202,134 @@ fn spartados_corruption() {
     assert!(matches!(open(&sparta.disk.atr()), Err(ArchiveError::UnsupportedFormat(_))));
 }
 
+/// Writes a SpartaDOS sector map at `map` that lists `sectors`.
+fn sparta_map(sparta: &mut Sparta, map: usize, sectors: &[usize]) {
+    let raw = sparta.disk.sector(map);
+    raw[..4].fill(0);
+    for (slot, &sector) in sectors.iter().enumerate() {
+        raw[4 + 2 * slot..6 + 2 * slot].copy_from_slice(&(sector as u16).to_le_bytes());
+    }
+}
+
+#[test]
+fn spartados_directories_sharing_sectors() {
+    // One directory of 100 subdirectory entries, reached through 100 different sector
+    // maps that all list the same data sectors. Read through every map, it would list
+    // 100 x 100 entries; each directory's sectors may be read for one directory only.
+    const DIRECTORIES: usize = 100;
+    let mut sparta = Sparta::new(128, 720);
+    let maps: Vec<usize> = (0..DIRECTORIES).map(|_| sparta.allocate()).collect();
+    let mut directory = vec![0; 23];
+    directory[0] = SPARTA_DIRECTORY;
+    directory[3..6].copy_from_slice(&(((DIRECTORIES + 1) * 23) as u32).to_le_bytes()[..3]);
+    for (i, &map) in maps.iter().enumerate() {
+        directory.push(SPARTA_DIRECTORY);
+        directory.extend((map as u16).to_le_bytes());
+        directory.extend([0; 3]);
+        directory.extend(name(&format!("D{i}")));
+        directory.extend([0; 6]);
+    }
+    let sectors: Vec<usize> = directory
+        .chunks(128)
+        .map(|chunk| {
+            let sector = sparta.allocate();
+            sparta.disk.sector(sector)[..chunk.len()].copy_from_slice(chunk);
+            sector
+        })
+        .collect();
+    for &map in &maps {
+        sparta_map(&mut sparta, map, &sectors);
+    }
+    sparta.set_root(maps[0] as u16);
+    let mut archive = open(&sparta.disk.atr()).unwrap();
+    let mut entries = Vec::new();
+    while let Some(entry) = archive.get_next_entry().unwrap() {
+        assert!(entry.is_directory && !entry.name[..entry.name.len() - 1].contains('/'), "{}", entry.name);
+        entries.push(entry);
+    }
+    assert_eq!(entries.len(), DIRECTORIES);
+
+    // A subdirectory that reuses the root's data sector, and one that lists a sector twice.
+    let mut sparta = Sparta::new(128, 720);
+    let file = sparta.write(b"x");
+    let (root_map, root_data, shared, twice, twice_data) = (sparta.allocate(), sparta.allocate(), sparta.allocate(), sparta.allocate(), sparta.allocate());
+    let entry = |status: u8, map: usize, size: u8, entry_name: &str| {
+        let mut raw = vec![status];
+        raw.extend((map as u16).to_le_bytes());
+        raw.extend([size, 0, 0]);
+        raw.extend(name(entry_name));
+        raw.extend([0; 6]);
+        raw
+    };
+    let mut root = entry(SPARTA_DIRECTORY, 0, 69, "MAIN");
+    root.extend(entry(SPARTA_DIRECTORY, shared, 0, "SHARED"));
+    root.extend(entry(SPARTA_DIRECTORY, twice, 0, "TWICE"));
+    sparta.disk.sector(root_data)[..root.len()].copy_from_slice(&root);
+    // 150 bytes take two sectors.
+    let mut directory = entry(SPARTA_DIRECTORY, 0, 150, "TWICE");
+    directory.extend(entry(SPARTA_FILE, usize::from(file), 1, "X"));
+    sparta.disk.sector(twice_data)[..directory.len()].copy_from_slice(&directory);
+    sparta_map(&mut sparta, root_map, &[root_data]);
+    sparta_map(&mut sparta, shared, &[root_data]);
+    sparta_map(&mut sparta, twice, &[twice_data, twice_data]);
+    sparta.set_root(root_map as u16);
+    let mut archive = open(&sparta.disk.atr()).unwrap();
+    let mut names = Vec::new();
+    while let Some(entry) = archive.get_next_entry().unwrap() {
+        names.push(entry.name);
+    }
+    assert_eq!(names, ["SHARED/", "TWICE/"]);
+    // Listed once, TWICE's directory is read.
+    sparta_map(&mut sparta, twice, &[twice_data]);
+    sparta.disk.sector(twice_data)[3] = 46;
+    let mut archive = open(&sparta.disk.atr()).unwrap();
+    let mut names = Vec::new();
+    while let Some(entry) = archive.get_next_entry().unwrap() {
+        names.push(entry.name);
+    }
+    assert_eq!(names, ["SHARED/", "TWICE/", "TWICE/X"]);
+}
+
+#[test]
+fn spartados_unreadable_subdirectories_are_empty() {
+    // Subdirectories with a map past the end, a length of 0, a length past the disk and a
+    // sparse sector are listed empty; the files around them stay readable.
+    let mut sparta = Sparta::new(128, 720);
+    let before = sparta.write(&data(300, 5));
+    let after = sparta.write(&data(200, 6));
+    let zero_length = sparta.directory("ZERO", &[]);
+    let zero_sector = sparta.write(&[0; 23]);
+    let huge = sparta.directory("HUGE", &[(SPARTA_FILE, after, 200, "HIDDEN", [0; 6])]);
+    let mut header = vec![SPARTA_DIRECTORY, 0, 0, 200, 0, 0];
+    header.resize(128, 0);
+    let sparse = sparta.write_sectors(&[Some(&header), None]);
+    let root = sparta.directory(
+        "MAIN",
+        &[
+            (SPARTA_FILE, before, 300, "BEFORE", [0; 6]),
+            (SPARTA_DIRECTORY, 800, 0, "PAST", [0; 6]),
+            (SPARTA_DIRECTORY, zero_sector, 0, "ZERO", [0; 6]),
+            (SPARTA_DIRECTORY, huge, 0, "HUGE", [0; 6]),
+            (SPARTA_DIRECTORY, sparse, 0, "SPARSE", [0; 6]),
+            (SPARTA_FILE, after, 200, "AFTER", [0; 6]),
+            (SPARTA_DIRECTORY, zero_length, 0, "EMPTY", [0; 6]),
+        ],
+    );
+    // HUGE's directory claims 0xFFFFFF bytes.
+    let huge_data = usize::from(huge) - 1;
+    sparta.disk.sector(huge_data)[3..6].fill(0xFF);
+    sparta.set_root(root);
+    let mut archive = open(&sparta.disk.atr()).unwrap();
+    let mut names = Vec::new();
+    while let Some(entry) = archive.get_next_entry().unwrap() {
+        if entry.name == "BEFORE" || entry.name == "AFTER" {
+            assert_eq!(archive.read(&entry).unwrap().len(), entry.size as usize);
+        }
+        names.push(entry.name);
+    }
+    assert_eq!(names, ["BEFORE", "PAST/", "ZERO/", "HUGE/", "SPARSE/", "AFTER", "EMPTY/"]);
+}
+
 #[test]
 fn limits_and_foreign_entries() {
     let image = dos2().atr();
@@ -237,23 +365,58 @@ fn limits_and_foreign_entries() {
     assert!(matches!(unified.read(&second), Err(ArchiveError::SizeLimitExceeded { .. })));
 }
 
+/// A MyDOS disk with a subdirectory and a file with 16-bit links.
+fn mydos() -> Vec<u8> {
+    let mut disk = Disk::new(256, 1100);
+    vtoc(&mut disk, 0);
+    file(&mut disk, 361, 0, 4, "OK.TXT", &data(600, 7));
+    entry(&mut disk, 361, 1, MYDOS_DIRECTORY, 8, 370, &name("SUB"));
+    file(&mut disk, 370, 0, 10, "IN.SUB", &data(400, 8));
+    let sectors: Vec<usize> = (1050..1053).chain(20..23).collect();
+    chain(&mut disk, &sectors, 0, &data(1500, 9), true);
+    entry(&mut disk, 370, 1, common::MYDOS_LONG_LINKS, 6, 1050, &name("LONG"));
+    disk.atr()
+}
+
+/// A SpartaDOS disk with a subdirectory and a sparse file, all in sectors 4-30.
+fn spartados() -> Vec<u8> {
+    let mut sparta = Sparta::new(128, 720);
+    let file = sparta.write(&data(700, 10));
+    let sparse = sparta.write_sectors(&[Some(&[1; 128]), None, Some(&[2; 5])]);
+    let sub = sparta.directory("SUB", &[(SPARTA_FILE, sparse, 261, "SPARSE", [0; 6])]);
+    let root = sparta.directory(
+        "MAIN",
+        &[(SPARTA_FILE, file, 700, "FILE", [1, 2, 90, 0, 0, 0]), (SPARTA_DIRECTORY, sub, 0, "SUB", [0; 6])],
+    );
+    sparta.set_root(root);
+    sparta.disk.atr()
+}
+
 #[test]
 fn truncated_and_mutated_images_do_not_panic() {
-    let base = DOS20S.to_vec();
-    for len in (0..base.len()).step_by(997) {
-        let _ = read_all(&base[..len]);
-    }
+    // Each image with the byte ranges that hold its directories, maps and first sectors.
+    let images = [
+        (DOS20S.to_vec(), vec![16 + 359 * 128..16 + 368 * 128, 16 + 3 * 128..16 + 12 * 128]),
+        (mydos(), vec![16 + 384 + 356 * 256..16 + 384 + 375 * 256, 16 + 384..16 + 384 + 20 * 256]),
+        (spartados(), vec![16..16 + 3 * 128, 16 + 3 * 128..16 + 30 * 128]),
+    ];
+    assert!(images.iter().all(|(image, _)| read_all(image).is_ok()));
     let mut state = 0x1234_5678u32;
-    for _ in 0..300 {
-        let mut image = base.clone();
-        for _ in 0..40 {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            // Mutate the directory, VTOC and the first file sectors.
-            let offset = 16 + [359 * 128, 3 * 128][state as usize % 2] + (state as usize >> 8) % (9 * 128);
-            image[offset] = (state >> 3) as u8;
+    for (base, ranges) in &images {
+        for len in (0..base.len()).step_by(997) {
+            let _ = read_all(&base[..len]);
         }
-        let _ = read_all(&image);
+        for _ in 0..300 {
+            let mut image = base.clone();
+            for _ in 0..40 {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                let range = &ranges[state as usize % ranges.len()];
+                let offset = range.start + (state as usize >> 8) % range.len();
+                image[offset] = (state >> 3) as u8;
+            }
+            let _ = read_all(&image);
+        }
     }
 }
