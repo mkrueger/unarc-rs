@@ -129,3 +129,17 @@ fn extract_pak_squashed() {
     let result = archive.read(&entry).unwrap();
     assert_eq!(include_bytes!("../../../LICENSE"), result.as_slice());
 }
+
+#[test]
+fn reads_date_and_time_in_header_order() {
+    // ARC headers store the DOS date, then the time
+    for (fixture, expected) in [
+        (&include_bytes!("arc/store.arc")[..], (2024, 5, 16, 23, 8, 26)),
+        (&include_bytes!("pak/license.pak")[..], (2025, 12, 16, 16, 18, 58)),
+        (&include_bytes!("arc/cpm.arc")[..], (1985, 11, 20, 0, 0, 38)),
+    ] {
+        let mut archive = ArcArchive::new(Cursor::new(fixture)).unwrap();
+        let t = archive.get_next_entry().unwrap().unwrap().date_time;
+        assert_eq!((t.year(), t.month(), t.day(), t.hour(), t.minute(), t.second()), expected);
+    }
+}
