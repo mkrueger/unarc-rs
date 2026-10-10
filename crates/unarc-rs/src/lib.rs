@@ -30,10 +30,14 @@ pub mod tar;
 pub mod tarz;
 pub mod tbz;
 pub mod tgz;
+pub mod txz;
+pub mod tzst;
 pub mod uc2;
+pub mod xz;
 pub mod z;
 pub mod zip;
 pub mod zoo;
+pub mod zst;
 
 pub mod unified;
 pub use unified::{ArchiveEntryKind, ArchiveOptions, VolumeProvider};

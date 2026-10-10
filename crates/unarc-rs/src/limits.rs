@@ -11,6 +11,21 @@ pub const DEFAULT_MAX_ENTRY_SIZE: u64 = 1024 * 1024 * 1024;
 /// Upper bound for buffer pre-allocation based on header sizes.
 const MAX_PREALLOCATION: u64 = 16 * 1024 * 1024;
 
+/// Window (dictionary) size the standard presets stay within: 64 MiB for `xz -9`, 128 MiB for `zstd --ultra -22`.
+const MIN_WINDOW_LIMIT: u64 = 128 * 1024 * 1024;
+
+/// Largest window `zstd --long` writes (2 GiB); xz dictionaries stay below it (1.5 GiB).
+const MAX_WINDOW_LIMIT: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Largest window (dictionary) an xz or Zstandard decoder may allocate when its output is limited to `limit` bytes.
+///
+/// The window size comes from the stream header, so a few bytes could otherwise demand gigabytes
+/// before any output is produced. A window larger than the permitted output buys nothing, but the
+/// windows of the standard presets are always accepted.
+pub(crate) fn window_limit(limit: Option<u64>) -> u64 {
+    limit.map_or(MAX_WINDOW_LIMIT, |limit| limit.clamp(MIN_WINDOW_LIMIT, MAX_WINDOW_LIMIT))
+}
+
 /// Initial capacity for a buffer whose final size comes from an untrusted header.
 pub(crate) fn capacity_hint(size: u64) -> usize {
     usize::try_from(size.min(MAX_PREALLOCATION)).unwrap_or(0)
@@ -73,5 +88,13 @@ mod tests {
             Err(ArchiveError::SizeLimitExceeded { limit: 3, .. })
         ));
         assert_eq!(read_to_end_limited(&b"abcd"[..], None, "x").unwrap(), b"abcd");
+    }
+
+    #[test]
+    fn window_limit_follows_output_limit_within_bounds() {
+        assert_eq!(window_limit(Some(1024)), MIN_WINDOW_LIMIT);
+        assert_eq!(window_limit(Some(DEFAULT_MAX_ENTRY_SIZE)), DEFAULT_MAX_ENTRY_SIZE);
+        assert_eq!(window_limit(Some(u64::MAX)), MAX_WINDOW_LIMIT);
+        assert_eq!(window_limit(None), MAX_WINDOW_LIMIT);
     }
 }

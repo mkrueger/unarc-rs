@@ -25,7 +25,11 @@ fn existing_regular_entries_keep_their_type_and_payload() {
         (ArchiveFormat::Z, "tests/Z/LICENSE.Z"),
         (ArchiveFormat::Gz, "tests/gz/LICENSE.gz"),
         (ArchiveFormat::Bz2, "tests/bz2/LICENSE.bz2"),
+        (ArchiveFormat::Xz, "tests/xz/LICENSE.xz"),
+        (ArchiveFormat::Zst, "tests/zst/LICENSE.zst"),
         (ArchiveFormat::TarZ, "tests/tarz/license.tar.Z"),
+        (ArchiveFormat::Txz, "tests/txz/license.tar.xz"),
+        (ArchiveFormat::Tzst, "tests/tzst/license.tar.zst"),
     ] {
         let bytes = std::fs::read(path).unwrap();
         let mut archive = open(bytes, format);
