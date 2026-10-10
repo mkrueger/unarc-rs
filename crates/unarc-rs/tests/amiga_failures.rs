@@ -24,8 +24,6 @@ fn corrupt_root_directory_and_names_are_rejected() {
         (4, 125, 8),
         (4, 1, 7),
         (4, 127, 999),
-        (4, 106, 1440),
-        (4, 107, 3000),
     ] {
         let mut data = common::image(1, 512, 16);
         let header = &mut data[block * 512..(block + 1) * 512];
@@ -43,6 +41,69 @@ fn corrupt_root_directory_and_names_are_rejected() {
     let mut data = common::image(0, 512, 16);
     data[8 * 512 + 50] ^= 1;
     assert!(AmigaArchive::open_hdf(Cursor::new(data)).is_err());
+}
+
+#[test]
+fn invalid_timestamps_are_missing_not_fatal() {
+    // days (beyond chrono's range), minutes >= 1440, ticks >= 3000
+    for (word, value) in [(105, u32::MAX), (106, 1440), (107, 3000)] {
+        let mut data = common::image(1, 512, 16);
+        let header = &mut data[4 * 512..5 * 512];
+        common::put(header, word, value);
+        common::fix_checksum(header, 5);
+        let mut archive = AmigaArchive::open_hdf(Cursor::new(data)).unwrap();
+        archive.get_next_entry().unwrap().unwrap();
+        let entry = archive.get_next_entry().unwrap().unwrap();
+        assert_eq!(entry.modified_time, None, "word={word}");
+        assert_eq!(archive.read(&entry).unwrap(), common::PAYLOAD);
+    }
+}
+
+/// A chain of `depth` nested directories, each named with 30 `a`s.
+fn nested(depth: usize) -> Vec<u8> {
+    let blocks = depth + 16;
+    let mut image = vec![0; 512 * blocks];
+    image[..4].copy_from_slice(b"DOS\x01");
+    let root = blocks / 2;
+    let mut root_data = common::named_header(512, 0, 0, 1, b"Deep");
+    common::put(&mut root_data, 3, 512 / 4 - 56);
+    image[root * 512..(root + 1) * 512].copy_from_slice(&root_data);
+    let (mut parent, mut block) = (root, 2);
+    let mut used = vec![root];
+    for _ in 0..depth {
+        if block == root {
+            block += 1;
+        }
+        let header = common::named_header(512, block as u32, parent as u32, 2, &[b'a'; 30]);
+        image[block * 512..(block + 1) * 512].copy_from_slice(&header);
+        common::put(&mut image[parent * 512..(parent + 1) * 512], 6, block as u32);
+        used.push(block);
+        (parent, block) = (block, block + 1);
+    }
+    for block in used {
+        common::fix_checksum(&mut image[block * 512..(block + 1) * 512], 5);
+    }
+    image
+}
+
+#[test]
+fn nested_paths_are_bounded() {
+    // Every level adds 31 bytes ("aaa.../"): 132 levels fit in 4096 bytes, 133 do not.
+    let mut archive = AmigaArchive::open_hdf(Cursor::new(nested(132))).unwrap();
+    let mut longest = 0;
+    while let Some(entry) = archive.get_next_entry().unwrap() {
+        longest = longest.max(entry.name.len());
+    }
+    assert_eq!(longest, 132 * 31);
+    assert!(longest <= unarc_rs::amiga::MAX_PATH_BYTES);
+    match AmigaArchive::open_hdf(Cursor::new(nested(133))) {
+        Err(ArchiveError::CorruptedEntry { reason, .. }) => assert!(reason.contains("path exceeds"), "{reason}"),
+        other => panic!("expected a path-length error, got {:?}", other.err()),
+    }
+    // Deep chains far beyond the limit fail quickly instead of building quadratic paths.
+    let start = std::time::Instant::now();
+    assert!(AmigaArchive::open_hdf(Cursor::new(nested(20_000))).is_err());
+    assert!(start.elapsed() < std::time::Duration::from_secs(5));
 }
 
 #[test]

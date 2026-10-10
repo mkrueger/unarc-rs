@@ -90,6 +90,96 @@ fn all_dos_variants_and_larger_filesystem_blocks() {
 }
 
 #[test]
+fn rdb_accepts_minimal_dos_environment_table() {
+    let partition = common::get(&RDB[..512], 7) as usize;
+    for (table_size, valid) in [(10, false), (11, true), (15, true)] {
+        let mut data = RDB.to_vec();
+        let block = &mut data[partition * 512..(partition + 1) * 512];
+        common::put(block, 32, table_size);
+        common::fix_checksum(&mut block[..256], 2);
+        let result = AmigaArchive::open_hdf(Cursor::new(data));
+        assert_eq!(result.is_ok(), valid, "DE_TABLESIZE {table_size}");
+        if let Ok(archive) = result {
+            assert_eq!(archive.volumes().len(), 2);
+        }
+    }
+}
+
+/// A one-member TAR; `ustar` selects POSIX headers, otherwise pre-POSIX (v7) headers.
+fn tar(name: &str, data: &[u8], ustar: bool) -> Vec<u8> {
+    let mut header = [0u8; 512];
+    header[..name.len()].copy_from_slice(name.as_bytes());
+    header[100..108].copy_from_slice(b"0000644\0");
+    header[108..116].copy_from_slice(b"0000000\0");
+    header[116..124].copy_from_slice(b"0000000\0");
+    header[124..136].copy_from_slice(format!("{:011o}\0", data.len()).as_bytes());
+    header[136..148].copy_from_slice(b"00000000000\0");
+    header[148..156].fill(b' ');
+    header[156] = b'0';
+    if ustar {
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+    }
+    let sum: u32 = header.iter().map(|&b| u32::from(b)).sum();
+    header[148..156].copy_from_slice(format!("{sum:06o}\0 ").as_bytes());
+    let mut archive = header.to_vec();
+    archive.extend_from_slice(data);
+    archive.resize(archive.len().next_multiple_of(512) + 1024, 0);
+    archive
+}
+
+#[test]
+fn tar_archives_are_not_mistaken_for_amiga_images() {
+    for (name, data) in [("DOSBOX/readme.txt", TEXT), ("DOS.TXT", TEXT), ("disk.hdf", RDB), ("floppy.adf", OFS)] {
+        for ustar in [true, false] {
+            let archive = tar(name, data, ustar);
+            assert_eq!(
+                ArchiveFormat::detect_from_bytes(&archive[..512]),
+                Some(ArchiveFormat::Tar),
+                "{name} ustar={ustar}"
+            );
+            let mut reader = Cursor::new(&archive);
+            assert_eq!(
+                ArchiveFormat::detect_from_reader(&mut reader).unwrap(),
+                Some(ArchiveFormat::Tar),
+                "{name} ustar={ustar}"
+            );
+            assert_eq!(
+                ArchiveFormat::detect(&mut reader, Some(Path::new("release.tar"))).unwrap(),
+                Some(ArchiveFormat::Tar)
+            );
+            let mut opened = UnifiedArchive::open_with_format(Cursor::new(&archive), ArchiveFormat::Tar).unwrap();
+            let entry = opened.next_entry().unwrap().unwrap();
+            assert_eq!(entry.name(), name);
+            assert_eq!(opened.read(&entry).unwrap(), data);
+        }
+    }
+}
+
+#[test]
+fn amiga_signatures_need_valid_structures() {
+    // RDSK with a broken checksum is not an RDB, wherever it sits.
+    for sector in [0, 3, 15] {
+        let mut data = RDB.to_vec();
+        data.copy_within(0..512, sector * 512);
+        if sector != 0 {
+            data[..512].fill(0);
+        }
+        assert_eq!(ArchiveFormat::detect_from_reader(&mut Cursor::new(&data)).unwrap(), Some(ArchiveFormat::Hdf));
+        data[sector * 512 + 100] ^= 1;
+        assert_ne!(ArchiveFormat::detect_from_reader(&mut Cursor::new(&data)).unwrap(), Some(ArchiveFormat::Hdf));
+        if sector == 0 {
+            assert_eq!(ArchiveFormat::detect_from_bytes(&data[..512]), None);
+        }
+    }
+    // A "DOS" prefix alone does not make a hardfile; the root block must be valid.
+    let mut data = common::image(1, 512, 16);
+    assert_eq!(AmigaArchive::probe(&mut Cursor::new(&data)).unwrap(), Some(true));
+    data[8 * 512 + 40] ^= 1;
+    assert_eq!(AmigaArchive::probe(&mut Cursor::new(&data)).unwrap(), None);
+}
+
+#[test]
 fn rdb_larger_blocks_use_sizeblock_times_sectors_per_block() {
     let mut archive = AmigaArchive::open_hdf(Cursor::new(BLOCKS)).unwrap();
     assert_eq!(archive.volumes()[0].block_size, 1024);

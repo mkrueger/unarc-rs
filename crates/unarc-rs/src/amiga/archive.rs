@@ -10,6 +10,10 @@ const SECTOR_SIZE: u64 = 512;
 const ADF_DD_SIZE: u64 = 901_120;
 const ADF_HD_SIZE: u64 = 1_802_240;
 const END: u32 = u32::MAX;
+const FS_BLOCK_SIZES: [usize; 8] = [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536];
+/// Longest entry path, in UTF-8 bytes. Full paths are stored per entry, so without a
+/// bound a chain of nested directories would need memory quadratic in its depth.
+pub const MAX_PATH_BYTES: usize = 4096;
 
 fn corrupt(reason: impl Into<String>) -> ArchiveError {
     ArchiveError::corrupted_entry("Amiga", reason)
@@ -42,6 +46,43 @@ fn block_size(size: u64) -> Result<usize> {
     Ok(size as usize)
 }
 
+/// Returns true for an `RDSK` block with 512-byte sectors and a valid checksum.
+pub(crate) fn is_rdb_block(data: &[u8]) -> bool {
+    if data.len() < 20 || &data[..4] != b"RDSK" || word(data, 4) != 512 {
+        return false;
+    }
+    let longs = word(data, 1) as usize;
+    (64..=128).contains(&longs) && data.len() >= longs * 4 && checksum(&data[..longs * 4])
+}
+
+fn is_root_block(data: &[u8]) -> bool {
+    word(data, 0) == 2 && tail(data, 4) == 1 && word(data, 3) as usize == data.len() / 4 - 56 && checksum(data)
+}
+
+/// Finds the block size and reserved-block count whose midpoint root block is valid.
+fn flat_root<R: Read + Seek>(reader: &mut R, start: u64, len: u64) -> std::io::Result<Option<(usize, u32)>> {
+    let mut data = Vec::new();
+    for size in FS_BLOCK_SIZES {
+        if !len.is_multiple_of(size as u64) {
+            continue;
+        }
+        let blocks = len / size as u64;
+        if blocks < 3 || blocks > u64::from(u32::MAX) {
+            continue;
+        }
+        for reserved in [2u64, 1] {
+            let root = (reserved + blocks - 1) / 2;
+            data.resize(size, 0);
+            reader.seek(SeekFrom::Start(start + root * size as u64))?;
+            reader.read_exact(&mut data)?;
+            if is_root_block(&data) {
+                return Ok(Some((size, reserved as u32)));
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn name(block: &[u8], offset: usize, max: usize) -> Result<String> {
     let len = usize::from(block[offset]);
     if len == 0 || len > max {
@@ -54,24 +95,22 @@ fn name(block: &[u8], offset: usize, max: usize) -> Result<String> {
     Ok(bytes.iter().map(|&b| char::from(b)).collect())
 }
 
-fn modified(block: &[u8]) -> Result<Option<DosDateTime>> {
+/// Converts an Amiga date stamp. Out-of-range values are treated as missing,
+/// since timestamps are not needed to extract data.
+fn modified(block: &[u8]) -> Option<DosDateTime> {
     let (days, minutes, ticks) = (tail(block, 92), tail(block, 88), tail(block, 84));
     if minutes >= 1440 || ticks >= 3000 {
-        return Err(corrupt("invalid Amiga timestamp"));
+        return None;
     }
-    let date = NaiveDate::from_ymd_opt(1978, 1, 1)
-        .and_then(|epoch| epoch.checked_add_signed(Duration::days(i64::from(days))))
-        .ok_or_else(|| corrupt("Amiga timestamp out of range"))?;
+    let date = NaiveDate::from_ymd_opt(1978, 1, 1)?.checked_add_signed(Duration::days(i64::from(days)))?;
     if !(1980..=2107).contains(&date.year()) {
         // The unified API's DOS timestamp cannot represent the full Amiga epoch.
-        return Ok(None);
+        return None;
     }
     let date_word = ((date.year() - 1980) as u16) << 9 | (date.month() as u16) << 5 | date.day() as u16;
-    let time = date
-        .and_hms_opt(minutes / 60, minutes % 60, ticks / 50)
-        .ok_or_else(|| corrupt("invalid Amiga timestamp"))?;
+    let time = date.and_hms_opt(minutes / 60, minutes % 60, ticks / 50)?;
     let time_word = (time.hour() as u16) << 11 | (time.minute() as u16) << 5 | (time.second() as u16 / 2);
-    Ok(Some(DosDateTime::from((date_word, time_word))))
+    Some(DosDateTime::from((date_word, time_word)))
 }
 
 /// Entry types recorded by an Amiga filesystem.
@@ -97,6 +136,8 @@ pub struct AmigaEntry {
     block: u32,
     real_entry: u32,
     hard_directory: bool,
+    /// Position in the archive's entry list, so reads need no search.
+    index: usize,
 }
 
 impl AmigaEntry {
@@ -138,6 +179,8 @@ pub struct AmigaArchive<T: Read + Seek> {
     len: u64,
     volumes: Vec<AmigaVolume>,
     entries: Vec<AmigaEntry>,
+    /// Per volume: blocks holding root, directory, file and link headers.
+    header_blocks: Vec<HashSet<u32>>,
     next: usize,
 }
 
@@ -183,42 +226,39 @@ impl<T: Read + Seek> AmigaArchive<T> {
             len,
             volumes: Vec::new(),
             entries: Vec::new(),
+            header_blocks: Vec::new(),
             next: 0,
         })
     }
 
     /// Detects Amiga images, preserving the reader position. `true` means HDF.
     ///
+    /// A `DOS` boot block only counts with a valid root block at the volume midpoint,
+    /// and an `RDSK` block (in the first sixteen sectors) only with a valid checksum.
     /// Filesystem-only images of standard floppy sizes are classified as ADF.
     pub fn probe(reader: &mut T) -> std::io::Result<Option<bool>> {
         let start = reader.stream_position()?;
-        let result = (|| {
-            let len = reader.seek(SeekFrom::End(0))?.saturating_sub(start);
-            if len < 512 || len % 512 != 0 {
-                return Ok(None);
-            }
-            let mut magic = [0; 4];
-            reader.seek(SeekFrom::Start(start))?;
-            reader.read_exact(&mut magic)?;
-            if &magic[..3] == b"DOS" {
-                return Ok(Some(!matches!(len, ADF_DD_SIZE | ADF_HD_SIZE)));
-            }
-            // RDBs can reside in any of the first sixteen physical blocks.
-            for offset in (0..len.min(16 * 512)).step_by(512) {
-                reader.seek(SeekFrom::Start(start + offset))?;
-                let mut header = [0; 20];
-                reader.read_exact(&mut header)?;
-                if &header[..4] == b"RDSK" {
-                    let size = u64::from(word(&header, 4));
-                    if size == 512 {
-                        return Ok(Some(true));
-                    }
-                }
-            }
-            Ok(None)
-        })();
+        let result = Self::probe_at(reader, start);
         reader.seek(SeekFrom::Start(start))?;
         result
+    }
+
+    fn probe_at(reader: &mut T, start: u64) -> std::io::Result<Option<bool>> {
+        let len = reader.seek(SeekFrom::End(0))?.saturating_sub(start);
+        if len < 3 * SECTOR_SIZE || !len.is_multiple_of(SECTOR_SIZE) {
+            return Ok(None);
+        }
+        let mut head = vec![0; len.min(16 * SECTOR_SIZE) as usize];
+        reader.seek(SeekFrom::Start(start))?;
+        reader.read_exact(&mut head)?;
+        if &head[..3] == b"DOS" {
+            let floppy = matches!(len, ADF_DD_SIZE | ADF_HD_SIZE);
+            return Ok(flat_root(reader, start, len)?.map(|_| !floppy));
+        }
+        if head.as_chunks::<512>().0.iter().any(|sector| is_rdb_block(sector)) {
+            return Ok(Some(true));
+        }
+        Ok(None)
     }
 
     fn read_at(&mut self, offset: u64, size: usize) -> Result<Vec<u8>> {
@@ -280,7 +320,8 @@ impl<T: Read + Seek> AmigaArchive<T> {
                 return Err(corrupt("duplicate RDB partition name"));
             }
             let env_len = word(&part, 32);
-            if !(16..=31).contains(&env_len) || 128 + (env_len as usize + 1) * 4 > usize::try_from(word(&part, 1)).unwrap_or(0) * 4 {
+            // DE_TABLESIZE: 11 is the minimum (through HighCyl); the vector must fit the checksummed block.
+            if !(11..=31).contains(&env_len) || 128 + (env_len as usize + 1) * 4 > usize::try_from(word(&part, 1)).unwrap_or(0) * 4 {
                 return Err(corrupt("invalid RDB DOS environment vector"));
             }
             if word(&part, 34) != 0 {
@@ -346,7 +387,7 @@ impl<T: Read + Seek> AmigaArchive<T> {
             root: ((u64::from(reserved) + blocks - 1) / 2) as u32,
         };
         let root = self.fs_block(&volume, volume.root)?;
-        if word(&root, 0) != 2 || tail(&root, 4) != 1 || word(&root, 3) as usize != size / 4 - 56 {
+        if !is_root_block(&root) {
             return Err(corrupt("invalid Amiga root block"));
         }
         volume.name = name(&root, size - 80, 30)?;
@@ -362,23 +403,9 @@ impl<T: Read + Seek> AmigaArchive<T> {
                 &boot[..4]
             )));
         }
-        for size in [512, 1024, 2048, 4096, 8192, 16384, 32768, 65536] {
-            if !self.len.is_multiple_of(size as u64) {
-                continue;
-            }
-            let blocks = self.len / size as u64;
-            if blocks < 3 || blocks > u64::from(u32::MAX) {
-                continue;
-            }
-            for reserved in [2, 1] {
-                let root = (reserved + blocks - 1) / 2;
-                let data = self.read_at(root * size as u64, size)?;
-                if word(&data, 0) == 2 && tail(&data, 4) == 1 && word(&data, 3) as usize == size / 4 - 56 && checksum(&data) {
-                    return self.add_volume(0, self.len, size, reserved as u32, None);
-                }
-            }
-        }
-        Err(corrupt("no valid OFS/FFS root block at the volume midpoint"))
+        let (size, reserved) =
+            flat_root(&mut self.reader, self.start, self.len)?.ok_or_else(|| corrupt("no valid OFS/FFS root block at the volume midpoint"))?;
+        self.add_volume(0, self.len, size, reserved, None)
     }
 
     fn fs_block(&mut self, volume: &AmigaVolume, block: u32) -> Result<Vec<u8>> {
@@ -406,7 +433,7 @@ impl<T: Read + Seek> AmigaArchive<T> {
                     name: prefix.clone(),
                     size: 0,
                     kind: AmigaEntryKind::Directory,
-                    modified_time: modified(&root)?,
+                    modified_time: modified(&root),
                     protection: 0,
                     comment: String::new(),
                     link_target: None,
@@ -414,6 +441,7 @@ impl<T: Read + Seek> AmigaArchive<T> {
                     block: volume.root,
                     real_entry: 0,
                     hard_directory: false,
+                    index: self.entries.len(),
                 });
             }
             let mut pending = vec![(volume.root, prefix)];
@@ -458,7 +486,7 @@ impl<T: Read + Seek> AmigaArchive<T> {
                             name: format!("{prefix}{component}"),
                             size: if subtype == -3 { u64::from(tail(&data, 188)) } else { 0 },
                             kind,
-                            modified_time: modified(&data)?,
+                            modified_time: modified(&data),
                             protection: tail(&data, 192),
                             comment: String::new(),
                             link_target: None,
@@ -466,6 +494,7 @@ impl<T: Read + Seek> AmigaArchive<T> {
                             block,
                             real_entry: tail(&data, 44),
                             hard_directory: subtype == 4,
+                            index: self.entries.len(),
                         };
                         let comment_offset = volume.block_size - 184;
                         let comment_len = usize::from(data[comment_offset]);
@@ -478,6 +507,11 @@ impl<T: Read + Seek> AmigaArchive<T> {
                             .collect();
                         if kind == AmigaEntryKind::Directory {
                             entry.name.push('/');
+                        }
+                        if entry.name.len() > MAX_PATH_BYTES {
+                            return Err(corrupt(format!("Amiga path exceeds {MAX_PATH_BYTES} bytes")));
+                        }
+                        if kind == AmigaEntryKind::Directory {
                             pending.push((block, entry.name.clone()));
                         } else if kind == AmigaEntryKind::SymbolicLink {
                             let target = &data[24..volume.block_size - 200];
@@ -510,7 +544,21 @@ impl<T: Read + Seek> AmigaArchive<T> {
                 entry.size = *size;
             }
         }
+        self.header_blocks = (0..self.volumes.len())
+            .map(|volume| {
+                let root = self.volumes[volume].root;
+                self.entries.iter().filter(|e| e.volume == volume).map(|e| e.block).chain([root]).collect()
+            })
+            .collect();
         Ok(())
+    }
+
+    /// Returns this archive's own copy of `entry`; callers' copies may have been modified.
+    fn stored_entry(&self, entry: &AmigaEntry) -> Result<&AmigaEntry> {
+        self.entries
+            .get(entry.index)
+            .filter(|e| e.volume == entry.volume && e.block == entry.block && e.name == entry.name)
+            .ok_or_else(|| ArchiveError::IndexMismatch("Entry does not belong to this Amiga image".into()))
     }
 
     pub fn volumes(&self) -> &[AmigaVolume] {
@@ -531,12 +579,7 @@ impl<T: Read + Seek> AmigaArchive<T> {
     }
 
     pub fn read_with_limit(&mut self, entry: &AmigaEntry, limit: Option<u64>) -> Result<Vec<u8>> {
-        let stored = self
-            .entries
-            .iter()
-            .find(|e| e.volume == entry.volume && e.block == entry.block && e.name == entry.name)
-            .ok_or_else(|| ArchiveError::IndexMismatch("Entry does not belong to this Amiga image".into()))?
-            .clone();
+        let stored = self.stored_entry(entry)?.clone();
         crate::limits::check_size(stored.size, limit, &stored.name)?;
         if stored.kind == AmigaEntryKind::Directory {
             return Ok(Vec::new());
@@ -561,13 +604,6 @@ impl<T: Read + Seek> AmigaArchive<T> {
             return Err(corrupt("file size exceeds volume capacity"));
         }
         let mut pointers = Vec::new();
-        let metadata: HashSet<_> = self
-            .entries
-            .iter()
-            .filter(|e| e.volume == stored.volume)
-            .map(|e| e.block)
-            .chain([volume.root])
-            .collect();
         let mut visited = HashSet::from([header_block]);
         let first_data = word(&header, 4);
         let mut table_block = header_block;
@@ -586,7 +622,7 @@ impl<T: Read + Seek> AmigaArchive<T> {
             }
             for index in 0..count {
                 let block = tail(&header, 204 + index * 4);
-                if metadata.contains(&block) || !visited.insert(block) {
+                if self.header_blocks[stored.volume].contains(&block) || !visited.insert(block) {
                     return Err(corrupt("cyclic or repeated file data/extension block"));
                 }
                 pointers.push(block);
@@ -629,14 +665,6 @@ impl<T: Read + Seek> AmigaArchive<T> {
     }
 
     pub fn skip(&mut self, entry: &AmigaEntry) -> Result<()> {
-        if self
-            .entries
-            .iter()
-            .any(|e| e.volume == entry.volume && e.block == entry.block && e.name == entry.name)
-        {
-            Ok(())
-        } else {
-            Err(ArchiveError::IndexMismatch("Entry does not belong to this Amiga image".into()))
-        }
+        self.stored_entry(entry).map(|_| ())
     }
 }

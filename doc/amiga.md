@@ -14,6 +14,7 @@ No emulator, filesystem driver, native library, or new dependency is required.
 - RDB-partitioned HDFs with 512-byte physical sectors. The RDB can occupy any of
   the first sixteen sectors. PART chains and cylinder geometry locate each
   filesystem; larger logical blocks use `SizeBlock * 4 * SectorsPerBlock`.
+  DOS environment tables of 11 (the minimum) to 31 longwords are accepted.
 - DOS0/DOS1 (OFS/FFS), DOS2/DOS3 (international), and DOS4/DOS5
   (international plus directory cache). Listing follows the normal directory
   hash tables, not the directory-cache records.
@@ -22,7 +23,9 @@ No emulator, filesystem driver, native library, or new dependency is required.
   sizes and links are verified. FFS data blocks have no checksums on disk.
 - Latin-1 names and comments, protection flags and modification times.
   The unified API uses DOS timestamps: seconds are rounded down to an even
-  second, and dates outside 1980-2107 are reported as unavailable.
+  second, and dates outside 1980-2107 are reported as unavailable. Invalid
+  date stamps (out-of-range days, minutes or ticks) are also reported as
+  unavailable rather than failing the image.
 - Symbolic and hard links are identified in listings. Symbolic-link reads return
   the recorded target bytes; hard-file-link reads return the target file's data.
   Hard-directory links are listed without traversal, and reading one returns
@@ -74,16 +77,26 @@ while let Some(entry) = image.get_next_entry()? {
 
 ## Detection and resource bounds
 
-Reader detection uses the `DOS` signature and image length to distinguish
-standard ADF sizes from HDFs, or searches the first sixteen sectors for `RDSK`.
-A `.hdf` name overrides the floppy-size classification for a filesystem-only
-HDF with an ADF-sized payload. Prefix-only byte detection defaults `DOS` to ADF
-when there is not enough data to determine the image size.
+Reader detection runs after the D64 probe and after POSIX TAR (`ustar`). A first
+sector that is a TAR header with a valid checksum also suppresses Amiga probing,
+so TAR archives whose first member is named `DOS...`, or is itself an ADF/HDF,
+stay TAR. A `DOS` boot block is accepted only with a valid root block at the
+volume midpoint; image length then distinguishes standard ADF sizes from HDFs.
+Otherwise the first sixteen sectors are searched for an `RDSK` block with a
+valid checksum. A `.hdf` name overrides the floppy-size classification for a
+filesystem-only HDF with an ADF-sized payload. Prefix-only byte detection
+requires a valid `RDSK` checksum at offset 0 and defaults `DOS` to ADF when there
+is not enough data to determine the image size.
 
 HDFs remain seek-based; opening reads reachable directory metadata, not the
 entire disk. Directory walks are iterative and reject repeated header blocks.
+Entry paths are limited to `MAX_PATH_BYTES` (4096 bytes, including partition
+prefixes); a deeper tree fails to open. This keeps listing memory linear in
+the number of entries instead of quadratic in the directory depth.
 File reads reject out-of-volume pointers, repeated blocks, invalid extension
-chains, and size/count disagreements. File data is allocated only when read,
+chains, and size/count disagreements. Reads locate entries and reject pointers
+to header blocks in constant time, so extracting every file is linear.
+File data is allocated only when read,
 and the direct and unified APIs enforce per-entry limits; the unified API also
 enforces cumulative limits. Skipping or listing does not read file payloads.
 

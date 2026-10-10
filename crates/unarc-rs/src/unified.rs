@@ -332,6 +332,32 @@ pub enum ArchiveFormat {
     Hdf,
 }
 
+/// Returns true if `data` starts with a TAR header whose stored checksum matches (POSIX or pre-POSIX).
+fn tar_header_checksum_matches(data: &[u8]) -> bool {
+    if data.len() < 512 {
+        return false;
+    }
+    let field = &data[148..156];
+    let digits: Vec<u8> = field
+        .iter()
+        .copied()
+        .skip_while(|&b| b == b' ')
+        .take_while(|b| (b'0'..=b'7').contains(b))
+        .collect();
+    if digits.is_empty() {
+        return false;
+    }
+    let Some(stored) = digits.iter().try_fold(0u32, |sum, &d| sum.checked_mul(8)?.checked_add(u32::from(d - b'0'))) else {
+        return false;
+    };
+    let sum: u32 = data[..512]
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| if (148..156).contains(&i) { u32::from(b' ') } else { u32::from(b) })
+        .sum();
+    stored == sum
+}
+
 impl ArchiveFormat {
     /// All supported archive formats
     pub const ALL: &'static [ArchiveFormat] = &[
@@ -691,17 +717,6 @@ impl ArchiveFormat {
             return None;
         }
 
-        if data.starts_with(b"RDSK") {
-            return Some(ArchiveFormat::Hdf);
-        }
-        if data.len() >= 4 && data.starts_with(b"DOS") {
-            return Some(if data.len() <= 512 || matches!(data.len(), 901_120 | 1_802_240) {
-                ArchiveFormat::Adf
-            } else {
-                ArchiveFormat::Hdf
-            });
-        }
-
         // Check simple prefix-based formats first (most specific to least)
 
         // 7z: 6 bytes "7z\xBC\xAF\x27\x1C"
@@ -843,18 +858,36 @@ impl ArchiveFormat {
             return Some(ArchiveFormat::Tar);
         }
 
+        // Amiga RDB: "RDSK" with a valid checksum (other RDB positions need a reader)
+        if data.starts_with(b"RDSK") && crate::amiga::is_rdb_block(data) {
+            return Some(ArchiveFormat::Hdf);
+        }
+
         // TAR: Alternative detection - check if it looks like a TAR header
         // TAR headers have null-terminated filename at start, mode at 100, etc.
-        if data.len() >= 512 {
-            // Check for valid TAR: name ends with null, reasonable checksum area
-            let has_null_in_name = data[..100].contains(&0);
-            let checksum_area = &data[148..156];
-            let is_checksum_space_or_digit = checksum_area.iter().all(|&b| b == b' ' || b == b'0' || (b'1'..=b'7').contains(&b));
-            if has_null_in_name && is_checksum_space_or_digit {
-                // Could be TAR, but this is a weak heuristic
-                // Only return TAR if nothing else matched
-                return Some(ArchiveFormat::Tar);
-            }
+        // Pre-POSIX TAR members may be named "DOS...", so this takes precedence over the Amiga boot block.
+        let weak_tar = tar_header_checksum_matches(data)
+            || data.len() >= 512 && {
+                // Check for valid TAR: name ends with null, reasonable checksum area
+                let has_null_in_name = data[..100].contains(&0);
+                let checksum_area = &data[148..156];
+                let is_checksum_space_or_digit = checksum_area.iter().all(|&b| b == b' ' || b == b'0' || (b'1'..=b'7').contains(&b));
+                has_null_in_name && is_checksum_space_or_digit
+            };
+
+        // Amiga OFS/FFS boot block: "DOS" + flags. Only the length separates floppies from hardfiles.
+        if !weak_tar && data.len() >= 4 && data.starts_with(b"DOS") {
+            return Some(if data.len() <= 512 || matches!(data.len(), 901_120 | 1_802_240) {
+                ArchiveFormat::Adf
+            } else {
+                ArchiveFormat::Hdf
+            });
+        }
+
+        if weak_tar {
+            // Could be TAR, but this is a weak heuristic
+            // Only return TAR if nothing else matched
+            return Some(ArchiveFormat::Tar);
         }
 
         None
@@ -867,17 +900,25 @@ impl ArchiveFormat {
     /// a consistent block availability map (BAM).
     /// Returns `Some(format)` if detected, `None` otherwise.
     pub fn detect_from_reader<R: Read + Seek>(reader: &mut R) -> std::io::Result<Option<Self>> {
-        if let Some(hard_disk) = AmigaArchive::probe(reader)? {
-            return Ok(Some(if hard_disk { ArchiveFormat::Hdf } else { ArchiveFormat::Adf }));
-        }
         if D64Archive::probe(reader)? {
             return Ok(Some(ArchiveFormat::D64));
         }
         let pos = reader.stream_position()?;
         let mut buffer = [0u8; 512];
-        let bytes_read = reader.read(&mut buffer)?;
+        let bytes_read = crate::limits::read_up_to(reader, &mut buffer)?;
         reader.seek(std::io::SeekFrom::Start(pos))?;
-        Ok(Self::detect_from_bytes(&buffer[..bytes_read]))
+        let data = &buffer[..bytes_read];
+        // TAR first: TAR files are 512-byte multiples and may begin with a "DOS..." name or contain an HDF.
+        if data.len() >= 263 && &data[257..262] == b"ustar" {
+            return Ok(Some(ArchiveFormat::Tar));
+        }
+        // Amiga images need a valid root block or RDB checksum, unlike the byte-prefix fallback.
+        if !tar_header_checksum_matches(data) {
+            if let Some(hard_disk) = AmigaArchive::probe(reader)? {
+                return Ok(Some(if hard_disk { ArchiveFormat::Hdf } else { ArchiveFormat::Adf }));
+            }
+        }
+        Ok(Self::detect_from_bytes(data))
     }
 
     /// Detect archive format, trying preamble first, then falling back to extension.

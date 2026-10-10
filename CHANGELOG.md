@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Amiga ADF/HDF disk images with OFS/FFS (DOS0-DOS5), including RDB partitions,
   nested directories, file-extension chains, and link metadata. HDFs are read
-  with bounded block buffers rather than loaded in full. Self-authored fixtures
+  with bounded block buffers rather than loaded in full. Detection requires a
+  valid root block or RDB checksum and never claims TAR archives; entry paths
+  are limited to 4096 bytes. Self-authored fixtures
   are independently generated and verified with `amitools`.
 - `unarc list --json` prints the listing as a single JSON document, with full entry
   names, entry kinds, sizes, method, modification time, CRC and encryption, for
@@ -60,6 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Content detection recognizes pre-POSIX TAR headers by their checksum,
+  including the usual `NUL`-terminated checksum field.
 - Selective CLI extraction preserves solid ACE dictionary history by decoding
   skipped predecessors with the supplied password, including existing-output
   skips. Repeated requested names no longer cause false "not found" errors.

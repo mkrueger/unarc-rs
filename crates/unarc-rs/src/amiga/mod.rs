@@ -3,4 +3,5 @@
 //! See `doc/amiga.md` for supported layouts and limitations.
 mod archive;
 
-pub use archive::{AmigaArchive, AmigaEntry, AmigaEntryKind, AmigaVolume};
+pub(crate) use archive::is_rdb_block;
+pub use archive::{AmigaArchive, AmigaEntry, AmigaEntryKind, AmigaVolume, MAX_PATH_BYTES};
