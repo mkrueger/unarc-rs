@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `ArchiveFormat` gained `Lzx` (Amiga LZX); exhaustive matches need a new arm.
 - `ArchiveFormat` gained `Adf`, `Hdf` and `Fat`; exhaustive matches need new arms.
+- `ArchiveFormat` gained `Adf`, `Hdf`, `Fat` and `Dms`, and `EncryptionMethod`
+  gained `Dms`; exhaustive matches need new arms.
 - `ArchiveFormat` gained the variants `Xz`, `Zst`, `Txz` and `Tzst`. Exhaustive
   matches on it need new arms.
 
@@ -42,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reject free, bad and reserved clusters even at the end of a file. Images are
   read with seeks; FAT16/FAT32 and partitioned images return explicit errors.
   Fixtures are made and verified with mtools and dosfstools.
+- DMS (DiskMasher) Amiga disk archives (`.dms`) via `ArchiveFormat::Dms` and the
+  `dms` module, with all seven compression modes (NOCOMP to HEAVY2) and password
+  decryption. A complete disk with an AmigaDOS filesystem is listed file by file
+  through the Amiga reader; other disks (non-DOS, partial or damaged) as one raw
+  image named after the archive (`.adf`, or `.tracks` for a partial archive). Attached FILE_ID.DIZ and banner texts are extra
+  entries, readable even when a disk track is damaged. Track CRCs and checksums
+  are verified; damaged, missing or truncated tracks are reported by the image
+  entry instead of failing the archive. Images match `xdms` byte for byte on a corpus of 734 archives;
+  fixtures are self-made and verified with xDMS and The Unarchiver.
 - `unarc list --json` prints the listing as a single JSON document, with full entry
   names, entry kinds, sizes, method, modification time, CRC and encryption, for
   programs that drive `unarc`.
