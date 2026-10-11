@@ -187,6 +187,21 @@ fn unknown_mode_and_too_many_tracks() {
 }
 
 #[test]
+fn a_flood_of_disk_tracks_stays_bounded() {
+    // 2000 disk track headers claiming 2049 bytes each, backed by no data: neither the
+    // listed image size nor the reader's bookkeeping may grow with them.
+    let mut data = common::NDOS[..common::track(common::NDOS, 80)].to_vec();
+    for _ in 0..2000 {
+        data.extend_from_slice(&common::track_record(0, 0, 2049, 0, &[]));
+    }
+    let mut archive = open(&data).unwrap();
+    let entries: Vec<_> = std::iter::from_fn(|| archive.get_next_entry().unwrap()).collect();
+    let image = entries.iter().find(|e| e.kind == DmsEntryKind::DiskImage).expect("the disk as an image");
+    assert!(image.size <= 81 * 32_000, "listed {} bytes", image.size);
+    assert!(matches!(archive.read(image), Err(ArchiveError::CorruptedEntry { .. })));
+}
+
+#[test]
 fn corrupted_compressed_data_never_panics() {
     // Damage packed data and recompute the CRCs, so the decoders see the garbage.
     for fixture in common::FIXTURES {

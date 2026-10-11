@@ -106,8 +106,9 @@ split: reading stops at the second `DMS!` header.
 ## Resource bounds
 
 Tracks are at most 32000 bytes packed and unpacked, and at most 80 disk tracks
-are decoded (more fail the image with `CorruptedEntry`), so opening holds at most
-about 2.5 MiB of decoded disk plus a 16 KiB history, whatever the headers claim.
+are decoded (more fail the image with `CorruptedEntry`, and are only counted), so
+opening holds at most about 2.5 MiB of decoded disk plus a 16 KiB history, and
+lists an image of at most that size, whatever the headers claim.
 Packed data is read only as far as the file goes. Each decoder stops when its
 track is full. Banner and FILE_ID.DIZ tracks are kept packed until read and are
 limited as described above. Searching for track headers after damage reads the

@@ -398,6 +398,7 @@ impl DmsArchive {
         let mut image_error = (encrypted && key.is_none()).then_some(ImageError::PasswordRequired);
         let (mut image_size, mut image_packed_size) = (0u64, 0u64);
         let mut disk_tracks = Vec::new();
+        let mut disk_track_count = 0usize;
         let mut texts = Vec::new();
         let mut text_bytes = 0;
         let mut damage = None;
@@ -432,6 +433,12 @@ impl DmsArchive {
                     }
                 }
                 number if usize::from(number) < DISK_TRACKS && track.size > MIN_DISK_TRACK_LEN => {
+                    disk_track_count += 1;
+                    if disk_tracks.len() > DISK_TRACKS {
+                        // The image already failed; keeping further tracks would let memory and
+                        // the listed size grow with the file
+                        continue;
+                    }
                     image_size += track.size as u64;
                     image_packed_size += track.data.len() as u64;
                     if disk_tracks.len() == DISK_TRACKS {
@@ -455,7 +462,7 @@ impl DmsArchive {
         let appended = info.flags & FLAG_APPENDS != 0;
         let promised = (info.first_track..=info.last_track).map(usize::from);
         if !appended && !disk_tracks.iter().map(|&(n, _)| usize::from(n)).eq(promised) {
-            let reason = format!("tracks {}-{} expected, {} found", info.first_track, info.last_track, disk_tracks.len());
+            let reason = format!("tracks {}-{} expected, {} found", info.first_track, info.last_track, disk_track_count);
             let reason = damage.as_ref().map_or_else(|| reason.clone(), |damage| format!("{reason} ({damage})"));
             image_error.get_or_insert(ImageError::Damaged(reason));
         } else if let (true, Some(damage)) = (appended, &damage) {
