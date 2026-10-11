@@ -43,6 +43,8 @@ it, unless an earlier read stopped there. That work is bounded too:
   exceed the limit fails at once with `ArchiveError::SizeLimitExceeded`.
 - The unified API charges discarded bytes, and the output of reads that fail
   (for example on a CRC mismatch), to `ArchiveOptions::with_max_total_size`.
+  A decode error also charges output still buffered in the decoder when its
+  state is discarded, even if no output batch was delivered before the error.
 
 Reading a group's files in order decodes the group once. Reading them in
 reverse order decodes it once per file, so without a total limit the work grows

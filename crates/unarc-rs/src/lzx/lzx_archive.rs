@@ -321,7 +321,7 @@ impl<R: Read + Seek> LzxArchive<R> {
                 Ok(data)
             }
             Err(error) => {
-                self.discarded += decoded;
+                self.discarded += decoded + cursor.decoder.buffered_bytes();
                 // The decoder state is unusable after an error; the next read starts over.
                 self.cursor = None;
                 Err(match error {

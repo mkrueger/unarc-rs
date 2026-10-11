@@ -303,6 +303,11 @@ impl Decoder {
         self.delivered
     }
 
+    /// Decoded bytes still buffered, not yet handed out
+    pub(super) const fn buffered_bytes(&self) -> u64 {
+        self.produced - self.delivered
+    }
+
     /// Decodes the next `len` bytes and passes them to `sink`
     pub(super) fn read<R: Read + Seek>(&mut self, reader: &mut R, len: u64, sink: &mut dyn FnMut(&[u8])) -> DecodeResult<()> {
         let mut left = len;

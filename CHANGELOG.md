@@ -83,6 +83,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Failed Amiga LZX decodes charge buffered output discarded on error to the
+  total size limit, including errors before the first output batch is delivered.
 - Content detection recognizes pre-POSIX TAR headers by their checksum,
   including the usual `NUL`-terminated checksum field.
 - Selective CLI extraction preserves solid ACE dictionary history by decoding

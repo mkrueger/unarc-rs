@@ -371,6 +371,34 @@ fn failed_reads_leave_later_reads_of_the_group_working() {
 }
 
 #[test]
+fn failed_decodes_charge_buffered_output_to_total_limit() {
+    const SIZE: u32 = 4096;
+    // The shorter stream fails before delivering a batch; the longer one delivers
+    // a full batch before failing with more output still buffered.
+    // These cuts leave the initial literal and 75 or 190 complete 258-byte matches.
+    for (files, packed, decoded) in [(8, 100, 1 + 75 * 258), (16, 200, 1 + 190 * 258)] {
+        for prime_cursor in [false, true] {
+            let data = zeros_group(files, SIZE, Some(packed));
+            let options = ArchiveOptions::new().with_max_total_size(Some(u64::from(files * SIZE)));
+            let (mut archive, list) = unified(data, options);
+            if prime_cursor {
+                assert_eq!(archive.read(&list[0]).unwrap(), vec![0; SIZE as usize]);
+            }
+            assert!(matches!(archive.read(list.last().unwrap()), Err(ArchiveError::CorruptedEntry { .. })));
+
+            let remaining = files * SIZE - decoded;
+            for _ in 0..remaining / SIZE {
+                assert_eq!(archive.read(&list[0]).unwrap(), vec![0; SIZE as usize]);
+            }
+            assert!(
+                matches!(archive.read(&list[0]), Err(ArchiveError::SizeLimitExceeded { limit, .. }) if limit == u64::from(remaining % SIZE)),
+                "failed output was not exactly charged: files={files}, prime_cursor={prime_cursor}"
+            );
+        }
+    }
+}
+
+#[test]
 fn detection_needs_a_valid_first_header() {
     assert_eq!(ArchiveFormat::detect_from_bytes(SINGLE), Some(ArchiveFormat::Lzx));
     assert_eq!(ArchiveFormat::detect_from_bytes(MULTI), Some(ArchiveFormat::Lzx));
