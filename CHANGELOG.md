@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ArchiveFormat` gained `Adf`, `Hdf` and `Fat`; exhaustive matches need new arms.
 - `ArchiveFormat` gained `Adf`, `Hdf`, `Fat` and `Dms`, and `EncryptionMethod`
   gained `Dms`; exhaustive matches need new arms.
+- `ArchiveFormat` gained `Adf`, `Hdf`, `Fat` and `Atr`; exhaustive matches need new arms.
 - `ArchiveFormat` gained the variants `Xz`, `Zst`, `Txz` and `Tzst`. Exhaustive
   matches on it need new arms.
 
@@ -53,6 +54,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are verified; damaged, missing or truncated tracks are reported by the image
   entry instead of failing the archive. Images match `xdms` byte for byte on a corpus of 734 archives;
   fixtures are self-made and verified with xDMS and The Unarchiver.
+- Atari 8-bit ATR disk images (`.atr`) via `ArchiveFormat::Atr` and the `atr`
+  module: Atari DOS 2.0S/2.0D/2.5 (including DOS 2.5 files above sector 719), MyDOS
+  subdirectories and 16-bit sector links, and SpartaDOS/BW-DOS directories, sparse
+  files and time stamps, on 128- and 256-byte-sector disks with any boot sector
+  layout. ATASCII names are converted to Unicode. Deleted files are not listed;
+  files never closed after writing are, as for D64. Images without a recognised
+  filesystem, such as boot-only game disks, fail with `UnsupportedFormat`. Sector
+  chains and maps are checked for loops, and no sector may belong to two
+  directories, so listing reads, entries and memory are bounded by the image size.
+  Fixtures are made and verified with the `atr` tool.
 - `unarc list --json` prints the listing as a single JSON document, with full entry
   names, entry kinds, sizes, method, modification time, CRC and encryption, for
   programs that drive `unarc`.

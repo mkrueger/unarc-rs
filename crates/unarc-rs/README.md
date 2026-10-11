@@ -84,6 +84,14 @@ See [Amiga support](../../doc/amiga.md) for supported layouts and limitations, a
 
 See [FAT12 support](../../doc/fat.md) for supported layouts and limitations.
 
+### Atari 8-bit Disk Images
+
+| Format | Extensions | Notes |
+| ------ | ---------- | ----- |
+| **ATR** | `.atr` | Atari DOS 2.0S/2.0D/2.5, MyDOS subdirectories, SpartaDOS with time stamps |
+
+See [ATR support](../../doc/atr.md) for supported filesystems and limitations.
+
 ## Installation
 
 Add to your `Cargo.toml`:

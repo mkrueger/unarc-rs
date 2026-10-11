@@ -226,6 +226,7 @@ unarc tp large_archive.7z -d ~/SecLists/Passwords/ -e "readme.txt"
 | **HDF** | `.hdf` | — | — |
 | **DMS** | `.dms` | XOR | — |
 | **FAT12** | `.img`, `.ima`, `.st` | — | — |
+| **ATR** | `.atr` | — | — |
 | **ACE** | `.ace` | Blowfish | ✓ |
 | **ARJ** | `.arj` | Garble, GOST40 | ✓ |
 | **ARC/PAK** | `.arc`, `.pak` | XOR | — |
@@ -274,6 +275,14 @@ long names. See [FAT12 support](../../doc/fat.md) for limitations.
 ```bash
 unarc list --json disk.img
 unarc extract GAME.ST AUTO/README.TXT -o ./output
+```
+
+Atari 8-bit disk images (`.atr`) are read with Atari DOS 2.x, MyDOS and SpartaDOS
+filesystems. See [ATR support](../../doc/atr.md) for limitations.
+
+```bash
+unarc list --json disk.atr
+unarc extract DISK.ATR DOCS/README.TXT -o ./output
 ```
 
 Extract an encrypted ARJ archive:
