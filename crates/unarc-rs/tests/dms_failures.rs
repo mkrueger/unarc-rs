@@ -167,6 +167,53 @@ fn damaged_disk_track_keeps_attached_texts_readable() {
 }
 
 #[test]
+fn encrypted_banner_crc_error_keeps_disk_readable() {
+    let expected = DmsArchive::open(Cursor::new(common::ENCRYPTED), Some("unarc")).unwrap();
+    let mut data = common::ENCRYPTED.to_vec();
+    let pos = common::track(&data, 0xffff);
+    data[pos + 16] ^= 1;
+    let header_crc = common::crc(&data[pos..pos + 18]);
+    common::put(&mut data, pos + 18, header_crc);
+
+    let mut archive = DmsArchive::open(Cursor::new(data), Some("unarc")).unwrap();
+    assert!(archive.image() == expected.image(), "a bad banner CRC changed the decoded disk");
+    assert!(archive.volume().is_some());
+    while let Some(entry) = archive.get_next_entry().unwrap() {
+        if entry.kind == DmsEntryKind::Banner {
+            assert!(matches!(
+                archive.read(&entry),
+                Err(ArchiveError::CrcMismatch { entry, .. }) if entry == "BANNER.TXT (track 65535)"
+            ));
+        } else {
+            assert!(archive.read(&entry).is_ok(), "{}", entry.name);
+        }
+    }
+}
+
+#[test]
+fn heavy_tracks_cannot_reuse_unsent_tables() {
+    for mode in [5, 6] {
+        let mut data = common::NDOS[..56].to_vec();
+        common::put(&mut data, 10, 0);
+        common::put(&mut data, 16, 0);
+        common::put(&mut data, 18, 0);
+        common::fix_header_crc(&mut data);
+        let mut record = common::track_record(0, mode, common::TRACK as u16, 0, &[]);
+        common::put(&mut record, 8, common::TRACK as u16);
+        common::fix_track_crc(&mut record, 0);
+        data.extend_from_slice(&record);
+
+        let mut archive = open(&data).unwrap();
+        assert!(archive.image().is_empty());
+        let entry = archive.get_next_entry().unwrap().unwrap();
+        assert!(matches!(
+            archive.read(&entry),
+            Err(ArchiveError::DecompressionFailed { reason, .. }) if reason.contains("tables that were never sent")
+        ));
+    }
+}
+
+#[test]
 fn unknown_mode_and_too_many_tracks() {
     let pos = common::track(common::NDOS, 3);
     let mut data = common::NDOS.to_vec();

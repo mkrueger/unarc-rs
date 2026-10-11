@@ -337,8 +337,7 @@ pub(crate) struct Unpacker {
     /// `None` until the first DEEP track after a reset.
     deep: Option<Box<DeepTree>>,
     // HEAVY code tables survive resets; a track without new tables reuses the last ones.
-    heavy_literals: Huffman,
-    heavy_positions: Huffman,
+    heavy_tables: Option<(Huffman, Huffman)>,
     heavy_last_position: u16,
 }
 
@@ -351,8 +350,7 @@ impl Unpacker {
             deep_pos: 0,
             heavy_pos: 0,
             deep: None,
-            heavy_literals: Huffman::Constant(0),
-            heavy_positions: Huffman::Constant(0),
+            heavy_tables: None,
             heavy_last_position: 0,
         };
         unpacker.reset();
@@ -493,22 +491,25 @@ impl Unpacker {
         let (positions, mask): (u16, u16) = if heavy2 { (15, 0x1fff) } else { (14, 0x0fff) };
         let mut bits = Bits::new(data);
         if flags & 2 != 0 {
-            self.heavy_literals = Self::read_code(&mut bits, 9, 5, HEAVY_SYMBOLS, HEAVY_SYMBOLS)?;
-            self.heavy_positions = Self::read_code(&mut bits, 5, 4, usize::from(positions), HEAVY_MAX_POSITION_LENGTHS)?;
+            let literals = Self::read_code(&mut bits, 9, 5, HEAVY_SYMBOLS, HEAVY_SYMBOLS)?;
+            let position_codes = Self::read_code(&mut bits, 5, 4, usize::from(positions), HEAVY_MAX_POSITION_LENGTHS)?;
+            bits.check_end()?;
+            self.heavy_tables = Some((literals, position_codes));
         }
-        if let Huffman::Constant(symbol) = self.heavy_positions {
-            if symbol >= positions {
+        let (literals, position_codes) = self.heavy_tables.as_ref().ok_or("HEAVY track reuses Huffman tables that were never sent")?;
+        if let Huffman::Constant(symbol) = position_codes {
+            if *symbol >= positions {
                 return Err("invalid HEAVY position code");
             }
         }
         let mut output = Vec::with_capacity(size + 256);
         while output.len() < size {
-            let symbol = self.heavy_literals.decode(&mut bits);
+            let symbol = literals.decode(&mut bits);
             if symbol < 256 {
                 Self::literal(&mut self.text, &mut self.heavy_pos, mask, symbol as u8, &mut output);
             } else {
                 let length = symbol - HEAVY_LENGTH_BIAS;
-                let code = self.heavy_positions.decode(&mut bits);
+                let code = position_codes.decode(&mut bits);
                 if code != positions - 1 {
                     self.heavy_last_position = if code > 0 {
                         let extra = u32::from(code - 1);
@@ -568,6 +569,29 @@ mod tests {
         assert_eq!(unpack_rle(&[0x90, 0xff, 9, 0x01, 0x00], 256).unwrap(), vec![9; 256]);
         assert!(unpack_rle(&[0x90, 5, 1], 4).is_err());
         assert!(unpack_rle(&[0x90], 4).is_err());
+    }
+
+    #[test]
+    fn heavy_tables_must_be_sent_and_survive_resets() {
+        for mode in [5, 6] {
+            let mut unpacker = Unpacker::new();
+            assert_eq!(
+                unpacker.unpack(&[], mode, 0, 32, 32).unwrap_err(),
+                "HEAVY track reuses Huffman tables that were never sent"
+            );
+
+            // Two constant-zero tables take 28 bits; a truncated header must not
+            // initialize them, even though the bit reader pads its lookahead.
+            assert_eq!(unpacker.unpack(&[0; 3], mode, 2, 32, 32).unwrap_err(), "packed data ends early");
+            assert_eq!(
+                unpacker.unpack(&[], mode, 0, 32, 32).unwrap_err(),
+                "HEAVY track reuses Huffman tables that were never sent"
+            );
+
+            assert_eq!(unpacker.unpack(&[0; 4], mode, 2, 32, 32).unwrap(), vec![0; 32]);
+            // Flag bit 0 is clear, so the history resets but the tables remain.
+            assert_eq!(unpacker.unpack(&[], mode, 0, 32, 32).unwrap(), vec![0; 32]);
+        }
     }
 
     #[test]

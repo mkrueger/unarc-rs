@@ -325,9 +325,6 @@ impl<R: Read> TrackReader<R> {
                 actual,
             });
         }
-        if error.is_some() {
-            data = Vec::new();
-        }
         Ok(Track {
             number,
             stage_len,
@@ -419,6 +416,10 @@ impl DmsArchive {
             let track_encrypted = encrypted && track.number != FILE_ID_TRACK;
             if let Some(key) = key.as_mut().filter(|_| track_encrypted) {
                 decrypt(&mut track.data, key);
+            }
+            // Damaged tracks still advance the rolling key before their data is discarded.
+            if track.error.is_some() {
+                track.data = Vec::new();
             }
             match track.number {
                 FILE_ID_TRACK | BANNER_TRACK => {

@@ -52,6 +52,8 @@ QUICK, MEDIUM and DEEP are followed by the run-length stage, and HEAVY optionall
 Archives may switch mode per track and may carry the decoder history from one
 track to the next; both are handled. Tracks with an unknown mode report
 `UnsupportedMethod`.
+HEAVY tracks can reuse Huffman tables only after a complete table header has
+been read; the tables survive history resets.
 
 ## Integrity
 
@@ -92,6 +94,9 @@ because the disk is decrypted and decoded then; a password passed only to
 
 - Without a password, the disk is listed as an image whose read returns
   `EncryptionRequired`, as do the banners; FILE_ID.DIZ is readable.
+- Packed tracks with a data CRC error still advance the rolling key before
+  being discarded, so a bad CRC field on a banner does not prevent decoding
+  intact disk tracks.
 - With a wrong password, decoding fails with `InvalidPassword` only until the
   key resynchronizes: because the key is updated from the encrypted bytes, it no
   longer depends on the password after a few bytes. In practice a wrong password

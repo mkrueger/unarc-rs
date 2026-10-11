@@ -94,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A bad packed-data CRC on an encrypted DMS banner no longer desynchronizes the
+  rolling key and makes intact disk tracks unreadable. HEAVY tracks reject
+  Huffman table reuse before a complete table header has been received.
 - Failed Amiga LZX decodes charge buffered output discarded on error to the
   total size limit, including errors before the first output batch is delivered.
 - Content detection recognizes pre-POSIX TAR headers by their checksum,
