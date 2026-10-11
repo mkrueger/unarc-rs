@@ -291,6 +291,34 @@ fn spartados_directories_sharing_sectors() {
 }
 
 #[test]
+fn spartados_failed_directory_read_releases_sectors() {
+    let mut sparta = Sparta::new(256, 720);
+    let file = sparta.write(b"x");
+    let shared = sparta.allocate();
+    sparta.disk.sector(shared)[0] = SPARTA_DIRECTORY;
+    sparta.disk.sector(shared)[3..6].copy_from_slice(&300u32.to_le_bytes()[..3]);
+    let bad = sparta.allocate();
+    // A boot sector holds only 128 bytes and cannot be directory data on this disk.
+    sparta_map(&mut sparta, bad, &[shared, 1]);
+
+    let good = sparta.directory("GOOD", &[(SPARTA_FILE, file, 1, "X", [0; 6])]);
+    let map = sparta.disk.sector(usize::from(good));
+    let good_data = usize::from(u16::from_le_bytes([map[4], map[5]]));
+    sparta.disk.sector(good_data)[3..6].copy_from_slice(&300u32.to_le_bytes()[..3]);
+    sparta_map(&mut sparta, usize::from(good), &[good_data, shared]);
+    let root = sparta.directory(
+        "MAIN",
+        &[(SPARTA_DIRECTORY, bad as u16, 0, "BAD", [0; 6]), (SPARTA_DIRECTORY, good, 0, "GOOD", [0; 6])],
+    );
+    sparta.set_root(root);
+
+    let mut archive = open(&sparta.disk.atr()).unwrap();
+    let entries: Vec<_> = std::iter::from_fn(|| archive.get_next_entry().unwrap()).collect();
+    assert_eq!(entries.iter().map(|entry| entry.name.as_str()).collect::<Vec<_>>(), ["BAD/", "GOOD/", "GOOD/X"]);
+    assert_eq!(archive.read(&entries[2]).unwrap(), b"x");
+}
+
+#[test]
 fn spartados_unreadable_subdirectories_are_empty() {
     // Subdirectories with a map past the end, a length of 0, a length past the disk and a
     // sparse sector are listed empty; the files around them stay readable.

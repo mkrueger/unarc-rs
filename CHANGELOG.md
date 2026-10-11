@@ -105,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Failed SpartaDOS directory reads release claimed sectors, so a damaged
+  subdirectory no longer hides files in a later valid directory.
 - A bad packed-data CRC on an encrypted DMS banner no longer desynchronizes the
   rolling key and makes intact disk tracks unreadable. HEAVY tracks reject
   Huffman table reuse before a complete table header has been received.

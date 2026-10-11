@@ -67,6 +67,8 @@ directory's sector map, and byte 32 the filesystem version (`$11`, `$20`, `$21`)
   sparse, or its sectors belong to another directory) is listed as an empty
   directory, so the rest of the disk stays listable. A damaged root directory
   fails with `ArchiveError::CorruptedEntry`.
+  Failed directory reads release their sector claims so a later valid directory
+  can use those sectors.
 - Each entry records its size and a date and time (day, month, two-digit year,
   hour, minute, second). Years 80-99 are 1980-1999 and 0-79 are 2000-2079, as
   SpartaDOS X counts them; impossible values are reported as missing.

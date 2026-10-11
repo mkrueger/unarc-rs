@@ -146,7 +146,13 @@ fn read_directory(image: &Image, visited: &mut Visited, owned: &mut [bool], map:
         owned[sector] = true;
         claimed.push(sector);
     }
-    read_sectors(image, visited, &sectors, size)
+    let result = read_sectors(image, visited, &sectors, size);
+    if result.is_err() {
+        for &sector in &claimed {
+            owned[sector] = false;
+        }
+    }
+    result
 }
 
 /// Lists a SpartaDOS filesystem, or returns `None` if the boot sector describes none.
