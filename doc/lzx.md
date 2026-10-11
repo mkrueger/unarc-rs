@@ -73,7 +73,8 @@ All multi-byte fields are little-endian, except the date.
 | 0x00 | 3 | `LZX` |
 | 0x03 | 7 | Version and flags, such as `00 0C 00 0A 04 00 00` |
 
-Opening an archive checks only the signature. Format detection also requires a
+Of this header, opening an archive checks only the signature (every entry header's
+CRC is verified as the entries are read in). Format detection also requires a
 first entry header with a valid header CRC, unless its name and comment extend
 past the 512 bytes detection reads.
 
