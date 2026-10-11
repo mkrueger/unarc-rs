@@ -62,3 +62,18 @@ pub fn fix_track_crc(data: &mut [u8], pos: usize) {
     let value = crc(&data[pos..pos + 18]);
     put(data, pos + 18, value);
 }
+
+/// A track record with valid CRCs.
+pub fn track_record(number: u16, mode: u8, size: u16, checksum: u16, data: &[u8]) -> Vec<u8> {
+    let mut record = b"TR".to_vec();
+    for value in [number, 0, data.len() as u16, data.len() as u16, size] {
+        record.extend_from_slice(&value.to_be_bytes());
+    }
+    record.extend_from_slice(&[0, mode]);
+    record.extend_from_slice(&checksum.to_be_bytes());
+    record.extend_from_slice(&crc(data).to_be_bytes());
+    let value = crc(&record);
+    record.extend_from_slice(&value.to_be_bytes());
+    record.extend_from_slice(data);
+    record
+}

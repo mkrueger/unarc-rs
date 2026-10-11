@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::io::{Cursor, Read};
+use std::io::{BufReader, Cursor, Read};
 use std::sync::Arc;
 
 use crc16::{State, ARC};
@@ -23,9 +23,15 @@ const MIN_DISK_TRACK_LEN: usize = 2048;
 /// Track sizes of double- and high-density disks (two sides of 11 or 22 sectors).
 const TRACK_SIZES: [usize; 2] = [11 * 1024, 22 * 1024];
 const FLAG_ENCRYPTED: u16 = 2;
+/// The archive stores selected tracks, not necessarily `first_track..=last_track`.
+const FLAG_APPENDS: u16 = 4;
+/// Limits on attached texts. Real archives have at most a handful (the largest seen
+/// carry five banners and 19 KB of text in all); more are ignored.
+const MAX_TEXTS: usize = 16;
+const MAX_TEXT_BYTES: usize = 256 * 1024;
 const DISK_TYPE_FMS: u16 = 7;
 const MODE_NAMES: [&str; 7] = ["NOCOMP", "SIMPLE", "QUICK", "MEDIUM", "DEEP", "HEAVY1", "HEAVY2"];
-const DEFAULT_IMAGE_NAME: &str = "disk.adf";
+const DEFAULT_IMAGE_STEM: &str = "disk";
 
 fn mode_name(mode: u16) -> &'static str {
     MODE_NAMES.get(usize::from(mode)).copied().unwrap_or("unknown")
@@ -115,31 +121,46 @@ impl DmsEntry {
     }
 }
 
-/// Why the disk image cannot be read. Kept instead of failing the whole archive, so
-/// attached texts stay readable.
+/// Why the disk image or an attached text cannot be read. Kept instead of failing
+/// the whole archive, so the other entries stay readable.
 #[derive(Debug, Clone)]
 enum ImageError {
     PasswordRequired,
     BadPassword,
-    Crc { track: u16, expected: u16, actual: u16 },
-    Checksum { track: u16, expected: u16, actual: u16 },
-    Decode { track: u16, reason: &'static str },
-    UnknownMode { track: u16, mode: u8 },
-    TooManyTracks,
+    Crc {
+        track: u16,
+        expected: u16,
+        actual: u16,
+    },
+    Checksum {
+        track: u16,
+        expected: u16,
+        actual: u16,
+    },
+    Decode {
+        track: u16,
+        reason: &'static str,
+    },
+    UnknownMode {
+        track: u16,
+        mode: u8,
+    },
+    /// Structural damage: too many tracks, missing tracks, truncation.
+    Damaged(String),
 }
 
 impl ImageError {
     fn to_error(&self, entry: &str) -> ArchiveError {
-        match *self {
+        match self {
             Self::PasswordRequired => ArchiveError::encryption_required(entry, FORMAT),
             Self::BadPassword => ArchiveError::invalid_password(entry, FORMAT),
-            Self::Crc { track, expected, actual } => ArchiveError::crc_mismatch(format!("{entry} (track {track})"), expected.into(), actual.into()),
-            Self::Checksum { track, expected, actual } => {
+            &Self::Crc { track, expected, actual } => ArchiveError::crc_mismatch(format!("{entry} (track {track})"), expected.into(), actual.into()),
+            &Self::Checksum { track, expected, actual } => {
                 ArchiveError::corrupted_entry_named(FORMAT, entry, format!("track {track} checksum {actual:#06x}, expected {expected:#06x}"))
             }
-            Self::Decode { track, reason } => ArchiveError::decompression_failed(entry, format!("track {track}: {reason}")),
-            Self::UnknownMode { track, mode } => ArchiveError::unsupported_method(FORMAT, format!("compression mode {mode} (track {track})")),
-            Self::TooManyTracks => ArchiveError::corrupted_entry_named(FORMAT, entry, format!("more than {DISK_TRACKS} disk tracks")),
+            &Self::Decode { track, reason } => ArchiveError::decompression_failed(entry, format!("track {track}: {reason}")),
+            &Self::UnknownMode { track, mode } => ArchiveError::unsupported_method(FORMAT, format!("compression mode {mode} (track {track} of {entry})")),
+            Self::Damaged(reason) => ArchiveError::corrupted_entry_named(FORMAT, entry, reason.clone()),
         }
     }
 }
@@ -154,16 +175,16 @@ struct Track {
     mode: u8,
     checksum: u16,
     data: Vec<u8>,
-    /// Stored and computed CRC when the packed data is damaged.
-    crc_error: Option<(u16, u16)>,
+    /// Damage found while reading: a CRC mismatch, an oversized or truncated track.
+    error: Option<ImageError>,
 }
 
 impl Track {
     /// Decodes the track and verifies its checksum.
     fn unpack(&self, unpacker: &mut Unpacker, encrypted: bool) -> std::result::Result<Vec<u8>, ImageError> {
         let track = self.number;
-        if let Some((expected, actual)) = self.crc_error {
-            return Err(ImageError::Crc { track, expected, actual });
+        if let Some(error) = &self.error {
+            return Err(error.clone());
         }
         if usize::from(self.mode) >= MODE_NAMES.len() {
             return Err(ImageError::UnknownMode { track, mode: self.mode });
@@ -201,6 +222,125 @@ struct AttachedText {
     locked: bool,
 }
 
+/// What follows in the track stream.
+enum Parsed {
+    Track(Track),
+    /// Damage at this offset, followed by another valid track header.
+    Damaged(u64, &'static str),
+    End,
+}
+
+/// Reads tracks, resynchronising on the next valid track header after damage.
+struct TrackReader<R: Read> {
+    reader: R,
+    /// Bytes read ahead while searching for a track header.
+    pending: Vec<u8>,
+    /// Offset of the next byte in the archive.
+    offset: u64,
+}
+
+impl<R: Read> Read for TrackReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let read = if self.pending.is_empty() {
+            self.reader.read(buf)?
+        } else {
+            let read = buf.len().min(self.pending.len());
+            buf[..read].copy_from_slice(&self.pending[..read]);
+            self.pending.drain(..read);
+            read
+        };
+        self.offset += read as u64;
+        Ok(read)
+    }
+}
+
+impl<R: Read> TrackReader<R> {
+    fn next(&mut self) -> Result<Parsed> {
+        let offset = self.offset;
+        let mut header = [0u8; TRACK_HEADER_LEN];
+        let read = crate::limits::read_up_to(self, &mut header)?;
+        if read == 0 {
+            return Ok(Parsed::End);
+        }
+        let looks_like_track = read >= 2 && &header[..2] == b"TR";
+        if read == TRACK_HEADER_LEN && looks_like_track && word(&header, 18) == crc(&header[..18]) {
+            return self.track(&header).map(Parsed::Track);
+        }
+        // Not a valid track header: look for the next one. Data after the last track
+        // that has none is trailing text or padding, which some archives carry.
+        let reason = match (looks_like_track, read == TRACK_HEADER_LEN) {
+            (true, true) => "track header CRC mismatch",
+            (true, false) => "truncated track header",
+            (false, _) => "data that is not a track",
+        };
+        if self.resync(&header[1..read])? {
+            Ok(Parsed::Damaged(offset, reason))
+        } else if looks_like_track {
+            // A damaged header at the end still hides a track.
+            Ok(Parsed::Damaged(offset, reason))
+        } else {
+            Ok(Parsed::End)
+        }
+    }
+
+    /// Scans for a track header with a valid CRC, leaving it to be read next.
+    fn resync(&mut self, after: &[u8]) -> Result<bool> {
+        let mut window = after.to_vec();
+        loop {
+            while window.len() < TRACK_HEADER_LEN {
+                let mut byte = [0u8];
+                if crate::limits::read_up_to(self, &mut byte)? == 0 {
+                    return Ok(false);
+                }
+                window.push(byte[0]);
+            }
+            if &window[..2] == b"TR" && word(&window, 18) == crc(&window[..18]) {
+                // Read the header again as the next track.
+                self.offset -= window.len() as u64;
+                self.pending.splice(0..0, window);
+                return Ok(true);
+            }
+            window.remove(0);
+        }
+    }
+
+    /// Reads the data of a track whose header is valid.
+    fn track(&mut self, header: &[u8]) -> Result<Track> {
+        let number = word(header, 2);
+        let (packed_len, stage_len, size) = (usize::from(word(header, 6)), usize::from(word(header, 8)), usize::from(word(header, 10)));
+        let mut error = None;
+        if packed_len > MAX_TRACK_LEN || stage_len > MAX_TRACK_LEN || size > MAX_TRACK_LEN {
+            error = Some(ImageError::Damaged(format!("track {number} is larger than {MAX_TRACK_LEN} bytes")));
+        }
+        let mut data = Vec::with_capacity(packed_len.min(MAX_TRACK_LEN));
+        Read::take(&mut *self, packed_len as u64).read_to_end(&mut data)?;
+        if data.len() < packed_len {
+            error.get_or_insert_with(|| ImageError::Damaged(format!("the archive ends inside track {number}")));
+        }
+        let (expected, actual) = (word(header, 16), crc(&data));
+        if expected != actual {
+            error.get_or_insert(ImageError::Crc {
+                track: number,
+                expected,
+                actual,
+            });
+        }
+        if error.is_some() {
+            data = Vec::new();
+        }
+        Ok(Track {
+            number,
+            stage_len,
+            size,
+            flags: header[12],
+            mode: header[13],
+            checksum: word(header, 14),
+            data,
+            error,
+        })
+    }
+}
+
 /// Reader for DMS (DiskMasher) compressed Amiga disk archives.
 ///
 /// The disk tracks are decoded when the archive is opened. A complete disk with an
@@ -213,6 +353,8 @@ pub struct DmsArchive {
     /// Unpacked and packed size of the disk tracks, from their headers.
     image_size: u64,
     image_packed_size: u64,
+    /// Whether the image is (or the header promises) a whole DD or HD disk.
+    full_disk: bool,
     filesystem: Option<AmigaArchive<Cursor<Arc<[u8]>>>>,
     texts: Vec<AttachedText>,
     entries: Vec<DmsEntry>,
@@ -222,7 +364,12 @@ pub struct DmsArchive {
 impl DmsArchive {
     /// Opens a DMS archive. `password` decrypts encrypted archives; without it, the
     /// disk of an encrypted archive is listed as an image that cannot be read.
-    pub fn open<R: Read>(mut reader: R, password: Option<&str>) -> Result<Self> {
+    pub fn open<R: Read>(reader: R, password: Option<&str>) -> Result<Self> {
+        let mut reader = TrackReader {
+            reader: BufReader::new(reader),
+            pending: Vec::new(),
+            offset: 0,
+        };
         let mut header = [0u8; HEADER_LEN];
         if crate::limits::read_up_to(&mut reader, &mut header)? != HEADER_LEN || &header[..4] != b"DMS!" {
             return Err(ArchiveError::invalid_header(FORMAT));
@@ -252,33 +399,50 @@ impl DmsArchive {
         let (mut image_size, mut image_packed_size) = (0u64, 0u64);
         let mut disk_tracks = Vec::new();
         let mut texts = Vec::new();
+        let mut text_bytes = 0;
+        let mut damage = None;
 
-        while let Some(mut track) = Self::read_track(&mut reader)? {
+        loop {
+            let mut track = match reader.next()? {
+                Parsed::End => break,
+                Parsed::Damaged(offset, reason) => {
+                    damage.get_or_insert(format!("{reason} at offset {offset}"));
+                    continue;
+                }
+                Parsed::Track(track) => track,
+            };
+            if let Some(ImageError::Damaged(reason)) = &track.error {
+                damage.get_or_insert_with(|| reason.clone());
+            }
             // FILE_ID.DIZ is never encrypted; every other track continues the key stream.
             let track_encrypted = encrypted && track.number != FILE_ID_TRACK;
             if let Some(key) = key.as_mut().filter(|_| track_encrypted) {
                 decrypt(&mut track.data, key);
             }
             match track.number {
-                FILE_ID_TRACK | BANNER_TRACK => texts.push(AttachedText {
-                    track,
-                    encrypted: track_encrypted,
-                    locked: track_encrypted && key.is_none(),
-                }),
+                FILE_ID_TRACK | BANNER_TRACK => {
+                    // Real archives carry at most a few short texts; ignore floods of them.
+                    text_bytes += track.size;
+                    if texts.len() < MAX_TEXTS && text_bytes <= MAX_TEXT_BYTES {
+                        texts.push(AttachedText {
+                            track,
+                            encrypted: track_encrypted,
+                            locked: track_encrypted && key.is_none(),
+                        });
+                    }
+                }
                 number if usize::from(number) < DISK_TRACKS && track.size > MIN_DISK_TRACK_LEN => {
                     image_size += track.size as u64;
                     image_packed_size += track.data.len() as u64;
                     if disk_tracks.len() == DISK_TRACKS {
-                        image_error.get_or_insert(ImageError::TooManyTracks);
+                        image_error.get_or_insert(ImageError::Damaged(format!("more than {DISK_TRACKS} disk tracks")));
                     }
+                    disk_tracks.push((number, track.size));
                     if image_error.is_some() {
                         continue;
                     }
                     match track.unpack(&mut unpacker, encrypted) {
-                        Ok(data) => {
-                            image.extend_from_slice(&data);
-                            disk_tracks.push((number, data.len()));
-                        }
+                        Ok(data) => image.extend_from_slice(&data),
                         Err(error) => image_error = Some(error),
                     }
                 }
@@ -287,14 +451,25 @@ impl DmsArchive {
             }
         }
 
+        // Without the "appends" flag, the header names the stored disk tracks.
+        let appended = info.flags & FLAG_APPENDS != 0;
+        let promised = (info.first_track..=info.last_track).map(usize::from);
+        if !appended && !disk_tracks.iter().map(|&(n, _)| usize::from(n)).eq(promised) {
+            let reason = format!("tracks {}-{} expected, {} found", info.first_track, info.last_track, disk_tracks.len());
+            let reason = damage.as_ref().map_or_else(|| reason.clone(), |damage| format!("{reason} ({damage})"));
+            image_error.get_or_insert(ImageError::Damaged(reason));
+        } else if let (true, Some(damage)) = (appended, &damage) {
+            // Sparse by design, so damage may have hidden tracks.
+            image_error.get_or_insert(ImageError::Damaged(damage.clone()));
+        }
+
         let image: Arc<[u8]> = image.into();
+        let track_size = disk_tracks.first().map_or(0, |&(_, size)| size);
         let complete = image_error.is_none()
-            && disk_tracks.len() == DISK_TRACKS
-            && disk_tracks
-                .iter()
-                .enumerate()
-                .all(|(i, &(number, size))| usize::from(number) == i && size == disk_tracks[0].1)
-            && TRACK_SIZES.contains(&disk_tracks[0].1);
+            && disk_tracks.iter().map(|&(n, _)| usize::from(n)).eq(0..DISK_TRACKS)
+            && disk_tracks.iter().all(|&(_, size)| size == track_size)
+            && TRACK_SIZES.contains(&track_size);
+        let full_disk = complete || (image_error.is_some() && !appended && info.first_track == 0 && usize::from(info.last_track) == DISK_TRACKS - 1);
         // A disk without a readable AmigaDOS filesystem (NDOS, trackloader, damaged or
         // unsupported filesystem) is listed as a raw image instead.
         let filesystem = if complete {
@@ -309,6 +484,7 @@ impl DmsArchive {
             image_error,
             image_size,
             image_packed_size,
+            full_disk,
             filesystem,
             texts,
             entries: Vec::new(),
@@ -316,47 +492,6 @@ impl DmsArchive {
         };
         archive.list_entries()?;
         Ok(archive)
-    }
-
-    /// Reads the next track, or `None` at the end of the file or at data that is not a
-    /// track header (some archives carry trailing text or padding).
-    fn read_track<R: Read>(reader: &mut R) -> Result<Option<Track>> {
-        let mut header = [0u8; TRACK_HEADER_LEN];
-        let read = crate::limits::read_up_to(reader, &mut header)?;
-        if read == 0 {
-            return Ok(None);
-        }
-        if read < 2 || &header[..2] != b"TR" {
-            return Ok(None);
-        }
-        if read < TRACK_HEADER_LEN {
-            return Err(ArchiveError::corrupted_entry(FORMAT, "truncated track header"));
-        }
-        let number = word(&header, 2);
-        let (expected, actual) = (word(&header, 18), crc(&header[..18]));
-        if expected != actual {
-            return Err(ArchiveError::crc_mismatch(format!("DMS track {number} header"), expected.into(), actual.into()));
-        }
-        let (packed_len, stage_len, size) = (usize::from(word(&header, 6)), usize::from(word(&header, 8)), usize::from(word(&header, 10)));
-        if packed_len > MAX_TRACK_LEN || stage_len > MAX_TRACK_LEN || size > MAX_TRACK_LEN {
-            return Err(ArchiveError::corrupted_entry(
-                FORMAT,
-                format!("track {number} is larger than {MAX_TRACK_LEN} bytes"),
-            ));
-        }
-        let data = crate::limits::read_exact_vec(reader, packed_len as u64)
-            .map_err(|_| ArchiveError::corrupted_entry(FORMAT, format!("track {number} data is truncated")))?;
-        let (expected, actual) = (word(&header, 16), crc(&data));
-        Ok(Some(Track {
-            number,
-            stage_len,
-            size,
-            flags: header[12],
-            mode: header[13],
-            checksum: word(&header, 14),
-            data,
-            crc_error: (expected != actual).then_some((expected, actual)),
-        }))
     }
 
     fn list_entries(&mut self) -> Result<()> {
@@ -375,9 +510,10 @@ impl DmsArchive {
                 });
             }
         } else {
-            names.insert(DEFAULT_IMAGE_NAME.to_string());
+            let name = self.image_name(DEFAULT_IMAGE_STEM);
+            names.insert(name.to_ascii_lowercase());
             self.entries.push(DmsEntry {
-                name: DEFAULT_IMAGE_NAME.to_string(),
+                name,
                 size: self.image_size,
                 packed_size: self.image_packed_size,
                 kind: DmsEntryKind::DiskImage,
@@ -440,11 +576,17 @@ impl DmsArchive {
         self.filesystem.as_ref().and_then(|filesystem| filesystem.volumes().first())
     }
 
-    /// Renames the raw image entry, e.g. after the archive's file stem plus `.adf`.
-    pub fn set_image_name(&mut self, name: String) {
+    /// Names the raw image entry after `stem`, usually the archive's file stem:
+    /// `stem.adf` for a whole disk, `stem.tracks` for the tracks of a partial archive.
+    pub fn set_image_stem(&mut self, stem: &str) {
+        let name = self.image_name(stem);
         if let Some(entry) = self.entries.iter_mut().find(|entry| entry.kind == DmsEntryKind::DiskImage) {
             entry.name = name;
         }
+    }
+
+    fn image_name(&self, stem: &str) -> String {
+        format!("{stem}.{}", if self.full_disk { "adf" } else { "tracks" })
     }
 
     pub fn get_next_entry(&mut self) -> Result<Option<DmsEntry>> {

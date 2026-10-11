@@ -17,7 +17,9 @@ description without unpacking the disk.
   loaders, disks with a `DOS` boot block but no root block, filesystems the Amiga
   reader does not support or rejects as damaged, and partial archives. Opened with
   `ArchiveFormat::open_path` (or the CLI), the entry is named after the archive,
-  `game.dms` becoming `game.adf`; otherwise it is `disk.adf`.
+  `game.dms` becoming `game.adf`; otherwise it is `disk.adf`. The `.adf` name is
+  kept for whole disks (tracks 0-79); the tracks of a partial archive are not a
+  valid ADF and are named `game.tracks` (`disk.tracks`).
   `UnifiedArchive::set_single_file_name` sets the stem as for `.gz` files.
 - **FILE_ID.DIZ** (track 80) and **banners** (track 0xFFFF) are listed after the
   disk entries as `FILE_ID.DIZ` and `BANNER.TXT`. Archives often carry more than
@@ -26,6 +28,9 @@ description without unpacking the disk.
   the same name in the disk's root (`FILE_ID2.DIZ`). The texts are returned as
   stored, typically Latin-1 text with Amiga console escape sequences. Like xDMS,
   each text track is decoded on its own, not with the history of the disk tracks.
+  At most 16 texts claiming at most 256 KiB in all are listed; further text
+  tracks are ignored. (Real archives carry up to five banners and three
+  FILE_ID.DIZ tracks, 19 KB in all.)
 
 The 1024-byte "fake boot block" track that some archives store as track 0 is not
 part of the disk and is not listed, as xDMS skips it too.
@@ -50,23 +55,40 @@ track to the next; both are handled. Tracks with an unknown mode report
 
 ## Integrity
 
-The archive header CRC and each track header CRC are verified when the archive is
-opened; a mismatch, a track larger than 32000 bytes or a truncated track fails
-`open`. Data after the last track that is not a track header is ignored, as by
-xDMS (some archives carry text or padding there).
+The archive header and its CRC are verified when the archive is opened; a bad
+signature or header CRC fails `open`. Damage after the header does not: every
+error is reported by the entry it affects, so the undamaged entries stay
+readable. This matters for a BBS, where truncated uploads are common.
 
-Each track's packed data CRC and its unpacked checksum are verified while the
-disk is decoded. A failure does not fail `open`: the disk is listed as an image
-whose read returns `CrcMismatch` (packed data), `CorruptedEntry` (checksum) or
-`DecompressionFailed`, while FILE_ID.DIZ and banners stay readable. xDMS stops at
-the first damaged track and so never shows a FILE_ID.DIZ stored after it.
+- Each track's packed data CRC and unpacked checksum are verified. A damaged disk
+  track makes the disk an image whose read returns `CrcMismatch` (packed data),
+  `CorruptedEntry` (checksum) or `DecompressionFailed`; a damaged FILE_ID.DIZ or
+  banner fails only its own read. Packed data never decodes short: a track whose
+  data runs out is an error, not zero-filled.
+- A track header with a bad CRC or signature, or other data between tracks, is
+  skipped by searching for the next valid track header. A track larger than 32000
+  bytes is skipped too. A file that ends inside a track keeps the tracks before it.
+- Unless the header's "appends" flag is set, the header names the disk tracks
+  stored (`first_track` to `last_track`). If any of them is missing, for example
+  behind a damaged header or a truncation, the disk is listed as an image whose
+  read returns `CorruptedEntry` naming the expected tracks and the damage, never
+  as a short disk or an incomplete file listing. Archives with the "appends" flag
+  store selected tracks, so any damage makes their image unreadable.
+- Data after the last track that contains no further track header is ignored, as
+  by xDMS (some archives carry text or padding there).
+
+xDMS instead stops at the first damaged track and at the first data that is not
+a track header, so it never shows a FILE_ID.DIZ stored after the damage, and an
+archive damaged that way unpacks as a shorter disk without an error.
 
 ## Encryption
 
 DMS encryption XORs the packed data with a 16-bit key that starts as the CRC of
 the password and is updated from each encrypted byte. FILE_ID.DIZ is never
-encrypted. Pass the password when opening (`ArchiveOptions::with_password`);
-the encrypted entries report `EncryptionMethod::Dms`.
+encrypted. Pass the password when opening (`ArchiveOptions::with_password`),
+because the disk is decrypted and decoded then; a password passed only to
+`read_with_options` returns `UnsupportedMethod`. The encrypted entries report
+`EncryptionMethod::Dms`.
 
 - Without a password, the disk is listed as an image whose read returns
   `EncryptionRequired`, as do the banners; FILE_ID.DIZ is readable.
@@ -87,7 +109,9 @@ Tracks are at most 32000 bytes packed and unpacked, and at most 80 disk tracks
 are decoded (more fail the image with `CorruptedEntry`), so opening holds at most
 about 2.5 MiB of decoded disk plus a 16 KiB history, whatever the headers claim.
 Packed data is read only as far as the file goes. Each decoder stops when its
-track is full. Banner and FILE_ID.DIZ tracks are kept packed until read. Reads
+track is full. Banner and FILE_ID.DIZ tracks are kept packed until read and are
+limited as described above. Searching for track headers after damage reads the
+input once, in constant memory. Reads
 apply the per-entry and total limits of `ArchiveOptions`; listing reads no
 file data beyond the decoded disk.
 

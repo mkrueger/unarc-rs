@@ -41,22 +41,87 @@ fn header_damage_is_rejected() {
     assert!(matches!(open(&data), Err(ArchiveError::UnsupportedFormat(_))));
 }
 
+/// Asserts that the archive opens, the disk image (not its files) is listed and
+/// fails to read with a named error, and returns the readable attached texts.
+fn damaged_disk(data: &[u8]) -> Vec<String> {
+    let mut archive = open(data).unwrap();
+    assert!(archive.volume().is_none());
+    let mut texts = Vec::new();
+    while let Some(entry) = archive.get_next_entry().unwrap() {
+        match (entry.kind, archive.read(&entry)) {
+            (DmsEntryKind::DiskImage, Err(ArchiveError::CorruptedEntry { entry_name, .. })) => assert_eq!(entry_name, entry.name),
+            (DmsEntryKind::DiskImage, result) => panic!("image read: {result:?}"),
+            (_, Ok(_)) => texts.push(entry.name),
+            (_, Err(error)) => panic!("{}: {error}", entry.name),
+        }
+    }
+    texts
+}
+
 #[test]
-fn track_header_damage_and_truncation_are_rejected() {
+fn damaged_track_headers_keep_the_rest_of_the_archive() {
+    let all_texts = ["FILE_ID.DIZ", "BANNER.TXT", "BANNER2.TXT"];
     let pos = common::track(common::MODES, 40);
+    // Header CRC mismatch: parsing resumes at the next track header.
     let mut data = common::MODES.to_vec();
     data[pos + 11] ^= 1;
-    assert!(matches!(open(&data), Err(ArchiveError::CrcMismatch { .. })));
-
+    assert_eq!(damaged_disk(&data), all_texts);
+    // A damaged track magic is not taken as the end of the archive.
+    let mut data = common::MODES.to_vec();
+    data[common::track(common::MODES, 60)] = b'X';
+    assert_eq!(damaged_disk(&data), all_texts);
+    // An oversized track.
     let mut data = common::MODES.to_vec();
     common::put(&mut data, pos + 10, 32_001);
     let value = common::crc(&data[pos..pos + 18]);
     common::put(&mut data, pos + 18, value);
-    assert!(matches!(open(&data), Err(ArchiveError::CorruptedEntry { .. })));
+    assert_eq!(damaged_disk(&data), all_texts);
+}
 
+#[test]
+fn truncated_archives_keep_what_was_decoded() {
+    // Cut inside the last banner: the disk is complete, only that banner fails.
+    let data = &common::MODES[..common::MODES.len() - 3];
+    let mut archive = open(data).unwrap();
+    assert!(archive.volume().is_some());
+    let (disk, _) = read_all(&mut archive);
+    assert!(disk.iter().all(Result::is_ok));
+    let mut archive = open(data).unwrap();
+    let banner = std::iter::from_fn(|| archive.get_next_entry().unwrap())
+        .find(|e| e.name == "BANNER2.TXT")
+        .unwrap();
+    assert!(matches!(archive.read(&banner), Err(ArchiveError::CorruptedEntry { entry_name, .. }) if entry_name == "BANNER2.TXT"));
+
+    // Cut inside a disk track or its header: the image fails, the banner before it does not.
+    let pos = common::track(common::MODES, 40);
     for cut in [pos + 10, pos + 30] {
-        assert!(matches!(open(&common::MODES[..cut]), Err(ArchiveError::CorruptedEntry { .. })), "cut={cut}");
+        assert_eq!(damaged_disk(&common::MODES[..cut]), ["BANNER.TXT"], "cut={cut}");
     }
+}
+
+#[test]
+fn attached_texts_are_bounded_and_never_padded() {
+    // 50 banners claiming 32000 bytes each, backed by no data.
+    let mut data = common::NDOS.to_vec();
+    for _ in 0..50 {
+        data.extend_from_slice(&common::track_record(0xffff, 0, 32_000, 0, &[]));
+    }
+    let mut archive = open(&data).unwrap();
+    let entries: Vec<_> = std::iter::from_fn(|| archive.get_next_entry().unwrap()).collect();
+    let banners: Vec<_> = entries.iter().filter(|e| e.kind == DmsEntryKind::Banner).collect();
+    assert!(banners.len() <= 16 && banners.iter().map(|e| e.size).sum::<u64>() <= 256 * 1024);
+    for banner in banners {
+        assert!(matches!(archive.read(banner), Err(ArchiveError::DecompressionFailed { .. })));
+    }
+
+    // A short NOCOMP disk track is an error, not zero-filled.
+    let pos = common::track(common::NDOS, 79);
+    let mut data = common::NDOS[..pos].to_vec();
+    data.extend_from_slice(&common::track_record(79, 0, 11 * 1024, 0, &[]));
+    data.extend_from_slice(&common::NDOS[common::track(common::NDOS, 80)..]);
+    let (disk, texts) = read_all(&mut open(&data).unwrap());
+    assert!(texts);
+    assert!(matches!(disk[..], [Err(ArchiveError::DecompressionFailed { .. })]));
 }
 
 #[test]
@@ -141,6 +206,7 @@ fn corrupted_compressed_data_never_panics() {
                 // Header fields that steer the decoders.
                 let mut data = fixture.to_vec();
                 data[pos + 12] = [0xff, 0x02, 0x05, 0x00][step];
+                data[pos + 13] = [6, 5, 4, 2][(step + i) % 4];
                 common::put(&mut data, pos + 8, [0, 1, 32_000, 11_264][step]);
                 common::fix_track_crc(&mut data, pos);
                 if let Ok(mut archive) = DmsArchive::open(Cursor::new(&data), Some("unarc")) {

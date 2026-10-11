@@ -130,10 +130,14 @@ fn partial_disk_concatenates_the_stored_tracks() {
     let listed = entries(&mut archive);
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].kind, DmsEntryKind::DiskImage);
+    // Not a disk image, so not named `.adf`.
+    assert_eq!(listed[0].name, "disk.tracks");
     let data = archive.read(&listed[0]).unwrap();
     assert_eq!(data.len(), 3 * common::TRACK);
     assert_eq!(crc32fast::hash(&data), 0x9319_c424);
     assert_eq!(&data[..4], b"DOS\0");
+    let mut archive = ArchiveFormat::open_path(fixture("partial.dms")).unwrap();
+    assert_eq!(archive.next_entry().unwrap().unwrap().name(), "partial.tracks");
 }
 
 #[test]
@@ -199,4 +203,40 @@ fn detection_and_limits() {
     assert!(matches!(archive.read(&image), Err(ArchiveError::SizeLimitExceeded { .. })));
     let diz = archive.next_entry().unwrap().unwrap();
     assert_eq!(archive.read(&diz).unwrap(), common::ATTACHED_DIZ);
+}
+
+#[test]
+fn password_must_be_given_when_opening() {
+    let mut archive = ArchiveFormat::Dms.open(Cursor::new(common::ENCRYPTED)).unwrap();
+    let image = archive.next_entry().unwrap().unwrap();
+    let options = ArchiveOptions::new().with_password("unarc");
+    assert!(matches!(
+        archive.read_with_options(&image, &options),
+        Err(ArchiveError::UnsupportedMethod { .. })
+    ));
+    assert!(matches!(archive.read(&image), Err(ArchiveError::EncryptionRequired { .. })));
+}
+
+#[test]
+fn unified_skip_and_iteration() {
+    let options = ArchiveOptions::new();
+    let mut archive = ArchiveFormat::open_path(fixture("modes.dms")).unwrap();
+    let mut read = 0;
+    while let Some(entry) = archive.next_entry().unwrap() {
+        if entry.name() == "docs/lines.txt" || entry.name() == "BANNER2.TXT" {
+            assert_eq!(archive.read(&entry).unwrap().len() as u64, entry.original_size());
+            read += 1;
+        } else if entry.name().ends_with(".DIZ") {
+            archive.skip_with_options(&entry, &options).unwrap();
+        } else {
+            archive.skip(&entry).unwrap();
+        }
+    }
+    assert_eq!(read, 2);
+
+    let mut archive = ArchiveFormat::open_path(fixture("ndos.dms")).unwrap();
+    let names: Vec<_> = archive.entries_iter().map(|entry| entry.unwrap().name().to_string()).collect();
+    assert_eq!(names, ["ndos.adf", "FILE_ID.DIZ"]);
+    let mut archive = ArchiveFormat::open_path(fixture("ndos.dms")).unwrap();
+    assert_eq!(archive.entries().unwrap().len(), 2);
 }

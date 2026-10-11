@@ -44,7 +44,8 @@ const POSITION_CODES: [(u8, u8); 256] = {
 pub(crate) type UnpackResult<T> = std::result::Result<T, &'static str>;
 
 /// MSB-first bit reader that keeps at least 16 bits buffered. Past the end of the
-/// input it reads zero bytes: valid streams only look ahead there.
+/// input it reads zero bytes: valid streams only look ahead there, which
+/// [`Bits::check_end`] verifies once a track is decoded.
 struct Bits<'a> {
     data: &'a [u8],
     pos: usize,
@@ -81,6 +82,14 @@ impl<'a> Bits<'a> {
         self.count -= n;
         self.buf &= (1 << self.count) - 1;
         self.fill();
+    }
+
+    /// Fails if more bits were consumed than the input holds.
+    fn check_end(&self) -> UnpackResult<()> {
+        if self.pos * 8 - self.count as usize > self.data.len() * 8 {
+            return Err("packed data ends early");
+        }
+        Ok(())
     }
 
     fn get(&mut self, n: u32) -> u16 {
@@ -362,11 +371,11 @@ impl Unpacker {
     /// Decodes one track. `packed_len` is the size after the first stage (before RLE).
     pub(crate) fn unpack(&mut self, data: &[u8], mode: u8, flags: u8, packed_len: usize, size: usize) -> UnpackResult<Vec<u8>> {
         let mut output = match mode {
-            0 => data.get(..size).unwrap_or(data).to_vec(),
+            0 => data.get(..size).ok_or("NOCOMP data is shorter than the track")?.to_vec(),
             1 => unpack_rle(data, size)?,
-            2 => unpack_rle(&self.quick(data, packed_len), size)?,
-            3 => unpack_rle(&self.medium(data, packed_len), size)?,
-            4 => unpack_rle(&self.deep(data, packed_len), size)?,
+            2 => unpack_rle(&self.quick(data, packed_len)?, size)?,
+            3 => unpack_rle(&self.medium(data, packed_len)?, size)?,
+            4 => unpack_rle(&self.deep(data, packed_len)?, size)?,
             5 | 6 => {
                 let heavy = self.heavy(data, flags, mode == 6, packed_len)?;
                 if flags & 4 != 0 {
@@ -377,7 +386,11 @@ impl Unpacker {
             }
             _ => return Err("unknown compression mode"),
         };
-        output.resize(size, 0);
+        // Only a HEAVY track without the RLE stage can come out short; never pad it.
+        if output.len() < size {
+            return Err("decoded data is shorter than the track");
+        }
+        output.truncate(size);
         if flags & 1 == 0 {
             self.reset();
         }
@@ -404,7 +417,7 @@ impl Unpacker {
     }
 
     /// QUICK: 256-byte history, literals or 2-5 byte matches with 8-bit offsets.
-    fn quick(&mut self, data: &[u8], size: usize) -> Vec<u8> {
+    fn quick(&mut self, data: &[u8], size: usize) -> UnpackResult<Vec<u8>> {
         const MASK: u16 = 0xff;
         let mut bits = Bits::new(data);
         let mut output = Vec::with_capacity(size + 8);
@@ -419,11 +432,12 @@ impl Unpacker {
             }
         }
         self.quick_pos = self.quick_pos.wrapping_add(5) & MASK;
-        output
+        bits.check_end()?;
+        Ok(output)
     }
 
     /// MEDIUM: 16 KiB history, 3-66 byte matches; length and offset use the position code.
-    fn medium(&mut self, data: &[u8], size: usize) -> Vec<u8> {
+    fn medium(&mut self, data: &[u8], size: usize) -> UnpackResult<Vec<u8>> {
         const MASK: u16 = 0x3fff;
         let mut bits = Bits::new(data);
         let mut output = Vec::with_capacity(size + 80);
@@ -447,11 +461,12 @@ impl Unpacker {
             }
         }
         self.medium_pos = self.medium_pos.wrapping_add(66) & MASK;
-        output
+        bits.check_end()?;
+        Ok(output)
     }
 
     /// DEEP: adaptive Huffman literals and 3-60 byte lengths, 16 KiB history.
-    fn deep(&mut self, data: &[u8], size: usize) -> Vec<u8> {
+    fn deep(&mut self, data: &[u8], size: usize) -> UnpackResult<Vec<u8>> {
         const MASK: u16 = 0x3fff;
         let mut bits = Bits::new(data);
         let mut output = Vec::with_capacity(size + 64);
@@ -468,7 +483,8 @@ impl Unpacker {
             }
         }
         self.deep_pos = self.deep_pos.wrapping_add(60) & MASK;
-        output
+        bits.check_end()?;
+        Ok(output)
     }
 
     /// HEAVY1/HEAVY2: static Huffman codes (sent when flag bit 1 is set), 4/8 KiB history,
@@ -505,6 +521,7 @@ impl Unpacker {
                 Self::copy_match(&mut self.text, &mut self.heavy_pos, mask, from, length, &mut output);
             }
         }
+        bits.check_end()?;
         Ok(output)
     }
 

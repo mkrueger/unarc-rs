@@ -1742,7 +1742,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     /// AmigaDOS filesystem.
     pub fn set_single_file_name(&mut self, name: String) {
         if let ArchiveInner::Dms(archive) = &mut self.inner {
-            archive.set_image_name(format!("{name}.adf"));
+            archive.set_image_stem(&name);
         }
         self.single_file_name = Some(name);
     }
@@ -2494,6 +2494,14 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Rar(archive), EntryIndex::Rar(header, _)) => archive.read_with_password(header, password),
             (ArchiveInner::SevenZ(archive), EntryIndex::SevenZ(header, _)) => archive.read_with_password_and_limit(header, password, limit),
             (ArchiveInner::Arj(archive), EntryIndex::Arj(header)) => archive.read_with_password(header, password),
+            // DMS decrypts the whole disk when opened; a password given now comes too late.
+            (ArchiveInner::Dms(archive), EntryIndex::Dms(header)) => match archive.read_with_limit(header, limit) {
+                Err(ArchiveError::EncryptionRequired { entry, .. }) if password.is_some() => Err(ArchiveError::unsupported_method(
+                    "DMS",
+                    format!("decrypting '{entry}' with a password given only when reading; pass it when opening the archive"),
+                )),
+                result => result,
+            },
             // Other formats don't support encryption, use normal read
             _ => self.read_inner(entry, limit),
         }
