@@ -9,12 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking changes
 
+- `ArchiveFormat` gained `Lzx` (Amiga LZX); exhaustive matches need a new arm.
 - `ArchiveFormat` gained `Adf`, `Hdf` and `Fat`; exhaustive matches need new arms.
 - `ArchiveFormat` gained the variants `Xz`, `Zst`, `Txz` and `Tzst`. Exhaustive
   matches on it need new arms.
 
 ### Added
 
+- Amiga LZX archives (`.lzx`) via `ArchiveFormat::Lzx` and the `lzx` module, with a
+  pure Rust decoder for the LZX bitstream (Amiga LZX differs from the CAB LZX
+  method, so `lzxd` is not used). Stored and LZX entries are read, including
+  merged groups, where several files share one compressed stream: a group is
+  decoded up to the requested file, so skipping and out-of-order reads work.
+  Each file's CRC-32 is verified. Entries expose Amiga protection bits, file
+  comments and dates (with the Y2K-patched year encoding). Data decoded and
+  discarded to reach an entry of a merged group counts against the entry and
+  total size limits. Detection requires a valid first entry header. Validated
+  against 32 real archives (4183 entries) with unar and unlzx. The fixtures are
+  self-authored: `license.lzx` is written by the amiga-lzx encoder, and
+  `multi.lzx` is assembled by a script from streams that encoder compressed;
+  both are verified with unar and unlzx.
 - Amiga ADF/HDF disk images with OFS/FFS (DOS0-DOS5), including RDB partitions,
   nested directories, file-extension chains, and link metadata. HDFs are read
   with bounded block buffers rather than loaded in full. Detection requires a

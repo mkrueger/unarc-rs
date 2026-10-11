@@ -59,6 +59,7 @@ use crate::ice::IceArchive;
 use crate::jar::jar_archive::{JarArchive, JarEntry};
 use crate::lha::lha_archive::{LhaArchiveSeekable, LhaFileHeader};
 use crate::lynx::{LynxArchive, LynxEntry};
+use crate::lzx::{LzxArchive, LzxEntry};
 use crate::packice::PackIceArchive;
 use crate::rar::rar_archive::{RarArchive, RarFileHeader};
 use crate::sevenz::sevenz_archive::{SevenZArchive, SevenZFileHeader};
@@ -337,6 +338,8 @@ pub enum ArchiveFormat {
     Uc2,
     /// Microsoft Cabinet format (.cab)
     Cab,
+    /// Amiga LZX archive (.lzx), not the Microsoft LZX method used inside CAB files
+    Lzx,
     /// Lynx container format (.lnx) - Commodore 64
     Lynx,
     /// T64 tape image format (.t64) - Commodore 64
@@ -406,6 +409,7 @@ impl ArchiveFormat {
         ArchiveFormat::Tbz,
         ArchiveFormat::TarZ,
         ArchiveFormat::Cab,
+        ArchiveFormat::Lzx,
         ArchiveFormat::Lynx,
         ArchiveFormat::T64,
         ArchiveFormat::D64,
@@ -450,6 +454,7 @@ impl ArchiveFormat {
             "tgz" => Some(ArchiveFormat::Tgz),
             "tbz" | "tbz2" => Some(ArchiveFormat::Tbz),
             "cab" => Some(ArchiveFormat::Cab),
+            "lzx" => Some(ArchiveFormat::Lzx),
             "lnx" => Some(ArchiveFormat::Lynx),
             "t64" => Some(ArchiveFormat::T64),
             "d64" => Some(ArchiveFormat::D64),
@@ -532,6 +537,7 @@ impl ArchiveFormat {
             ArchiveFormat::Tbz => "tbz2",
             ArchiveFormat::TarZ => "tar.Z",
             ArchiveFormat::Cab => "cab",
+            ArchiveFormat::Lzx => "lzx",
             ArchiveFormat::Lynx => "lnx",
             ArchiveFormat::T64 => "t64",
             ArchiveFormat::D64 => "d64",
@@ -572,6 +578,7 @@ impl ArchiveFormat {
             ArchiveFormat::Tbz => "TBZ (tar.bz2)",
             ArchiveFormat::TarZ => "TAR.Z (tar + Unix compress)",
             ArchiveFormat::Cab => "CAB (Microsoft Cabinet)",
+            ArchiveFormat::Lzx => "LZX (Amiga)",
             ArchiveFormat::Lynx => "Lynx (C64)",
             ArchiveFormat::T64 => "T64 (C64 tape image)",
             ArchiveFormat::D64 => "D64 (C64 1541 disk image)",
@@ -613,6 +620,7 @@ impl ArchiveFormat {
             ArchiveFormat::Tbz => &["tbz", "tbz2", "tar.bz2"],
             ArchiveFormat::TarZ => &["tar.Z"],
             ArchiveFormat::Cab => &["cab"],
+            ArchiveFormat::Lzx => &["lzx"],
             ArchiveFormat::Lynx => &["lnx"],
             ArchiveFormat::T64 => &["t64"],
             ArchiveFormat::D64 => &["d64"],
@@ -690,6 +698,8 @@ impl ArchiveFormat {
             ArchiveFormat::TarZ => Some(&[&[0x1F, 0x9D]]),
             // CAB: "MSCF"
             ArchiveFormat::Cab => Some(&[b"MSCF"]),
+            // LZX (Amiga): "LZX"
+            ArchiveFormat::Lzx => Some(&[b"LZX"]),
             // Lynx: a "LYNX" signature line after an optional BASIC loader, no fixed offset
             ArchiveFormat::Lynx => None,
             // T64: "C64" signature text, padded to 32 bytes
@@ -807,6 +817,11 @@ impl ArchiveFormat {
         // CAB: "MSCF" (Microsoft Cabinet)
         if data.len() >= 4 && data.starts_with(b"MSCF") {
             return Some(ArchiveFormat::Cab);
+        }
+
+        // LZX (Amiga): "LZX", then a first entry header with a valid CRC
+        if crate::lzx::lzx_archive::has_signature(data) {
+            return Some(ArchiveFormat::Lzx);
         }
 
         // T64: "C64S tape file", "C64 tape image file", ... (but not "C64-TAPE-RAW", a TAP file)
@@ -1330,6 +1345,7 @@ enum EntryIndex {
     /// TAR.Z uses the same header as TAR
     TarZ(TarFileHeader),
     Cab(CabFileHeader),
+    Lzx(LzxEntry),
     Lynx(LynxEntry),
     T64(T64Entry),
     D64(D64Entry),
@@ -1563,6 +1579,7 @@ enum ArchiveInner<T: Read + Seek> {
     /// TAR.Z decompresses to memory, so it doesn't need the generic reader type
     TarZ(TarZArchive),
     Cab(CabArchive<T>),
+    Lzx(LzxArchive<T>),
     Lynx(LynxArchive<T>),
     T64(T64Archive<T>),
     /// D64 images are read into memory, so they don't need the generic reader type
@@ -1685,6 +1702,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             ArchiveFormat::Tbz => ArchiveInner::Tbz(TbzArchive::new_with_limit(reader, options.whole_archive_limit())?),
             ArchiveFormat::TarZ => ArchiveInner::TarZ(TarZArchive::new_with_limit(reader, options.whole_archive_limit())?),
             ArchiveFormat::Cab => ArchiveInner::Cab(CabArchive::new(reader)?),
+            ArchiveFormat::Lzx => ArchiveInner::Lzx(LzxArchive::new(reader)?),
             ArchiveFormat::Lynx => ArchiveInner::Lynx(LynxArchive::new(reader)?),
             ArchiveFormat::T64 => ArchiveInner::T64(T64Archive::new(reader)?),
             ArchiveFormat::D64 => ArchiveInner::D64(D64Archive::new(reader)?),
@@ -2210,6 +2228,21 @@ impl<T: Read + Seek> UnifiedArchive<T> {
                 encryption: EncryptionMethod::None,
                 index: EntryIndex::Cab(header),
             })),
+            ArchiveInner::Lzx(archive) => Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
+                name: header.name.clone(),
+                // Merged files share one compressed stream and have no compressed size of their own.
+                compressed_size: if header.merged { 0 } else { u64::from(header.packed_size) },
+                original_size: u64::from(header.original_size),
+                compression_method: if header.merged {
+                    format!("{} (merged)", header.pack_mode)
+                } else {
+                    header.pack_mode.to_string()
+                },
+                modified_time: header.modified_time,
+                crc: u64::from(header.crc32),
+                encryption: EncryptionMethod::None,
+                index: EntryIndex::Lzx(header),
+            })),
             ArchiveInner::Lynx(archive) => Ok(archive.get_next_entry()?.map(|header| ArchiveEntry {
                 name: header.name.clone(),
                 compressed_size: header.size,
@@ -2331,6 +2364,10 @@ impl<T: Read + Seek> UnifiedArchive<T> {
     }
 
     fn finish_read(&mut self, entry: &ArchiveEntry, limit: Option<u64>, result: Result<Vec<u8>>) -> Result<Vec<u8>> {
+        // Amiga LZX decodes and discards the start of a merged group to reach a later entry; that work counts too.
+        if let ArchiveInner::Lzx(archive) = &mut self.inner {
+            self.total_read = self.total_read.saturating_add(archive.take_discarded_bytes());
+        }
         let data = result.map_err(|e| match e {
             ArchiveError::SizeLimitExceeded { limit, .. } => ArchiveError::size_limit_exceeded(&entry.name, limit),
             e => e,
@@ -2370,6 +2407,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.read(header),
             (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.read(header),
             (ArchiveInner::Cab(archive), EntryIndex::Cab(header)) => archive.read_with_limit(header, limit),
+            (ArchiveInner::Lzx(archive), EntryIndex::Lzx(header)) => archive.read_with_limit(header, limit),
             (ArchiveInner::Lynx(archive), EntryIndex::Lynx(header)) => archive.read(header),
             (ArchiveInner::T64(archive), EntryIndex::T64(header)) => archive.read(header),
             (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.read(header),
@@ -2509,6 +2547,7 @@ impl<T: Read + Seek> UnifiedArchive<T> {
             (ArchiveInner::Tbz(archive), EntryIndex::Tbz(header)) => archive.skip(header),
             (ArchiveInner::TarZ(archive), EntryIndex::TarZ(header)) => archive.skip(header),
             (ArchiveInner::Cab(archive), EntryIndex::Cab(header)) => archive.skip(header),
+            (ArchiveInner::Lzx(archive), EntryIndex::Lzx(header)) => archive.skip(header),
             (ArchiveInner::Lynx(archive), EntryIndex::Lynx(header)) => archive.skip(header),
             (ArchiveInner::T64(archive), EntryIndex::T64(header)) => archive.skip(header),
             (ArchiveInner::D64(archive), EntryIndex::D64(header)) => archive.skip(header),
