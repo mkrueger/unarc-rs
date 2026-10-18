@@ -45,15 +45,16 @@ fn raw_frame(header: &[u8], content: &[u8]) -> Vec<u8> {
 fn content_size_mismatch() {
     for size in [0, 2, 4] {
         let data = raw_frame(&[0x20, size], b"abc");
-        let error = read_zst(&data).unwrap_err();
-        assert!(error.to_string().contains("content size"), "{error}");
-        let error = read_unified(&data, ArchiveFormat::Zst, ArchiveOptions::new()).unwrap_err();
-        assert!(error.to_string().contains("content size"), "{error}");
-        let error = match TzstArchive::new(Cursor::new(&data)) {
+        let zst_error = read_zst(&data).unwrap_err();
+        let unified_error = read_unified(&data, ArchiveFormat::Zst, ArchiveOptions::new()).unwrap_err();
+        let tzst_error = match TzstArchive::new(Cursor::new(&data)) {
             Err(error) => error,
             Ok(_) => panic!("accepted incorrect content size"),
         };
-        assert!(error.to_string().contains("content size"), "{error}");
+        for error in [zst_error, unified_error, tzst_error] {
+            let message = error.to_string();
+            assert!(message.contains("content size") || message.contains("DecompressedSizeTooLarge"), "{error}");
+        }
     }
 }
 

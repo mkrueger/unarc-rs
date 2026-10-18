@@ -7,13 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-18
+
 ### Breaking changes
 
 - `ArchiveFormat` gained `Lzx` (Amiga LZX); exhaustive matches need a new arm.
-- `ArchiveFormat` gained `Adf`, `Hdf` and `Fat`; exhaustive matches need new arms.
 - `ArchiveFormat` gained `Adf`, `Hdf`, `Fat` and `Dms`, and `EncryptionMethod`
   gained `Dms`; exhaustive matches need new arms.
-- `ArchiveFormat` gained `Adf`, `Hdf`, `Fat` and `Atr`; exhaustive matches need new arms.
+- `ArchiveFormat` gained `Atr`; exhaustive matches need a new arm.
 - `ArchiveFormat` gained the variants `Xz`, `Zst`, `Txz` and `Tzst`. Exhaustive
   matches on it need new arms.
 
@@ -100,6 +101,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stream announces is checked against the limit before the decoder allocates it.
 ### Changed
 
+- Updated dependencies to their latest stable versions compatible with Rust 1.95,
+  including ZIP 9, rars 0.11, sevenz-rust2 0.24 and lzma-rust2 0.22.
+- Require ruzstd 0.9.1 and ZIP 9.0.5 or newer to include fixes for published
+  decompression and extraction advisories. ZIP filename decoding errors are
+  propagated through the archive reader.
 - `unarc` reports multi-volume discovery ("Detected N volumes", "Opening volume")
   on stderr instead of stdout.
 
@@ -230,6 +236,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.3] - 2026-09-05
 
+[Unreleased]: https://github.com/mkrueger/unarc-rs/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/mkrueger/unarc-rs/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/mkrueger/unarc-rs/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/mkrueger/unarc-rs/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/mkrueger/unarc-rs/compare/v0.6.3...v0.7.0

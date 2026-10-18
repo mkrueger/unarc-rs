@@ -100,7 +100,7 @@ impl<T: Read + Seek> ZipArchive<T> {
             .by_index_raw(index)
             .map_err(|e| ArchiveError::external_library("zip", e.to_string()))?;
 
-        let name = file.name().to_string();
+        let name = file.name().map_err(|e| ArchiveError::external_library("zip", e.to_string()))?.into_owned();
         let compressed_size = file.compressed_size();
         let original_size = file.size();
         let compression_method = format!("{:?}", file.compression());
