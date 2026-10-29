@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-29
+
+### Added
+
+- Portable CLI release downloads for Windows x64, macOS 11+ (universal Intel and
+  Apple Silicon binary), and Linux x64 (static musl), including README, license,
+  and SHA-256 checksums. Version-tag builds create a draft GitHub Release after
+  the release checks pass; crates.io publication remains manual.
+
+### Changed
+
+- Updated archive dependencies, including ZIP 9.1.3, RAR 0.12.3, sevenz-rust2
+  0.24.1, lzma-rust2 0.24, and crc32fast 1.5.3.
+- Track the workspace lockfile for consistent CLI release dependencies.
+
+### Fixed
+
+- Mark the synthetic ZIP FIFO entry as Unix so its metadata test also passes on
+  Windows.
+
 ## [0.8.0] - 2026-10-18
 
 ### Breaking changes
@@ -236,7 +256,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.3] - 2026-09-05
 
-[Unreleased]: https://github.com/mkrueger/unarc-rs/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/mkrueger/unarc-rs/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/mkrueger/unarc-rs/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/mkrueger/unarc-rs/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/mkrueger/unarc-rs/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/mkrueger/unarc-rs/compare/v0.7.0...v0.7.1

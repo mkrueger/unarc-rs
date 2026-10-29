@@ -1,19 +1,54 @@
-name: Release checks
+name: Release
 
-# Run before publishing: push a version tag (e.g. `v0.7.0`) or start the workflow manually.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build (e.g. v0.8.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - name: Verify tag matches workspace version
+        id: version
+        shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 --locked | jq -r '.packages[].version' | sort -u)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || "$TAG" != "v$version" ]]; then
+            echo "::error::Tag $TAG must match the version of every workspace package ($version)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   semver-checks:
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
 
       # Compares the public API against the latest unarc-rs release on crates.io
       - uses: obi1kenobi/cargo-semver-checks-action@v2
@@ -21,23 +56,191 @@ jobs:
           package: unarc-rs
 
   cargo-deny:
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
 
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
 
   package:
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
 
       - name: Install Rust toolchain
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
 
+      - uses: Swatinem/rust-cache@v2
+
       - name: Check that the crates package and build
-        run: cargo package --workspace
+        run: cargo package --workspace --locked
+
+  binaries:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            secondary-target: ""
+            exe-suffix: .exe
+            rustflags: -C target-feature=+crt-static
+          - os: macos-15
+            platform: macos-universal
+            target: aarch64-apple-darwin
+            secondary-target: x86_64-apple-darwin
+            exe-suffix: ""
+            rustflags: ""
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+            target: x86_64-unknown-linux-musl
+            secondary-target: ""
+            exe-suffix: ""
+            rustflags: ""
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PLATFORM: ${{ matrix.platform }}
+      TARGET: ${{ matrix.target }}
+      SECONDARY_TARGET: ${{ matrix.secondary-target }}
+      EXE_SUFFIX: ${{ matrix.exe-suffix }}
+      RUSTFLAGS: ${{ matrix.rustflags }}
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target "$TARGET"
+          rustup default stable
+          if [[ -n "$SECONDARY_TARGET" ]]; then
+            rustup target add "$SECONDARY_TARGET"
+          fi
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.platform }}
+
+      - name: Install musl C toolchain
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y musl-tools
+
+      - name: Build release binary
+        run: |
+          cargo build --release --locked -p unarc-cli --target "$TARGET"
+          if [[ -n "$SECONDARY_TARGET" ]]; then
+            cargo build --release --locked -p unarc-cli --target "$SECONDARY_TARGET"
+          fi
+
+      - name: Stage portable package
+        run: |
+          mkdir -p dist/package
+          cp crates/unarc-cli/README.md dist/package/README.md
+          cp LICENSE dist/package/LICENSE
+          if [[ "$PLATFORM" == macos-universal ]]; then
+            lipo -create \
+              "target/$TARGET/release/unarc" \
+              "target/$SECONDARY_TARGET/release/unarc" \
+              -output dist/package/unarc
+            lipo -verify_arch arm64 x86_64 dist/package/unarc
+            codesign --force --sign - dist/package/unarc
+            codesign --verify --strict dist/package/unarc
+          else
+            cp "target/$TARGET/release/unarc$EXE_SUFFIX" dist/package/
+          fi
+
+      - name: Smoke-test release binary
+        run: |
+          actual_version=$("dist/package/unarc$EXE_SUFFIX" --version)
+          if [[ "$actual_version" != "unarc $VERSION" ]]; then
+            echo "::error::Unexpected binary version: $actual_version"
+            exit 1
+          fi
+          "dist/package/unarc$EXE_SUFFIX" formats
+          "dist/package/unarc$EXE_SUFFIX" list crates/unarc-rs/tests/arc/store.arc
+
+      - name: Verify static Linux binary
+        if: runner.os == 'Linux'
+        run: file dist/package/unarc | grep -E 'static(ally linked|-pie linked)'
+
+      - name: Archive Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/package/* `
+            -DestinationPath "dist/unarc-${env:VERSION}-${env:PLATFORM}.zip"
+
+      - name: Archive Unix binary
+        if: runner.os != 'Windows'
+        run: tar -czf "dist/unarc-$VERSION-$PLATFORM.tar.gz" -C dist/package .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unarc-${{ matrix.platform }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  draft-release:
+    needs: [prepare, semver-checks, cargo-deny, package, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unarc-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA-256 checksums
+        working-directory: dist
+        run: |
+          test -f "unarc-$VERSION-windows-x86_64.zip"
+          test -f "unarc-$VERSION-macos-universal.tar.gz"
+          test -f "unarc-$VERSION-linux-x86_64.tar.gz"
+          sha256sum ./*.zip ./*.tar.gz > SHA256SUMS
+          sha256sum --check SHA256SUMS
+
+      - name: Create or update draft release
+        shell: bash
+        run: |
+          release_id=$(gh api --paginate "repos/$GH_REPO/releases" \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [[ -n "$release_id" ]]; then
+            is_draft=$(gh api "repos/$GH_REPO/releases/$release_id" --jq .draft)
+            if [[ "$is_draft" != true ]]; then
+              echo "::error::Refusing to overwrite published release $TAG"
+              exit 1
+            fi
+          else
+            gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes \
+              --notes "Portable CLI builds for Windows x64, macOS 11+ (Intel and Apple Silicon), and Linux x64 (static musl). Each archive contains the binary, README, and license. Verify downloads against SHA256SUMS. Windows builds are unsigned; macOS builds are ad-hoc signed, not notarized. Crates.io publication is a separate manual step."
+          fi
+          gh release upload "$TAG" dist/*.zip dist/*.tar.gz dist/SHA256SUMS --clobber
+          gh release view "$TAG" --json url --jq .url >> "$GITHUB_STEP_SUMMARY"

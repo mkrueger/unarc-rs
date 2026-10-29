@@ -8,19 +8,49 @@ No other command line clients required. Everything in an all in one package. Lis
 
 ## Installation
 
+### Portable binaries
+
+Download the archive for your platform from
+[GitHub Releases](https://github.com/mkrueger/unarc-rs/releases):
+
+- Windows x64: `unarc-VERSION-windows-x86_64.zip`
+- macOS 11+ (Intel and Apple Silicon): `unarc-VERSION-macos-universal.tar.gz`
+- Linux x64 (static musl, no glibc dependency): `unarc-VERSION-linux-x86_64.tar.gz`
+
+Replace `VERSION` with the release version, for example `0.8.1`.
+Extract the archive, then put `unarc.exe` (Windows) or `unarc` (macOS/Linux) in a
+directory on your `PATH`. Alternatively, run it directly:
+
+```powershell
+.\unarc.exe --help
+```
+
+```bash
+./unarc --help
+```
+
+Each archive includes this README and the license. Download `SHA256SUMS` alongside
+the archive and verify its checksum with `Get-FileHash` on Windows,
+`shasum -a 256` on macOS, or `sha256sum` on Linux.
+
+Windows binaries are unsigned. macOS binaries are ad-hoc signed, not notarized;
+your OS may require explicit approval for a downloaded binary.
+
+### Cargo
+
 ```bash
 cargo install unarc-cli
 ```
 
-Or build from source:
+### Build from source
 
 ```bash
 git clone https://github.com/mkrueger/unarc-rs
 cd unarc-rs
-cargo build --release -p unarc-cli
+cargo build --release --locked -p unarc-cli
 ```
 
-The binary will be available at `target/release/unarc`.
+The binary will be available at `target/release/unarc` (`unarc.exe` on Windows).
 
 ## Usage
 

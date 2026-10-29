@@ -14,7 +14,27 @@ This workspace contains two crates:
 | [**unarc-rs**](crates/unarc-rs) | Library for reading archive formats |
 | [**unarc-cli**](crates/unarc-cli) | Command-line tool (`unarc`) |
 
-Install the CLI tool:
+## Installation
+
+### Portable CLI downloads
+
+Download a prebuilt archive from [GitHub Releases](https://github.com/mkrueger/unarc-rs/releases):
+
+| Platform | Archive | Binary |
+| -------- | ------- | ------ |
+| Windows x64 | `unarc-VERSION-windows-x86_64.zip` | `unarc.exe` |
+| macOS 11+ (Intel and Apple Silicon) | `unarc-VERSION-macos-universal.tar.gz` | `unarc` |
+| Linux x64 (static musl, no glibc dependency) | `unarc-VERSION-linux-x86_64.tar.gz` | `unarc` |
+
+Extract the archive and place the binary in a directory on your `PATH`, or run it
+directly (`.\unarc.exe --help` on Windows, `./unarc --help` on macOS/Linux).
+Each archive includes the CLI README and license; `SHA256SUMS` contains download
+checksums. Windows binaries are unsigned; macOS binaries are ad-hoc signed but
+not notarized, so the OS may require explicit approval for a downloaded binary.
+
+### Cargo
+
+Install the CLI from crates.io:
 
 ```bash
 cargo install unarc-cli
@@ -133,7 +153,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-unarc-rs = "0.7"
+unarc-rs = "0.8"
 ```
 
 ```rust
@@ -241,12 +261,33 @@ cargo build --release
 ```
 
 The CLI binary will be at `target/release/unarc`. Building requires Rust 1.95 or newer.
+On Windows the binary is `target/release/unarc.exe`.
 
 Benchmarks for the native decoders use [Criterion](https://crates.io/crates/criterion):
 
 ```bash
 cargo bench -p unarc-rs            # all decoders
 cargo bench -p unarc-rs -- uc2     # only UC2
+```
+
+### Preparing a release
+
+The workspace tracks `Cargo.lock` so release builds use the same dependency
+versions. Update the workspace version, the CLI's `unarc-rs` dependency, the
+lockfile and changelog, then commit and push a matching tag, for example `v0.8.1`.
+The **Release** workflow runs the Semver, dependency-policy and Cargo packaging
+checks, builds all three portable archives, and creates a **draft** GitHub
+Release with the archives and SHA-256 checksums. Inspect and test the downloads
+before publishing the draft.
+
+To retry a draft's builds, run the workflow manually with the existing tag.
+It updates draft assets but refuses to overwrite a published release.
+
+This does not publish to crates.io. Publish the library and then the CLI separately:
+
+```bash
+cargo publish -p unarc-rs --locked
+cargo publish -p unarc-cli --locked
 ```
 
 ## Background
