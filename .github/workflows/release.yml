@@ -161,7 +161,7 @@ jobs:
               "target/$TARGET/release/unarc" \
               "target/$SECONDARY_TARGET/release/unarc" \
               -output dist/package/unarc
-            lipo -verify_arch arm64 x86_64 dist/package/unarc
+            lipo dist/package/unarc -verify_arch arm64 x86_64
             codesign --force --sign - dist/package/unarc
             codesign --verify --strict dist/package/unarc
           else
