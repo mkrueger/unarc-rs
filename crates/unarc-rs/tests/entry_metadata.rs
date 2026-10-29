@@ -159,6 +159,8 @@ fn zip_entries() -> Vec<u8> {
         .filter_map(|(index, signature)| (signature == b"PK\x01\x02").then_some(index))
         .collect();
     let fifo = central_headers[3];
+    // Unix mode bits require a Unix creator system, even when the test runs on Windows.
+    bytes[fifo + 5] = 3;
     bytes[fifo + 38..fifo + 42].copy_from_slice(&((0o010644u32) << 16).to_le_bytes());
     bytes
 }

@@ -12,14 +12,14 @@ exclude = ["src/**/exe/**", "src/**/disasm/**"]
 
 [dependencies]
 log = "0.4.34"
-crc32fast = "1.5.2"
+crc32fast = "1.5.3"
 crc16 = "0.4.0"
 chrono = "0.4.45"
 delharc = "0.8.0"
 salzweg = "0.1.4"
 bitstream-io = "4.10.0"
 # zip's default features except "zstd", which builds the C zstd library (see the `zstd` feature)
-zip = { version = "9.0.5", default-features = false, features = [
+zip = { version = "9.1.3", default-features = false, features = [
     "legacy-zip",
     "aes-crypto",
     "bzip2",
@@ -30,14 +30,14 @@ zip = { version = "9.0.5", default-features = false, features = [
     "time",
     "xz",
 ] }
-rars = "0.11.0"
-sevenz-rust2 = "0.24.0"
+rars = "0.12.3"
+sevenz-rust2 = "0.24.1"
 thiserror = "2.0"
 tar = "0.4"
 flate2 = "1.1"
 lzxd = "0.2.7"
 bzip2 = "0.6"
-lzma-rust2 = { version = "0.22", default-features = false, features = ["std", "xz"] }
+lzma-rust2 = { version = "0.24", default-features = false, features = ["std", "xz"] }
 ruzstd = { version = "0.9.1", default-features = false, features = ["std", "hash"] }
 blowfish = "0.10.0"
 sha1 = "0.11"
