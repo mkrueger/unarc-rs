@@ -30,7 +30,8 @@ zip = { version = "9.2.2", default-features = false, features = [
     "time",
     "xz",
 ] }
-rars = "0.12.3"
+# Read-only: no writer or recovery-record repair. Tests enable "write" to build archives.
+rars = { version = "0.13.1", default-features = false, features = ["encryption", "parallel"] }
 sevenz-rust2 = "0.24.2"
 thiserror = "2.0"
 tar = "0.4"
@@ -44,6 +45,7 @@ sha1 = "0.11"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+rars = { version = "0.13.1", features = ["write"] }
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 
 [[bench]]
