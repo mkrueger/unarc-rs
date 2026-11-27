@@ -1,12 +1,12 @@
-//! Corrupt, unsupported and hostile FAT12 images.
+//! Corrupt, unsupported and hostile FAT12 and FAT16 images.
 use std::io::Cursor;
 
 use unarc_rs::error::ArchiveError;
-use unarc_rs::fat::FatArchive;
+use unarc_rs::fat::{FatArchive, FatType};
 
 #[path = "common/fat.rs"]
 mod common;
-use common::PC720;
+use common::{FAT16_4M, PC720};
 
 fn open(image: Vec<u8>) -> unarc_rs::Result<FatArchive<Cursor<Vec<u8>>>> {
     FatArchive::new(Cursor::new(image))
@@ -28,20 +28,50 @@ fn corrupt_reason(result: unarc_rs::Result<()>) -> String {
     }
 }
 
+/// A volume with `clusters` single-sector clusters and a FAT large enough for FAT16.
+fn layout_with_clusters(clusters: usize) -> common::Layout {
+    let layout = common::Layout { spf: 256, ..FAT16_4M };
+    common::Layout {
+        total: layout.data_offset() / layout.bps + clusters,
+        ..layout
+    }
+}
+
 #[test]
-fn fat16_partitioned_and_garbage_boot_sectors() {
-    // More than 4084 clusters is FAT16.
-    let mut image = common::blank(
-        common::Layout {
-            spc: 1,
-            spf: 32,
-            total: 20_000,
-            ..PC720
-        },
-        false,
-    );
-    image.truncate(64 * 1024);
+fn cluster_count_selects_the_fat_type() {
+    for (clusters, fat_type) in [(4084, FatType::Fat12), (4085, FatType::Fat16), (65524, FatType::Fat16)] {
+        let layout = layout_with_clusters(clusters);
+        let archive = open(common::blank(layout, false)).unwrap();
+        assert_eq!(archive.geometry().clusters() as usize, clusters);
+        assert_eq!(archive.geometry().fat_type(), fat_type);
+    }
+    // More than 65524 clusters is FAT32.
+    let image = common::blank(layout_with_clusters(65525), false);
     assert!(matches!(open(image), Err(ArchiveError::UnsupportedFormat(_))));
+}
+
+#[test]
+fn fat32_partitioned_and_garbage_boot_sectors() {
+    // FAT32: no fixed root directory, a zero 16-bit FAT size and a 32-bit one at offset 36.
+    let mut image = common::blank(PC720, false);
+    image[17..19].fill(0);
+    image[22..24].fill(0);
+    image[36..40].copy_from_slice(&3u32.to_le_bytes());
+    assert!(matches!(open(image.clone()), Err(ArchiveError::UnsupportedFormat(_))));
+    image[36..40].fill(0);
+    assert!(matches!(open(image), Err(ArchiveError::InvalidHeader { .. })));
+    // No sectors, or FATs that fill the volume: a corrupt header rather than FAT32.
+    for (total, fat_size) in [(0u32, 3u32), (1440, 720)] {
+        let mut image = common::blank(PC720, false);
+        image[17..23].fill(0);
+        image[32..36].copy_from_slice(&total.to_le_bytes());
+        image[36..40].copy_from_slice(&fat_size.to_le_bytes());
+        image[21] = 0xF9;
+        assert!(
+            matches!(open(image), Err(ArchiveError::InvalidHeader { .. })),
+            "{total} sectors, FAT {fat_size}"
+        );
+    }
     // A hard-disk image with a partition table has no BPB in sector 0.
     let mut mbr = vec![0; 1024 * 1024];
     mbr[446 + 4] = 0x01;
@@ -75,6 +105,16 @@ fn truncated_images() {
     archive.get_next_entry().unwrap();
     let file = archive.get_next_entry().unwrap().unwrap();
     assert!(matches!(archive.read(&file), Err(ArchiveError::CorruptedEntry { .. })));
+    // A directory is read up to its end entry. The rest of its chain is only
+    // checked in the FAT, so it may lie past the end of the image.
+    let mut image = common::simple(PC720, false);
+    common::chain(&mut image, PC720, &[2, 700]);
+    let mut archive = open(image[..PC720.cluster_offset(7)].to_vec()).unwrap();
+    let mut names = Vec::new();
+    while let Some(entry) = archive.get_next_entry().unwrap() {
+        names.push(entry.name);
+    }
+    assert_eq!(names, ["DOCS/", "FILE.BIN", "DOCS/README.TXT"]);
 }
 
 type Mutation = fn(&mut Vec<u8>);
@@ -136,6 +176,51 @@ fn reserved_clusters_and_unallocated_final_clusters_are_rejected() {
         let mut image = common::simple(PC720, true);
         common::set_fat(&mut image, PC720, 6, marker);
         assert!(corrupt_reason(read_all(image)).contains("not a data cluster"));
+    }
+}
+
+#[test]
+fn fat16_marker_values_are_not_data_clusters() {
+    // 65524 clusters would number up to 0xFFF5, but 0xFFF0..0xFFF7 are markers.
+    let layout = layout_with_clusters(65524);
+    let file = |cluster: u16, size: u32| {
+        let mut image = common::blank(layout, false);
+        common::put_entries(&mut image, layout.root_offset(), &[common::entry(b"FILE    BIN", 0x20, cluster, size)]);
+        image
+    };
+    let mut image = file(0xFFEF, 1);
+    common::set_fat(&mut image, layout, 0xFFEF, 0xFFFF);
+    read_all(image).unwrap();
+    for marker in 0xFFF0u16..=0xFFF7 {
+        let mut image = file(marker, 1);
+        common::set_fat(&mut image, layout, usize::from(marker), 0xFFFF);
+        assert!(corrupt_reason(read_all(image)).contains("not a data cluster"));
+        let mut image = file(2, 513);
+        common::set_fat(&mut image, layout, 2, marker);
+        assert!(corrupt_reason(read_all(image)).contains("not a data cluster"));
+    }
+    for marker in [0, 1, 0xFFF0, 0xFFF7, 0x8000] {
+        let mut image = common::simple(FAT16_4M, false);
+        common::set_fat(&mut image, FAT16_4M, 6, marker);
+        assert!(corrupt_reason(read_all(image)).contains("not a data cluster"));
+    }
+}
+
+#[test]
+fn fat16_status_flags_in_the_second_entry() {
+    // Windows clears bit 15 after an unclean shutdown and bit 14 after a disk error.
+    for status in [0x7FFF, 0xBFFF, 0x3FFF] {
+        let mut image = common::simple(FAT16_4M, false);
+        common::set_fat(&mut image, FAT16_4M, 1, status);
+        assert!(FatArchive::probe(&mut Cursor::new(&image)).unwrap());
+        read_all(image).unwrap();
+    }
+    // Other bits still have to be set, and FAT12 has no status flags.
+    for (layout, entry) in [(FAT16_4M, 0xFFF7), (FAT16_4M, 0x0FFF), (PC720, 0x7FF), (PC720, 0xBFF)] {
+        let mut image = common::simple(layout, false);
+        common::set_fat(&mut image, layout, 1, entry);
+        assert!(!FatArchive::probe(&mut Cursor::new(&image)).unwrap());
+        assert!(corrupt_reason(read_all(image)).contains("reserved FAT entries"));
     }
 }
 
@@ -270,16 +355,24 @@ fn limits_and_modified_entries() {
 
 #[test]
 fn random_mutations_never_panic() {
+    // The pc16.img fixture: 17 sectors per FAT.
+    let pc16 = common::Layout {
+        spf: 17,
+        total: 4384,
+        ..FAT16_4M
+    };
     let fixtures = [
-        common::simple(PC720, false),
-        common::simple(common::ATARI720, true),
-        include_bytes!("fat/pc720.img").to_vec(),
-        include_bytes!("fat/atari.st").to_vec(),
+        (common::simple(PC720, false), PC720),
+        (common::simple(common::ATARI720, true), common::ATARI720),
+        (common::simple(FAT16_4M, false), FAT16_4M),
+        (include_bytes!("fat/pc720.img").to_vec(), PC720),
+        (include_bytes!("fat/atari.st").to_vec(), PC720),
+        (include_bytes!("fat/pc16.img").to_vec(), pc16),
     ];
     let mut state = 0x2545_F491_4F6C_DD1Du64;
-    for fixture in fixtures {
+    for (fixture, layout) in fixtures {
         // Mutate the metadata areas, where parsing happens.
-        let metadata = PC720.cluster_offset(8).min(fixture.len());
+        let metadata = layout.cluster_offset(8).min(fixture.len());
         for _ in 0..300 {
             let mut image = fixture.clone();
             for _ in 0..=state % 4 {

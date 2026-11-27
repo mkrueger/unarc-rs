@@ -8,15 +8,19 @@ use crate::error::{ArchiveError, Result};
 
 /// Longest entry path, in UTF-8 bytes.
 pub const MAX_PATH_BYTES: usize = 4096;
-/// FAT12 holds at most 4084 data clusters; more means FAT16 or FAT32.
+/// FAT12 holds at most 4084 data clusters, FAT16 at most 65524; more means FAT32.
 const MAX_FAT12_CLUSTERS: u32 = 4084;
+const MAX_FAT16_CLUSTERS: u32 = 65524;
 const BOOT_SECTOR: usize = 512;
 const ENTRY_SIZE: usize = 32;
 const ATTR_VOLUME_LABEL: u8 = 0x08;
 const ATTR_DIRECTORY: u8 = 0x10;
 const ATTR_LONG_NAME: u8 = 0x0F;
-/// Cluster values from here on end a chain; 0xFF7 marks a bad cluster.
-const END_OF_CHAIN: u16 = 0xFF8;
+/// Decoded FAT values from here on are markers, not cluster numbers. FAT12
+/// values are widened to these when the table is decoded.
+const FIRST_MARKER: u16 = 0xFFF0;
+/// Decoded FAT values from here on end a chain; 0xFFF7 marks a bad cluster.
+const END_OF_CHAIN: u16 = 0xFFF8;
 
 /// Upper half of code page 437 for PC short names.
 const CP437_HIGH: [char; 128] = [
@@ -89,6 +93,61 @@ fn short_name_checksum(raw: &[u8]) -> u8 {
     raw[..11].iter().fold(0u8, |sum, &b| sum.rotate_right(1).wrapping_add(b))
 }
 
+/// The width of the file allocation table's entries, set by the cluster count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FatType {
+    Fat12,
+    Fat16,
+}
+
+impl FatType {
+    /// The first raw table value that is a marker rather than a cluster number.
+    fn first_marker(self) -> u16 {
+        match self {
+            Self::Fat12 => 0xFF0,
+            Self::Fat16 => FIRST_MARKER,
+        }
+    }
+
+    fn table_bytes(self, entries: usize) -> usize {
+        match self {
+            Self::Fat12 => (entries * 3).div_ceil(2),
+            Self::Fat16 => entries * 2,
+        }
+    }
+
+    /// Decodes the first `entries` table entries, widening FAT12 markers
+    /// (0xFF0 and up) to their FAT16 values.
+    fn decode(self, table: &[u8], entries: usize) -> Vec<u16> {
+        (0..entries)
+            .map(|cluster| match self {
+                Self::Fat12 => {
+                    let pair = u16_at(table, cluster * 3 / 2);
+                    let value = if cluster % 2 == 0 { pair & 0x0FFF } else { pair >> 4 };
+                    if value >= self.first_marker() {
+                        value | 0xF000
+                    } else {
+                        value
+                    }
+                }
+                Self::Fat16 => u16_at(table, cluster * 2),
+            })
+            .collect()
+    }
+
+    /// Entry 0 holds the media byte with the upper bits set; entry 1 is an
+    /// end-of-chain mark. On FAT16 volumes, Windows clears bit 15 of entry 1
+    /// after an unclean shutdown and bit 14 after a disk error.
+    fn reserved_entries_valid(self, entries: &[u16]) -> bool {
+        let status_flags = match self {
+            Self::Fat12 => 0,
+            Self::Fat16 => 0xC000,
+        };
+        entries[0] >= FIRST_MARKER && entries[1] | status_flags >= END_OF_CHAIN
+    }
+}
+
 /// Volume layout from the BIOS parameter block (BPB) in the boot sector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FatGeometry {
@@ -139,12 +198,27 @@ impl FatGeometry {
         u64::from(self.total_sectors) * u64::from(self.bytes_per_sector)
     }
 
-    /// Bytes of the first FAT that describe clusters 0 through `clusters() + 1`.
-    fn fat_bytes(&self) -> usize {
-        ((self.clusters() as usize + 2) * 3).div_ceil(2)
+    /// FAT12 up to 4084 clusters, FAT16 above.
+    pub fn fat_type(&self) -> FatType {
+        if self.clusters() > MAX_FAT12_CLUSTERS {
+            FatType::Fat16
+        } else {
+            FatType::Fat12
+        }
     }
 
-    /// Reads and checks a BPB. `Err(true)` means a valid FAT16/FAT32 layout.
+    /// Table entries for clusters 0 through `clusters() + 1`.
+    fn fat_entries(&self) -> usize {
+        self.clusters() as usize + 2
+    }
+
+    /// One past the highest data cluster. A full-size volume would number
+    /// clusters into the marker range; those clusters cannot be addressed.
+    fn cluster_end(&self) -> u32 {
+        (self.clusters() + 2).min(u32::from(self.fat_type().first_marker()))
+    }
+
+    /// Reads and checks a BPB. `Err(true)` means a valid FAT32 layout.
     fn from_boot_sector(boot: &[u8]) -> std::result::Result<Self, bool> {
         let bytes_per_sector = u32::from(u16_at(boot, 11));
         let sectors_per_cluster = u32::from(boot[13]);
@@ -170,19 +244,22 @@ impl FatGeometry {
             || geometry.cluster_size() > 65_536
             || geometry.reserved_sectors == 0
             || !(1..=4).contains(&geometry.fat_count)
-            || geometry.sectors_per_fat == 0
-            || geometry.data_sector() >= u64::from(total)
         {
             return Err(false);
         }
-        if geometry.clusters() == 0 {
+        // FAT32 has no fixed root directory and keeps its FAT size in a 32-bit field at offset 36.
+        if geometry.root_entries == 0 && geometry.sectors_per_fat == 0 {
+            let fat_sectors = u64::from(geometry.fat_count) * u64::from(u32_at(boot, 36));
+            return Err(fat_sectors != 0 && u64::from(geometry.reserved_sectors) + fat_sectors < u64::from(total));
+        }
+        if geometry.sectors_per_fat == 0 || geometry.data_sector() >= u64::from(total) || geometry.clusters() == 0 {
             return Err(false);
         }
-        // FAT32 records no root entries and a zero 16-bit FAT size; both mean "not FAT12".
-        if geometry.clusters() > MAX_FAT12_CLUSTERS || geometry.root_entries == 0 {
+        if geometry.clusters() > MAX_FAT16_CLUSTERS || geometry.root_entries == 0 {
             return Err(true);
         }
-        if geometry.fat_bytes() as u64 > u64::from(geometry.sectors_per_fat) * u64::from(bytes_per_sector) {
+        let fat_bytes = geometry.fat_type().table_bytes(geometry.fat_entries());
+        if fat_bytes as u64 > u64::from(geometry.sectors_per_fat) * u64::from(bytes_per_sector) {
             return Err(false);
         }
         Ok(geometry)
@@ -238,6 +315,24 @@ struct Node {
     start_cluster: u32,
 }
 
+/// Parsing state for one directory, whose entries may span several clusters.
+struct DirectoryScan {
+    parent: Option<usize>,
+    /// Lowercased names already listed, to reject duplicates.
+    siblings: HashSet<String>,
+    long_name: Option<LongName>,
+}
+
+impl DirectoryScan {
+    fn new(parent: Option<usize>) -> Self {
+        Self {
+            parent,
+            siblings: HashSet::new(),
+            long_name: None,
+        }
+    }
+}
+
 /// A partially collected VFAT long name.
 struct LongName {
     parts: Vec<[u16; 13]>,
@@ -245,13 +340,14 @@ struct LongName {
     checksum: u8,
 }
 
-/// A seek-based FAT12 floppy-image reader. Only metadata is read when opening.
+/// A seek-based FAT12/FAT16 image reader. Only metadata is read when opening.
 pub struct FatArchive<T: Read + Seek> {
     reader: T,
     start: u64,
     len: u64,
     geometry: FatGeometry,
-    fat: Vec<u8>,
+    /// The first FAT, decoded; see [`FatType::decode`].
+    fat: Vec<u16>,
     /// Clusters that hold subdirectories, which no file may share.
     directory_clusters: Vec<bool>,
     nodes: Vec<Node>,
@@ -261,7 +357,7 @@ pub struct FatArchive<T: Read + Seek> {
 }
 
 impl<T: Read + Seek> FatArchive<T> {
-    /// Opens a FAT12 floppy image (PC or Atari ST) starting at the reader's position.
+    /// Opens a FAT12 or FAT16 image (PC or Atari ST) starting at the reader's position.
     pub fn new(reader: T) -> Result<Self> {
         Self::open(reader, None)
     }
@@ -279,11 +375,11 @@ impl<T: Read + Seek> FatArchive<T> {
         let mut opcode = [0; 2];
         reader.read_exact(&mut opcode)?;
         let atari_names = atari_names.unwrap_or(opcode[0] == 0x60);
-        let geometry = Self::read_geometry(&mut reader, start, len)?.map_err(|fat16| {
-            if fat16 {
-                ArchiveError::unsupported_format("FAT16/FAT32 images (only FAT12 floppy images are supported)")
+        let geometry = Self::read_geometry(&mut reader, start, len)?.map_err(|fat32| {
+            if fat32 {
+                ArchiveError::unsupported_format("FAT32 images (only FAT12 and FAT16 are supported)")
             } else {
-                ArchiveError::invalid_header("FAT (no FAT12 boot sector; partitioned disk images are not supported)")
+                ArchiveError::invalid_header("FAT (no FAT12/FAT16 boot sector; partitioned disk images are not supported)")
             }
         })?;
         if len < geometry.data_offset() {
@@ -295,14 +391,16 @@ impl<T: Read + Seek> FatArchive<T> {
             len,
             geometry,
             fat: Vec::new(),
-            directory_clusters: vec![false; geometry.clusters() as usize + 2],
+            directory_clusters: vec![false; geometry.fat_entries()],
             nodes: Vec::new(),
             volume_label: None,
             next: 0,
             atari_names,
         };
-        archive.fat = archive.read_at(geometry.fat_offset(), geometry.fat_bytes())?;
-        if archive.fat_entry(0) < 0xFF0 || archive.fat_entry(1) < END_OF_CHAIN {
+        let fat_type = geometry.fat_type();
+        let table = archive.read_at(geometry.fat_offset(), fat_type.table_bytes(geometry.fat_entries()))?;
+        archive.fat = fat_type.decode(&table, geometry.fat_entries());
+        if !fat_type.reserved_entries_valid(&archive.fat) {
             return Err(corrupt("invalid reserved FAT entries"));
         }
         archive.list_entries()?;
@@ -322,7 +420,7 @@ impl<T: Read + Seek> FatArchive<T> {
         })
     }
 
-    /// Returns true if the reader holds a FAT12 image whose size fits its boot sector.
+    /// Returns true if the reader holds a FAT12 or FAT16 image whose size fits its boot sector.
     ///
     /// FAT images have no signature, so this is only a fallback after formats with
     /// magic bytes. The reader position is restored afterwards.
@@ -336,10 +434,12 @@ impl<T: Read + Seek> FatArchive<T> {
             if len < geometry.size() || len > geometry.size() + 65_536 {
                 return Ok(false);
             }
+            let fat_type = geometry.fat_type();
             reader.seek(SeekFrom::Start(start + geometry.fat_offset()))?;
-            let mut head = [0; 3];
-            reader.read_exact(&mut head)?;
-            Ok(u16_at(&head, 0) & 0x0FFF >= 0xFF0 && u16_at(&head, 1) >> 4 >= END_OF_CHAIN)
+            let mut head = [0; 4];
+            let head = &mut head[..fat_type.table_bytes(2)];
+            reader.read_exact(head)?;
+            Ok(fat_type.reserved_entries_valid(&fat_type.decode(head, 2)))
         })();
         reader.seek(SeekFrom::Start(start))?;
         result
@@ -365,18 +465,8 @@ impl<T: Read + Seek> FatArchive<T> {
         Ok(data)
     }
 
-    fn fat_entry(&self, cluster: u32) -> u16 {
-        let offset = cluster as usize * 3 / 2;
-        let value = u16_at(&self.fat, offset);
-        if cluster & 1 == 0 {
-            value & 0x0FFF
-        } else {
-            value >> 4
-        }
-    }
-
     fn valid_cluster(&self, cluster: u32) -> bool {
-        (2..self.geometry.clusters() + 2).contains(&cluster) && cluster < 0xFF0
+        (2..self.geometry.cluster_end()).contains(&cluster)
     }
 
     /// Follows a cluster chain. Files stop after `needed` clusters; directories run to the end mark.
@@ -391,7 +481,7 @@ impl<T: Read + Seek> FatArchive<T> {
                 return Err(corrupt(format!("cluster chain loops or is shared at cluster {cluster:#x}")));
             }
             chain.push(cluster);
-            let next = self.fat_entry(cluster);
+            let next = self.fat[cluster as usize];
             if next < END_OF_CHAIN && !self.valid_cluster(u32::from(next)) {
                 return Err(corrupt(format!("cluster {next:#x} is not a data cluster")));
             }
@@ -409,55 +499,64 @@ impl<T: Read + Seek> FatArchive<T> {
         }
     }
 
+    fn cluster_offset(&self, cluster: u32) -> u64 {
+        self.geometry.data_offset() + u64::from(cluster - 2) * self.geometry.cluster_size()
+    }
+
     fn read_clusters(&mut self, chain: &[u32], size: u64) -> Result<Vec<u8>> {
         let cluster_size = self.geometry.cluster_size();
         let mut data = Vec::with_capacity(crate::limits::capacity_hint(size));
         for &cluster in chain {
-            let offset = self.geometry.data_offset() + u64::from(cluster - 2) * cluster_size;
             let take = (size - data.len() as u64).min(cluster_size) as usize;
-            data.extend_from_slice(&self.read_at(offset, take)?);
+            data.extend_from_slice(&self.read_at(self.cluster_offset(cluster), take)?);
         }
         Ok(data)
     }
 
+    /// Lists the tree breadth-first. Only one directory cluster is held at a time.
     fn list_entries(&mut self) -> Result<()> {
+        let mut pending = VecDeque::new();
         let root = self.read_at(self.geometry.root_offset(), self.geometry.root_entries as usize * ENTRY_SIZE)?;
-        let mut pending = VecDeque::from([(None, root)]);
+        self.parse_directory(&root, &mut DirectoryScan::new(None), &mut pending)?;
         let mut directory_visited = vec![false; self.directory_clusters.len()];
-        while let Some((parent, data)) = pending.pop_front() {
-            for (cluster, index) in self.parse_directory(&data, parent)? {
-                let chain = self.chain(cluster, None, &mut directory_visited)?;
-                for &c in &chain {
-                    self.directory_clusters[c as usize] = true;
+        let cluster_size = self.geometry.cluster_size() as usize;
+        while let Some((start, index)) = pending.pop_front() {
+            // The whole chain is checked and claimed, even past the end-of-directory entry.
+            let chain = self.chain(start, None, &mut directory_visited)?;
+            for &cluster in &chain {
+                self.directory_clusters[cluster as usize] = true;
+            }
+            let mut scan = DirectoryScan::new(Some(index));
+            for cluster in chain {
+                let data = self.read_at(self.cluster_offset(cluster), cluster_size)?;
+                if !self.parse_directory(&data, &mut scan, &mut pending)? {
+                    break;
                 }
-                let size = chain.len() as u64 * self.geometry.cluster_size();
-                pending.push_back((Some(index), self.read_clusters(&chain, size)?));
             }
         }
         Ok(())
     }
 
-    /// Adds a directory's entries and returns its subdirectories as (start cluster, node index).
-    fn parse_directory(&mut self, data: &[u8], parent: Option<usize>) -> Result<Vec<(u32, usize)>> {
+    /// Adds the directory entries in `data` and queues subdirectories as
+    /// (start cluster, node index). Returns false at the end-of-directory entry.
+    fn parse_directory(&mut self, data: &[u8], scan: &mut DirectoryScan, subdirectories: &mut VecDeque<(u32, usize)>) -> Result<bool> {
+        let parent = scan.parent;
         let parent_len = parent.map_or(0, |p| self.nodes[p].path_len);
-        let mut subdirectories = Vec::new();
-        let mut siblings = HashSet::new();
-        let mut long_name: Option<LongName> = None;
         for entry in data.as_chunks::<ENTRY_SIZE>().0 {
             let attributes = entry[11];
             match entry[0] {
-                0x00 => break,
+                0x00 => return Ok(false),
                 0xE5 => {
-                    long_name = None;
+                    scan.long_name = None;
                     continue;
                 }
                 _ => {}
             }
             if attributes & 0x3F == ATTR_LONG_NAME {
-                long_name = Self::collect_long_name(long_name.take(), entry);
+                scan.long_name = Self::collect_long_name(scan.long_name.take(), entry);
                 continue;
             }
-            let long = long_name.take();
+            let long = scan.long_name.take();
             if attributes & ATTR_VOLUME_LABEL != 0 {
                 if parent.is_none() && self.volume_label.is_none() {
                     self.volume_label = Some(entry[..11].iter().map(|&b| self.decode_byte(b)).collect::<String>().trim_end().to_string());
@@ -475,7 +574,7 @@ impl<T: Read + Seek> FatArchive<T> {
             if component.is_empty() || component == "." || component == ".." || component.chars().any(|c| c < ' ' || c == '/' || c == '\\') {
                 return Err(corrupt(format!("invalid file name {component:?}")));
             }
-            if !siblings.insert(component.to_lowercase()) {
+            if !scan.siblings.insert(component.to_lowercase()) {
                 return Err(corrupt(format!("duplicate file name {component:?}")));
             }
             let is_directory = attributes & ATTR_DIRECTORY != 0;
@@ -489,7 +588,7 @@ impl<T: Read + Seek> FatArchive<T> {
                 if start_cluster == 0 {
                     return Err(corrupt(format!("directory {component:?} has no clusters")));
                 }
-                subdirectories.push((start_cluster, index));
+                subdirectories.push_back((start_cluster, index));
             }
             self.nodes.push(Node {
                 parent,
@@ -502,7 +601,7 @@ impl<T: Read + Seek> FatArchive<T> {
                 start_cluster,
             });
         }
-        Ok(subdirectories)
+        Ok(true)
     }
 
     fn collect_long_name(current: Option<LongName>, entry: &[u8; ENTRY_SIZE]) -> Option<LongName> {

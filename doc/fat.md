@@ -1,7 +1,9 @@
-# FAT12 floppy images (IMG / IMA / ST)
+# FAT12 and FAT16 disk images (IMG / IMA / ST)
 
-Read-only extraction of FAT12 filesystems from raw sector dumps of PC and
-Atari ST floppy disks, through `ArchiveFormat::Fat` and the `fat` module.
+Read-only extraction of FAT12 and FAT16 filesystems from raw sector dumps,
+through `ArchiveFormat::Fat` and the `fat` module. That covers PC and Atari ST
+floppy disks, and FAT16 volumes that start at the first sector of the image,
+such as a single partition copied out of a hard-disk image.
 No external tools or new dependencies are needed.
 
 ## Supported images
@@ -10,6 +12,11 @@ No external tools or new dependencies are needed.
   parameter block (BPB): 512 to 4096 bytes per sector, power-of-two clusters of
   up to 64 KiB, one to four FATs. This covers PC 160K to 2.88M floppies, PC-98
   1.2M disks with 1024-byte sectors, and Atari ST single- and double-sided disks.
+- FAT12 or FAT16, chosen by cluster count as in Microsoft's specification:
+  up to 4084 clusters is FAT12, up to 65524 is FAT16.
+  `FatGeometry::fat_type()` reports which. Windows clears two flags in the
+  second FAT16 entry after an unclean shutdown or a disk error; the reader
+  ignores them, so such volumes still open.
 - Atari ST boot sectors: a 68000 branch instead of an x86 jump, boot code where PC
   disks keep the 32-bit sector count, no `0x55AA` signature, and any media byte.
   The boot sector checksum is ignored; the initial 68000 branch selects Atari
@@ -36,9 +43,10 @@ the volume label are not listed.
 
 ## Not supported
 
-FAT16 and FAT32 (more than 4084 clusters) fail with
+FAT32 (a FAT32 boot sector, or more than 65524 clusters) fails with
 `ArchiveError::UnsupportedFormat`, and partitioned hard-disk images, which have
-no BPB in their first sector, with `ArchiveError::InvalidHeader`. Compressed or
+no BPB in their first sector, with `ArchiveError::InvalidHeader`. Atari hard-disk
+partitions with logical sectors over 4096 bytes are rejected as well. Compressed or
 flux-level images (Atari MSA and STX, PC IMD/TD0/DMK) and non-FAT disks are not
 supported. Deleted files are not recovered; this is not a repair tool.
 
@@ -75,9 +83,12 @@ reports missing data when accessed. An `.img`, `.ima` or `.st` name skips the
 other content checks when these checks pass.
 
 Images are read with seeks; opening reads the boot sector, the used part of the
-first FAT and all directories, not file data. Directory chains may not loop or
+first FAT and all directories, not file data. Directories are parsed one cluster
+at a time and read only up to their end entry. Directory chains may not loop or
 share clusters, and file chains may not loop or run into directories. Entry
 clusters may not be free, bad or reserved, including the last cluster read.
+FAT values from 0xFF0 (FAT12) or 0xFFF0 (FAT16) up are markers, so on a volume
+near the cluster limit the last few clusters cannot be addressed.
 Allocated clusters beyond the recorded file size are not traversed. Entry
 paths are limited to `MAX_PATH_BYTES` (4096 bytes); only the last path
 component is stored per entry, so memory stays linear in the number of entries.
@@ -88,7 +99,7 @@ enforces cumulative limits.
 
 ## References and tests
 
-The layout follows Microsoft's FAT specification (FAT12 cluster count limit,
+The layout follows Microsoft's FAT specification (FAT12 and FAT16 cluster limits,
 BPB, VFAT long names) and the Atari ST GEMDOS boot sector description in the
 Atari Compendium. Atari character decoding follows the
 [Unicode Atari ST mapping](https://www.unicode.org/Public/MAPPINGS/VENDORS/MISC/ATARIST.TXT).
@@ -103,7 +114,11 @@ mtools:
 - `atari.st`: `mformat -C -t 80 -h 1 -n 9 -c 2 -r 7 -a`, single-sided, with an
   Atari-style boot sector (68000 branch, no PC code or signature) patched in
   afterwards; `mdir` and `mtype` still read it.
+- `pc16.img`: `mkfs.fat -C -F 16 -s 1 -n HARD pc16.img 2200` (dosfstools 4.2),
+  4317 clusters, with `BIG.BIN`, `DOCS/README.TXT` and `DOCS/A long file name.txt`
+  copied with mtools. `fsck.fat -n` reports it clean.
 
 Text files are copies of `payload.txt` with `mcopy -m`, dated 1994-03-12 10:22:30.
 Rust tests add synthetic layouts (Atari TOS FAT sizes, 1024-byte sectors, one FAT,
-more reserved sectors), DOS 1.x disks, long-name edge cases, and corruption cases.
+more reserved sectors, FAT16), the FAT12/FAT16/FAT32 cluster-count boundaries,
+FAT16 status flags, DOS 1.x disks, long-name edge cases, and corruption cases.

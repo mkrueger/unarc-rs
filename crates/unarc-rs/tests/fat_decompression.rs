@@ -1,17 +1,18 @@
-//! FAT12 floppy images: fixtures made with mtools/dosfstools, plus synthetic layouts.
+//! FAT12 and FAT16 images: fixtures made with mtools/dosfstools, plus synthetic layouts.
 use std::io::Cursor;
 use std::path::Path;
 
 use unarc_rs::error::ArchiveError;
-use unarc_rs::fat::{FatArchive, FatEntry};
+use unarc_rs::fat::{FatArchive, FatEntry, FatType};
 use unarc_rs::unified::{ArchiveEntryKind, ArchiveFormat, ArchiveOptions, UnifiedArchive};
 
 #[path = "common/fat.rs"]
 mod common;
-use common::{ATARI720, PC720};
+use common::{ATARI720, FAT16_4M, PC720};
 
 const PC720_IMG: &[u8] = include_bytes!("fat/pc720.img");
 const PC360_IMG: &[u8] = include_bytes!("fat/pc360.img");
+const PC16_IMG: &[u8] = include_bytes!("fat/pc16.img");
 const ATARI_ST: &[u8] = include_bytes!("fat/atari.st");
 const TEXT: &[u8] = include_bytes!("fat/payload.txt");
 
@@ -87,6 +88,20 @@ fn pc360_and_atari_fixtures() {
 }
 
 #[test]
+fn fat16_fixture() {
+    let mut archive = FatArchive::new(Cursor::new(PC16_IMG)).unwrap();
+    assert_eq!(archive.geometry().fat_type(), FatType::Fat16);
+    assert_eq!(archive.geometry().clusters(), 4317);
+    assert_eq!(archive.volume_label(), Some("HARD"));
+    let entries = entries(&mut archive);
+    let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["DOCS/", "BIG.BIN", "DOCS/README.TXT", "DOCS/A long file name.txt"]);
+    assert_eq!(archive.read(&entries[1]).unwrap(), big());
+    assert_eq!(archive.read(&entries[2]).unwrap(), TEXT);
+    assert_eq!(archive.read(&entries[3]).unwrap(), TEXT);
+}
+
+#[test]
 fn dos1_disks_without_bpb_use_size_and_media_byte() {
     // DOS 1.x 360K disks: no BPB, FAT starting with FD FF FF
     let mut image = PC360_IMG.to_vec();
@@ -126,16 +141,44 @@ fn synthetic_layouts_atari_tos_and_larger_sectors() {
             },
             true,
         ),
+        (FAT16_4M, false),
     ];
     for (layout, atari) in layouts {
         let image = common::simple(layout, atari);
         let mut archive = FatArchive::new(Cursor::new(image)).unwrap();
+        let fat_type = if layout.fat16() { FatType::Fat16 } else { FatType::Fat12 };
+        assert_eq!(archive.geometry().fat_type(), fat_type);
         let entries = entries(&mut archive);
         let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
         assert_eq!(names, ["DOCS/", "FILE.BIN", "DOCS/README.TXT"]);
         assert_eq!(archive.read(&entries[1]).unwrap(), common::file_bin(layout));
         assert_eq!(archive.read(&entries[2]).unwrap(), common::PAYLOAD);
     }
+}
+
+#[test]
+fn long_names_continue_across_directory_clusters() {
+    // 512-byte clusters hold 16 entries; the long name's three parts straddle clusters 2 and 3.
+    let layout = FAT16_4M;
+    let mut image = common::blank(layout, false);
+    common::put_entries(&mut image, layout.root_offset(), &[common::entry(b"DOCS       ", 0x10, 2, 0)]);
+    common::chain(&mut image, layout, &[2, 3]);
+    let mut deleted = common::entry(b"OLD     TXT", 0x20, 0, 0);
+    deleted[0] = 0xE5;
+    let mut docs = vec![common::entry(b".          ", 0x10, 2, 0), common::entry(b"..         ", 0x10, 0, 0)];
+    docs.resize(15, deleted);
+    let alias = *b"ALONGN~1TXT";
+    docs.extend(common::long_name_entries("A long name across clusters.txt", &alias));
+    docs.push(common::entry(&alias, 0x20, 4, common::PAYLOAD.len() as u32));
+    common::put_entries(&mut image, layout.cluster_offset(2), &docs);
+    common::chain(&mut image, layout, &[4]);
+    let payload = layout.cluster_offset(4);
+    image[payload..payload + common::PAYLOAD.len()].copy_from_slice(common::PAYLOAD);
+    let mut archive = FatArchive::new(Cursor::new(image)).unwrap();
+    let entries = entries(&mut archive);
+    let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+    assert_eq!(names, ["DOCS/", "DOCS/A long name across clusters.txt"]);
+    assert_eq!(archive.read(&entries[1]).unwrap(), common::PAYLOAD);
 }
 
 #[test]
@@ -180,7 +223,7 @@ fn long_names_short_names_and_code_page() {
 
 #[test]
 fn unified_api_detection_kinds_and_limits() {
-    for (data, extension) in [(PC720_IMG, "img"), (PC360_IMG, "ima"), (ATARI_ST, "st")] {
+    for (data, extension) in [(PC720_IMG, "img"), (PC360_IMG, "ima"), (ATARI_ST, "st"), (PC16_IMG, "img")] {
         // Content detection without a name, at a nonzero reader position.
         let mut prefixed = b"prefix".to_vec();
         prefixed.extend_from_slice(data);

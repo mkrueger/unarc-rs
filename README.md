@@ -109,13 +109,13 @@ Files are stored uncompressed. Entries are named `NAME.prg`, `NAME.seq`, etc.; P
 
 See [Amiga support](doc/amiga.md) for supported layouts and limitations, and [DMS support](doc/dms.md) for DMS archives.
 
-### PC and Atari ST Floppy Images
+### PC and Atari ST Disk Images
 
 | Format | Extensions | Notes |
 | ------ | ---------- | ----- |
-| **FAT12** | `.img`, `.ima`, `.st` | Raw PC and Atari ST floppy images, VFAT long names, DOS 1.x disks |
+| **FAT12/FAT16** | `.img`, `.ima`, `.st` | Raw PC and Atari ST floppy images, unpartitioned FAT16 volumes, VFAT long names, DOS 1.x disks |
 
-See [FAT12 support](doc/fat.md) for supported layouts and limitations.
+See [FAT support](doc/fat.md) for supported layouts and limitations.
 
 ### Atari 8-bit Disk Images
 

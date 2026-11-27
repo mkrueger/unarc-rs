@@ -1,4 +1,4 @@
-//! `unarc` on FAT12 floppy images.
+//! `unarc` on FAT12 and FAT16 disk images.
 use std::fs;
 use std::process::Command;
 
@@ -50,6 +50,11 @@ fn st_extension_selects_atari_names_with_pc_boot_code() {
 fn lists_and_selectively_extracts_pc_and_atari_images() {
     for (file, image, wanted) in [
         (
+            "hard.img",
+            &include_bytes!("../../unarc-rs/tests/fat/pc16.img")[..],
+            "DOCS/A long file name.txt",
+        ),
+        (
             "disk.img",
             &include_bytes!("../../unarc-rs/tests/fat/pc720.img")[..],
             "DOCS/NESTED/A long file name.txt",
@@ -63,7 +68,7 @@ fn lists_and_selectively_extracts_pc_and_atari_images() {
         let listing = Command::new(env!("CARGO_BIN_EXE_unarc")).args(["list", "--json"]).arg(&path).output().unwrap();
         assert!(listing.status.success(), "{listing:?}");
         let json: serde_json::Value = serde_json::from_slice(&listing.stdout).unwrap();
-        assert_eq!(json["format"], "FAT12 (PC/Atari ST floppy image)");
+        assert_eq!(json["format"], "FAT12/FAT16 (PC/Atari ST disk image)");
         let entries = json["entries"].as_array().unwrap();
         let entry = entries.iter().find(|entry| entry["name"] == wanted).unwrap();
         assert_eq!(entry["kind"], "file");
@@ -84,16 +89,17 @@ fn lists_and_selectively_extracts_pc_and_atari_images() {
 }
 
 #[test]
-fn fat16_images_are_an_explicit_cli_error() {
+fn fat32_images_are_an_explicit_cli_error() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("hard.img");
     let mut image = include_bytes!("../../unarc-rs/tests/fat/pc360.img").to_vec();
-    // 40000 single-sector clusters: FAT16 territory.
-    image[13] = 1;
-    image[19..21].copy_from_slice(&40_000u16.to_le_bytes());
+    // A FAT32 BPB: no fixed root directory, and the FAT size in the 32-bit field.
+    image[17..19].fill(0);
+    image[22..24].fill(0);
+    image[36..40].copy_from_slice(&2u32.to_le_bytes());
     fs::write(&path, image).unwrap();
     let result = Command::new(env!("CARGO_BIN_EXE_unarc")).args(["list", "--json"]).arg(&path).output().unwrap();
     assert!(!result.status.success());
     assert!(result.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&result.stderr).contains("FAT16/FAT32"), "{result:?}");
+    assert!(String::from_utf8_lossy(&result.stderr).contains("FAT32"), "{result:?}");
 }
