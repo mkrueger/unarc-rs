@@ -283,7 +283,10 @@ impl<T: Read + Seek> RarArchive<T> {
                 }
                 let date_time = match rar50_file {
                     Some(file) => file.mtime.or(file.htime_mtime).and_then(unix_to_dos),
-                    None => member.meta.file_time.filter(|&t| t != 0).map(DosDateTime::new),
+                    None => match member.meta.stored_modification_time() {
+                        Some(rars::StoredTimestamp::DosLocal(raw)) if raw != 0 => Some(DosDateTime::new(raw)),
+                        _ => None,
+                    },
                 };
                 let mut name = member.meta.name_lossy();
                 if rar50_file.is_none() {
@@ -449,7 +452,6 @@ fn member_metadata(member: &ArchiveMember, redirection: Option<&rars::rar50::Fil
 /// Whether `archive` is followed by another volume: `Some(true)` if it announces one,
 /// `Some(false)` if it is the last (or only) volume, `None` if the format doesn't say.
 fn next_volume_hint(archive: &rars::Archive) -> Option<bool> {
-    const EARC_NEXT_VOLUME: u16 = 0x0001;
     match archive {
         rars::Archive::Rar50Plus(a) => {
             if !a.main.is_volume() {
@@ -466,7 +468,7 @@ fn next_volume_hint(archive: &rars::Archive) -> Option<bool> {
                 return Some(false);
             }
             let end = a.blocks.iter().rev().find_map(|block| match block {
-                rars::rar15_40::Block::End(end) => Some(end.flags & EARC_NEXT_VOLUME != 0),
+                rars::rar15_40::Block::End(end) => Some(end.has_next_volume()),
                 _ => None,
             });
             end.or_else(|| a.files().last().filter(|f| f.is_split_after()).map(|_| true))

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated RAR (rars) to 0.13.1, built without its archive writer and recovery-record
+  repair, which unarc-rs does not use.
+
 ## [0.8.1] - 2026-10-29
 
 ### Added
