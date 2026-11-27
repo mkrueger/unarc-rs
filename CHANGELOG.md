@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- FAT16 images via `ArchiveFormat::Fat`, for volumes without a partition table.
+  `FatGeometry::fat_type()` reports FAT12 or FAT16. A FAT16 volume that was not
+  unmounted cleanly, or that recorded a disk error, still opens.
+
+### Changed
+
+- The `ArchiveFormat::Fat` description, shown as `format` by `unarc list --json`,
+  is now "FAT12/FAT16 (PC/Atari ST disk image)".
+
+### Fixed
+
+- FAT32 boot sectors return `UnsupportedFormat` instead of `InvalidHeader`.
+
 ## [0.8.1] - 2026-10-29
 
 ### Added

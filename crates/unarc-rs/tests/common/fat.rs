@@ -1,4 +1,4 @@
-//! Builds FAT12 floppy images for tests, independently of the reader.
+//! Builds FAT12 and FAT16 images for tests, independently of the reader.
 #![allow(dead_code)]
 
 pub const PAYLOAD: &[u8] = b"hello FAT12";
@@ -35,7 +35,25 @@ pub const ATARI720: Layout = Layout {
     total: 1440,
 };
 
+/// 8093 single-sector clusters: the smallest common FAT16 shape, in 4 MiB.
+pub const FAT16_4M: Layout = Layout {
+    bps: 512,
+    spc: 1,
+    reserved: 1,
+    fats: 2,
+    root_entries: 512,
+    spf: 33,
+    total: 8192,
+};
+
 impl Layout {
+    pub fn clusters(&self) -> usize {
+        (self.total - self.data_offset() / self.bps) / self.spc
+    }
+    /// The FAT specification's cut-off: more than 4084 clusters means FAT16.
+    pub fn fat16(&self) -> bool {
+        self.clusters() > 4084
+    }
     pub fn root_offset(&self) -> usize {
         (self.reserved + self.fats * self.spf) * self.bps
     }
@@ -65,20 +83,34 @@ pub fn blank(layout: Layout, atari: bool) -> Vec<u8> {
     boot[14..16].copy_from_slice(&(layout.reserved as u16).to_le_bytes());
     boot[16] = layout.fats as u8;
     boot[17..19].copy_from_slice(&(layout.root_entries as u16).to_le_bytes());
-    boot[19..21].copy_from_slice(&(layout.total as u16).to_le_bytes());
+    match u16::try_from(layout.total) {
+        Ok(total) => boot[19..21].copy_from_slice(&total.to_le_bytes()),
+        Err(_) => boot[32..36].copy_from_slice(&(layout.total as u32).to_le_bytes()),
+    }
     boot[21] = 0xF9;
     boot[22..24].copy_from_slice(&(layout.spf as u16).to_le_bytes());
-    for fat in 0..layout.fats {
-        let offset = (layout.reserved + fat * layout.spf) * layout.bps;
-        image[offset..offset + 3].copy_from_slice(&[0xF9, 0xFF, 0xFF]);
-    }
+    set_fat(&mut image, layout, 0, if layout.fat16() { 0xFFF9 } else { 0xFF9 });
+    set_fat(&mut image, layout, 1, end_of_chain(layout));
     image
 }
 
-/// Sets a 12-bit FAT entry in every FAT copy.
+pub fn end_of_chain(layout: Layout) -> u16 {
+    if layout.fat16() {
+        0xFFFF
+    } else {
+        0xFFF
+    }
+}
+
+/// Sets a 12- or 16-bit FAT entry in every FAT copy.
 pub fn set_fat(image: &mut [u8], layout: Layout, cluster: usize, value: u16) {
     for fat in 0..layout.fats {
-        let offset = (layout.reserved + fat * layout.spf) * layout.bps + cluster * 3 / 2;
+        let table = (layout.reserved + fat * layout.spf) * layout.bps;
+        if layout.fat16() {
+            image[table + cluster * 2..table + cluster * 2 + 2].copy_from_slice(&value.to_le_bytes());
+            continue;
+        }
+        let offset = table + cluster * 3 / 2;
         let old = u16::from_le_bytes([image[offset], image[offset + 1]]);
         let new = if cluster.is_multiple_of(2) {
             (old & 0xF000) | value
@@ -94,7 +126,7 @@ pub fn chain(image: &mut [u8], layout: Layout, clusters: &[usize]) {
     for pair in clusters.windows(2) {
         set_fat(image, layout, pair[0], pair[1] as u16);
     }
-    set_fat(image, layout, *clusters.last().unwrap(), 0xFFF);
+    set_fat(image, layout, *clusters.last().unwrap(), end_of_chain(layout));
 }
 
 /// A 32-byte directory entry. `name` is the raw 11-byte 8.3 name.

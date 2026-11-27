@@ -255,7 +255,7 @@ unarc tp large_archive.7z -d ~/SecLists/Passwords/ -e "readme.txt"
 | **ADF** | `.adf` | — | — |
 | **HDF** | `.hdf` | — | — |
 | **DMS** | `.dms` | XOR | — |
-| **FAT12** | `.img`, `.ima`, `.st` | — | — |
+| **FAT12/FAT16** | `.img`, `.ima`, `.st` | — | — |
 | **ATR** | `.atr` | — | — |
 | **ACE** | `.ace` | Blowfish | ✓ |
 | **ARJ** | `.arj` | Garble, GOST40 | ✓ |
@@ -299,8 +299,9 @@ unarc list game.dms
 unarc extract game.dms FILE_ID.DIZ -o ./output
 ```
 
-PC and Atari ST floppy images (`.img`, `.ima`, `.st`) are read as FAT12, with VFAT
-long names. See [FAT12 support](../../doc/fat.md) for limitations.
+PC and Atari ST floppy images (`.img`, `.ima`, `.st`) are read as FAT12, and
+unpartitioned volumes with more than 4084 clusters as FAT16, with VFAT long
+names. See [FAT support](../../doc/fat.md) for limitations.
 
 ```bash
 unarc list --json disk.img

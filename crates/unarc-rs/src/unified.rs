@@ -191,7 +191,7 @@ impl ArchiveOptions {
         Self::default()
     }
 
-    /// Select Atari ST (`true`) or CP437 (`false`) short-name decoding for FAT12.
+    /// Select Atari ST (`true`) or CP437 (`false`) short-name decoding for FAT images.
     /// By default, a 68000 branch in the boot sector selects Atari decoding.
     pub fn with_fat_atari_names(mut self, atari: bool) -> Self {
         self.fat_atari_names = Some(atari);
@@ -352,7 +352,7 @@ pub enum ArchiveFormat {
     Adf,
     /// Amiga OFS/FFS hardfile, including RDB-partitioned disk images.
     Hdf,
-    /// FAT12 floppy-disk image (PC `.img`/`.ima` or Atari ST `.st`).
+    /// FAT12 or FAT16 disk image (PC `.img`/`.ima` or Atari ST `.st`).
     Fat,
     /// DMS (DiskMasher) compressed Amiga floppy image (.dms).
     Dms,
@@ -596,7 +596,7 @@ impl ArchiveFormat {
             ArchiveFormat::D64 => "D64 (C64 1541 disk image)",
             ArchiveFormat::Adf => "ADF (Amiga floppy image)",
             ArchiveFormat::Hdf => "HDF (Amiga hard disk image)",
-            ArchiveFormat::Fat => "FAT12 (PC/Atari ST floppy image)",
+            ArchiveFormat::Fat => "FAT12/FAT16 (PC/Atari ST disk image)",
             ArchiveFormat::Dms => "DMS (Amiga DiskMasher)",
             ArchiveFormat::Atr => "ATR (Atari 8-bit disk image)",
             ArchiveFormat::Txz => "TXZ (tar.xz)",
@@ -724,7 +724,7 @@ impl ArchiveFormat {
             ArchiveFormat::D64 => None,
             ArchiveFormat::Adf => Some(&[b"DOS"]),
             ArchiveFormat::Hdf => Some(&[b"RDSK", b"DOS"]),
-            // FAT12: no magic, recognised by a boot sector BPB consistent with the image size
+            // FAT: no magic, recognised by a boot sector BPB consistent with the image size
             ArchiveFormat::Fat => None,
             // DMS: "DMS!" at offset 0
             ArchiveFormat::Dms => Some(&[b"DMS!"]),
@@ -1009,7 +1009,7 @@ impl ArchiveFormat {
     ///
     /// D64 disk images have no magic bytes, so a `.d64` path with the size of a D64
     /// image is detected as D64 even if its first sector happens to look like another format.
-    /// Likewise, an `.img`, `.ima` or `.st` path with a consistent FAT12 boot sector is
+    /// Likewise, an `.img`, `.ima` or `.st` path with a consistent FAT12/FAT16 boot sector is
     /// detected as [`ArchiveFormat::Fat`].
     ///
     /// # Example
